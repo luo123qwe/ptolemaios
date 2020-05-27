@@ -1,0 +1,21 @@
+2020/05/27
+设定一: 基于idea+window平台下快速开发和代码管理
+设定二: 所有的进程字典和进程消息都要用宏包装
+设定三: 各种名字必须带有对应功能(模块)的标识前序, a_xxx, b_xxx
+设定四: 大部分使用半自动思路, 提高该项目开发效率, 20%时间做80%事情
+设定五: 使用throw返回错误码
+
+文件结构参照 MongooseIM
+
+cmd
+    SET ERL_FLAGS=-args_file config/vm.args -config config/sys.config
+    rebar3 shell
+ps
+    $Env:ERL_FLAGS=" -args_file config/vm.args -config config/sys.config"
+    rebar3 shell
+linux
+    ERL_FLAGS=" -args_file config/vm.args -config config/sys.config" rebar3 shell
+
+exia 实现一个record数据集合(可以是任意存储结构)的额外索引
+1, 不影响原有存储结构, 原有结构仅需要提供is_exist的实现方法
+2, 实现dict和tree索引
