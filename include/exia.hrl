@@ -2,14 +2,21 @@
 
 %% 索引元素
 -record(exia_element, {
-    key :: exia_template:key(),
-    alias :: exia_template:alias(),
+    key :: exia:key(),
+    alias :: exia:alias(),
     index :: dict:dict()|exia_tree:tree()
 }).
 
 %% 总索引
--record(exia_index, {
-    private_key :: exia_template:key(),
+-record(exia, {
+    private_key :: exia:key(),
     tree = [] :: [#exia_element{}],
     dict = [] :: [#exia_element{}]
+}).
+
+%% 索引存储的值
+-record(exia_index_element, {
+    private_key,
+    key,
+    record
 }).
