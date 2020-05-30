@@ -13,7 +13,7 @@
 -export([new/1, add/4, remove/3]).
 
 %% 数据操作
--export([lookup/4, lookup/5, store/3, delete/2, fold/5, fold_by_range/7]).
+-export([lookup/4, lookup/5, store/3, erase/2, fold/5, fold_by_range/7]).
 
 -compile(inline).
 
@@ -79,7 +79,7 @@ lookup_1(_, _, _) ->
     erlang:error(badarg).
 
 
-%% @doc 根据某个索引查找数据, 返回record
+%% @doc 根据某个索引查找数据
 -spec lookup(integer(), element_key(), key(), key(), #exia{}) -> Record :: tuple()|undefined.
 lookup(ExiaRecordPos, ElementKey, Key, PrivateKey, ExiaIndex) ->
     lookup_private(PrivateKey, ExiaIndex#exia.private_key, lookup(ExiaRecordPos, ElementKey, Key, ExiaIndex)).
@@ -124,8 +124,8 @@ store(OldRecord, NewRecord, Exia) ->
 
 
 %% @doc 删除数据
--spec delete(integer(), #exia{}) -> #exia{}.
-delete(Exia, Record) ->
+-spec erase(integer(), #exia{}) -> #exia{}.
+erase(Exia, Record) ->
     #exia{
         private_key = PrivateKey,
         dict = DictElementList,
@@ -135,14 +135,14 @@ delete(Exia, Record) ->
     DictElementList1 =
         lists:map(fun(#exia_i{key = Key, index = Index} = Element) ->
             IndexElement = make_index_element(PrivateKey, Key, Record),
-            Index1 = exia_dict:delete(IndexElement, Index),
+            Index1 = exia_dict:erase(IndexElement, Index),
             Element#exia_i{index = Index1}
                   end, DictElementList),
     %% 删除tree
     TreeElementList1 =
         lists:map(fun(#exia_i{key = Key, index = Index} = Element) ->
             IndexElement = make_index_element(PrivateKey, Key, Record),
-            Index1 = exia_tree:delete(IndexElement, Index),
+            Index1 = exia_tree:erase(IndexElement, Index),
             Element#exia_i{index = Index1}
                   end, TreeElementList),
     Exia#exia{dict = DictElementList1, tree = TreeElementList1}.
