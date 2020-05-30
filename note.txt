@@ -1,10 +1,15 @@
-2020/05/27
+
 设定一: 基于idea+window平台下快速开发和代码管理
-设定二: 所有的进程字典和进程消息都要用宏包装
-设定三: 各种名字必须带有对应功能(模块)的标识前序, a_xxx, b_xxx
+设定二: 所有的进程字典和进程消息都要用宏包装, 弃用弃用弃用
+设定三: 各种名字必须带有对应功能(模块)的标识前序, module1_xxx, module2_xxx
 设定四: 大部分使用半自动思路, 提高该项目开发效率, 20%时间做80%事情
 设定五: 使用throw返回错误码
+设定六: 模块缩写映射文件(module_sname.txt), 缩写对应的英文和中文
+    缩写不可重复, 文件名不能用缩写
+设定七: 模块内record使用缩写, 在定义的地方写缩写对应的英文和中文
+设定八: 进程字典tag使用pb_前序, 进程消息tag使用pm_前序, 如pb_example, {pb_example, 1, 3}
 
+2020/05/27
 文件结构参照 MongooseIM
 
 cmd
@@ -17,5 +22,20 @@ linux
     ERL_FLAGS=" -args_file config/vm.args -config config/sys.config" rebar3 shell
 
 exia 实现一个record数据集合(可以是任意存储结构)的额外索引
-1, 不影响原有存储结构, 原有结构仅需要提供is_exist的实现方法
-2, 实现dict和tree索引
+    不影响原有存储结构, 原有结构仅需要提供is_exist的实现方法
+    实现dict和tree索引
+
+2020/05/30
+继续实现exia
+    索引结构 = struct(索引数据)
+    索引数据 = private_key + 索引key + record
+    遍历支持break操作, ?UTIL_FOLD_BREAK
+    dict索引: 简单kv存储 叶节点{key, [record]}
+        简单效率也会高一点
+        经常使用范围搜索或者跟'排序有关的操作', 使用tree会更好, 因为dict本身就是乱序的
+    tree索引: 类似b树 所有叶节点从小到大排序, 有左前序特性, 索引自动分层
+        例如{type, subtype, subsubtype,,}, 且索引中每个值有上下限
+        可以通过范围搜索方便的遍历所有type=1,subtype=2的数据
+        即 {1, 2, subsubmin,,} =< key =< {1,2, subsubmax,,}
+增加list_util模块
+    一些特定场景list便利操作

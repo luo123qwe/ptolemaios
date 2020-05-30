@@ -1,0 +1,2 @@
+-define(UTIL_FOLD_BREAK, util_fold_break).
+-define(UTIL_FOLD_BREAK(Acc), {util_fold_break, Acc}).

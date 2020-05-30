@@ -34,13 +34,13 @@ new(PrivateKey) ->
 add(ExiaRecordPos, Key, Alias, Exia) when (is_integer(Key) orelse is_list(Key)), is_atom(Alias) ->
     ElementList = element(ExiaRecordPos, Exia),
     case
-        lists:keymember(Key, #exia_element.key, ElementList)
-            orelse lists:keymember(Alias, #exia_element.alias, ElementList)
+        lists:keymember(Key, #exia_i.key, ElementList)
+            orelse lists:keymember(Alias, #exia_i.alias, ElementList)
     of
         true ->
             erlang:throw(exist);
         false ->
-            NewElement = #exia_element{key = Key, alias = Alias, index = add_1(ExiaRecordPos)},
+            NewElement = #exia_i{key = Key, alias = Alias, index = add_1(ExiaRecordPos)},
             setelement(ExiaRecordPos, Exia, [NewElement | ElementList])
     end.
 
@@ -67,7 +67,7 @@ lookup(ExiaRecordPos, ElementKey, Key, ExiaIndex) ->
     case get_element(ElementKey, ElementList) of
         false ->
             [];
-        #exia_element{index = Index} ->
+        #exia_i{index = Index} ->
             lookup_1(ExiaRecordPos, Key, Index)
     end.
 
@@ -106,19 +106,19 @@ store(OldRecord, NewRecord, Exia) ->
     } = Exia,
     %% 存储dict
     DictElementList1 =
-        lists:map(fun(#exia_element{key = Key, index = Index} = Element) ->
+        lists:map(fun(#exia_i{key = Key, index = Index} = Element) ->
             OldIndexElement = make_index_element(PrivateKey, Key, OldRecord),
             NewIndexElement = make_index_element(PrivateKey, Key, NewRecord),
             Index1 = exia_dict:store(OldIndexElement, NewIndexElement, Index),
-            Element#exia_element{index = Index1}
+            Element#exia_i{index = Index1}
                   end, DictElementList),
     %% 存储tree
     TreeElementList1 =
-        lists:map(fun(#exia_element{key = Key, index = Index} = Element) ->
+        lists:map(fun(#exia_i{key = Key, index = Index} = Element) ->
             OldIndexElement = make_index_element(PrivateKey, Key, OldRecord),
             NewIndexElement = make_index_element(PrivateKey, Key, NewRecord),
             Index1 = exia_tree:store(OldIndexElement, NewIndexElement, Index),
-            Element#exia_element{index = Index1}
+            Element#exia_i{index = Index1}
                   end, TreeElementList),
     Exia#exia{dict = DictElementList1, tree = TreeElementList1}.
 
@@ -133,17 +133,17 @@ delete(Exia, Record) ->
     } = Exia,
     %% 删除dict
     DictElementList1 =
-        lists:map(fun(#exia_element{key = Key, index = Index} = Element) ->
+        lists:map(fun(#exia_i{key = Key, index = Index} = Element) ->
             IndexElement = make_index_element(PrivateKey, Key, Record),
             Index1 = exia_dict:delete(IndexElement, Index),
-            Element#exia_element{index = Index1}
+            Element#exia_i{index = Index1}
                   end, DictElementList),
     %% 删除tree
     TreeElementList1 =
-        lists:map(fun(#exia_element{key = Key, index = Index} = Element) ->
+        lists:map(fun(#exia_i{key = Key, index = Index} = Element) ->
             IndexElement = make_index_element(PrivateKey, Key, Record),
             Index1 = exia_tree:delete(IndexElement, Index),
-            Element#exia_element{index = Index1}
+            Element#exia_i{index = Index1}
                   end, TreeElementList),
     Exia#exia{dict = DictElementList1, tree = TreeElementList1}.
 
@@ -152,13 +152,13 @@ delete(Exia, Record) ->
 %% tree索引遍历由key的值从小到大</br>
 %% dict索引随机顺序
 -spec fold(integer(), element_key(), Fun, Acc :: term(), #exia{}) -> Acc1 :: term()
-    when Fun :: fun((#exia_element{}, Acc :: term()) -> Acc1 :: term()).
+    when Fun :: fun((#exia_i{}, Acc :: term()) -> Acc1 :: term()).
 fold(ExiaRecordPos, ElementKey, Fun, Acc, Exia) when is_function(Fun, 2) ->
     ElementList = element(ExiaRecordPos, Exia),
     case get_element(ElementKey, ElementList) of
         false ->
             erlang:error(no_index);
-        #exia_element{index = Index} ->
+        #exia_i{index = Index} ->
             fold_1(ExiaRecordPos, Fun, Acc, Index)
     end.
 
@@ -174,13 +174,13 @@ fold_1(_, _, _, _) ->
 %% tree索引遍历由key的值从小到大</br>
 %% dict索引随机顺序
 -spec fold_by_range(integer(), element_key(), Fun, Acc :: term(), #exia{}, term(), term()) -> Acc1 :: term()
-    when Fun :: fun((#exia_element{}, Acc :: term()) -> Acc1 :: term()).
+    when Fun :: fun((#exia_i{}, Acc :: term()) -> Acc1 :: term()).
 fold_by_range(ExiaRecordPos, ElementKey, Fun, Acc, Exia, Max, Min) when is_function(Fun, 2), Max >= Min ->
     ElementList = element(ExiaRecordPos, Exia),
     case get_element(ElementKey, ElementList) of
         false ->
             erlang:error(no_index);
-        #exia_element{index = Index} ->
+        #exia_i{index = Index} ->
             fold_by_range_1(ExiaRecordPos, Fun, Acc, Index, Max, Min)
     end.
 
@@ -194,7 +194,7 @@ fold_by_range_1(_, _, _, _, _, _) ->
 make_index_element(_PrivateKey, _Key, undefined) ->
     undefined;
 make_index_element(PrivateKey, Key, Record) ->
-    #exia_index_element{
+    #exia_ie{
         private_key = make_key(PrivateKey, Record),
         key = make_key(Key, Record),
         record = Record
@@ -205,21 +205,21 @@ make_key(KeyIndex, Record) when is_integer(KeyIndex) ->
 make_key(KeyIndexList, Record) when is_list(KeyIndexList) ->
     [element(Pos, Record) || Pos <- KeyIndexList].
 
--spec get_element(key()|alias(), [#exia_element{}]) -> false |#exia_element{}.
+-spec get_element(key()|alias(), [#exia_i{}]) -> false |#exia_i{}.
 get_element(Key, ElementList) when is_list(Key) orelse is_integer(Key) ->
-    lists:keyfind(Key, #exia_element.key, ElementList);
+    lists:keyfind(Key, #exia_i.key, ElementList);
 get_element(Alias, ElementList) when is_atom(Alias) ->
-    lists:keyfind(Alias, #exia_element.alias, ElementList).
+    lists:keyfind(Alias, #exia_i.alias, ElementList).
 
 -compile({nowarn_unused_function, {set_element, 3}}).
--spec set_element(key()|alias(), [#exia_element{}], #exia_element{}) -> [#exia_element{}].
+-spec set_element(key()|alias(), [#exia_i{}], #exia_i{}) -> [#exia_i{}].
 set_element(Key, ElementList, Element) when is_list(Key) orelse is_integer(Key) ->
-    lists:keystore(Key, #exia_element.key, ElementList, Element);
+    lists:keystore(Key, #exia_i.key, ElementList, Element);
 set_element(Alias, ElementList, Element) when is_atom(Alias) ->
-    lists:keystore(Alias, #exia_element.alias, ElementList, Element).
+    lists:keystore(Alias, #exia_i.alias, ElementList, Element).
 
--spec delete_element(key()|alias(), [#exia_element{}]) -> [#exia_element{}].
+-spec delete_element(key()|alias(), [#exia_i{}]) -> [#exia_i{}].
 delete_element(Key, ElementList) when is_list(Key) orelse is_integer(Key) ->
-    lists:keydelete(Key, #exia_element.key, ElementList);
+    lists:keydelete(Key, #exia_i.key, ElementList);
 delete_element(Alias, ElementList) when is_atom(Alias) ->
-    lists:keydelete(Alias, #exia_element.alias, ElementList).
+    lists:keydelete(Alias, #exia_i.alias, ElementList).
