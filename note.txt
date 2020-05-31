@@ -39,3 +39,10 @@ exia 实现一个record数据集合(可以是任意存储结构)的额外索引
         即 {1, 2, subsubmin,,} =< key =< {1,2, subsubmax,,}
 增加list_util模块
     一些特定场景list便利操作
+
+2020/5/31
+exia tree
+    删除元素导致合并, 父节点与相邻节点尝试合并或者平衡数量
+    key从小到大排序, key相等时element乱序
+    当 key_exist >= key_new 插入节点
+    key值占用 ?EXIA_TREE_KEY 用于优化范围搜索

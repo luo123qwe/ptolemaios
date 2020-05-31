@@ -20,12 +20,12 @@
 %% value = [record], 使用 lists:keystore/4
 
 %% Note: mk_seg/1 must be changed too if seg_size is changed.
--define(seg_size, 16).
+-define(EXIA_DICT_SEG_SIZE, 16).
 -define(max_seg, 32).
 -define(expand_load, 5).
 -define(contract_load, 3).
--define(exp_size, (?seg_size * ?expand_load)).
--define(con_size, (?seg_size * ?contract_load)).
+-define(exp_size, (?EXIA_DICT_SEG_SIZE * ?expand_load)).
+-define(con_size, (?EXIA_DICT_SEG_SIZE * ?contract_load)).
 
 -type segs(_Key, _Value) :: tuple().
 -define(kv(K, V), {K, V}).            % Key-Value pair format
@@ -34,28 +34,30 @@
 -record(exia_dict,
 {
     size = 0 :: non_neg_integer(),    % Number of elements
-    n = ?seg_size :: non_neg_integer(),    % Number of active slots
-    maxn = ?seg_size :: non_neg_integer(),    % Maximum slots
-    bso = ?seg_size div 2 :: non_neg_integer(),    % Buddy slot offset
+    n = ?EXIA_DICT_SEG_SIZE :: non_neg_integer(),    % Number of active slots
+    maxn = ?EXIA_DICT_SEG_SIZE :: non_neg_integer(),    % Maximum slots
+    bso = ?EXIA_DICT_SEG_SIZE div 2 :: non_neg_integer(),    % Buddy slot offset
     exp_size = ?exp_size :: non_neg_integer(),    % Size to expand at
     con_size = ?con_size :: non_neg_integer(),    % Size to contract at
     empty :: tuple(),        % Empty segment
     segs :: segs(_, _)            % Segments
 }).
 
+-type dict() :: #exia_dict{}.
+-export_type([dict/0]).
 
 %% @doc 创建一个dict
--spec new() -> #exia_dict{}.
+-spec new() -> dict().
 new() ->
-    Empty = mk_seg(?seg_size),
+    Empty = mk_seg(?EXIA_DICT_SEG_SIZE),
     #exia_dict{empty = Empty, segs = {Empty}}.
 
 
 %% @doc 根据key查找
--spec lookup(term(), #exia_dict{}) -> [#exia_ie{}].
-lookup(Key, D) ->
-    Slot = get_slot(D, Key),
-    Bkt = get_bucket(D, Slot),
+-spec lookup(term(), dict()) -> [#exia_ie{}].
+lookup(Key, Dict) ->
+    Slot = get_slot(Dict, Key),
+    Bkt = get_bucket(Dict, Slot),
     case lists:keyfind(Key, 1, Bkt) of
         false -> [];
         {_, ElementList} -> ElementList
@@ -63,7 +65,7 @@ lookup(Key, D) ->
 
 
 %% @doc 保存一个element
--spec store(#exia_ie{}|undefined, #exia_ie{}, #exia_dict{}) -> #exia_dict{}.
+-spec store(#exia_ie{}|undefined, #exia_ie{}, dict()) -> dict().
 store(OldElement, NewElement, Dict) ->
     case OldElement == undefined orelse OldElement#exia_ie.key == NewElement#exia_ie.key of
         true ->% 索引值没变
@@ -80,7 +82,7 @@ store(#exia_ie{key = Key, private_key = PrivateKey} = Element, D0) ->
 
 
 %% @doc 删除一个element
--spec erase(#exia_ie{}, #exia_dict{}) -> #exia_dict{}.
+-spec erase(#exia_ie{}, dict()) -> dict().
 erase(#exia_ie{key = Key, private_key = PrivateKey}, D0) ->
     Slot = get_slot(D0, Key),
     {D1, Dc} = on_bucket_erase(Key, PrivateKey, D0, Slot),
@@ -103,8 +105,8 @@ get_slot(T, Key) ->
 get_bucket(T, Slot) -> get_bucket_s(T#exia_dict.segs, Slot).
 
 on_bucket_store(Key, PrivateKey, Element, T, Slot) ->
-    SegI = ((Slot - 1) div ?seg_size) + 1,
-    BktI = ((Slot - 1) rem ?seg_size) + 1,
+    SegI = ((Slot - 1) div ?EXIA_DICT_SEG_SIZE) + 1,
+    BktI = ((Slot - 1) rem ?EXIA_DICT_SEG_SIZE) + 1,
     Segs = T#exia_dict.segs,
     Seg = element(SegI, Segs),
     B0 = element(BktI, Seg),
@@ -120,8 +122,8 @@ store_bkt_val(Key, PrivateKey, Element, [Other | Bkt0]) ->
 store_bkt_val(Key, _PrivateKey, Element, []) -> {[?kv(Key, [Element])], 1}.
 
 on_bucket_erase(Key, PrivateKey, T, Slot) ->
-    SegI = ((Slot - 1) div ?seg_size) + 1,
-    BktI = ((Slot - 1) rem ?seg_size) + 1,
+    SegI = ((Slot - 1) div ?EXIA_DICT_SEG_SIZE) + 1,
+    BktI = ((Slot - 1) rem ?EXIA_DICT_SEG_SIZE) + 1,
     Segs = T#exia_dict.segs,
     Seg = element(SegI, Segs),
     B0 = element(BktI, Seg),
@@ -171,7 +173,7 @@ maybe_expand_segs(T) when T#exia_dict.n =:= T#exia_dict.maxn ->
 maybe_expand_segs(T) -> T.
 
 maybe_contract(T, Dc) when T#exia_dict.size - Dc < T#exia_dict.con_size,
-    T#exia_dict.n > ?seg_size ->
+    T#exia_dict.n > ?EXIA_DICT_SEG_SIZE ->
     N = T#exia_dict.n,
     Slot1 = N - T#exia_dict.bso,
     Segs0 = T#exia_dict.segs,
@@ -198,13 +200,13 @@ maybe_contract_segs(T) -> T.
 %% put_bucket_s(Segments, Slot, Bucket) -> NewSegments.
 
 get_bucket_s(Segs, Slot) ->
-    SegI = ((Slot - 1) div ?seg_size) + 1,
-    BktI = ((Slot - 1) rem ?seg_size) + 1,
+    SegI = ((Slot - 1) div ?EXIA_DICT_SEG_SIZE) + 1,
+    BktI = ((Slot - 1) rem ?EXIA_DICT_SEG_SIZE) + 1,
     element(BktI, element(SegI, Segs)).
 
 put_bucket_s(Segs, Slot, Bkt) ->
-    SegI = ((Slot - 1) div ?seg_size) + 1,
-    BktI = ((Slot - 1) rem ?seg_size) + 1,
+    SegI = ((Slot - 1) div ?EXIA_DICT_SEG_SIZE) + 1,
+    BktI = ((Slot - 1) rem ?EXIA_DICT_SEG_SIZE) + 1,
     Seg = setelement(BktI, element(SegI, Segs), Bkt),
     setelement(SegI, Segs, Seg).
 
@@ -262,7 +264,7 @@ contract_segs(Segs) ->
 
 
 %% @doc 遍历字典
--spec fold(fun((#exia_ie{}, Acc)-> Acc1), Acc, #exia_dict{}) -> Acc1
+-spec fold(fun((#exia_ie{}, Acc)-> Acc1), Acc, dict()) -> Acc1
     when Acc :: term(), Acc1 :: term().
 fold(F, Acc, #exia_dict{size = 0}) when is_function(F, 2) ->
     Acc;
@@ -294,7 +296,7 @@ fold_bucket(_F, Acc, []) -> Acc.
 
 
 %% @doc 根据范围遍历字典, 频繁使用的话, 同tree结构更优
--spec fold_by_range(fun((#exia_ie{}, Acc)-> Acc1), Acc, #exia_dict{}, term(), term()) -> Acc1
+-spec fold_by_range(fun((#exia_ie{}, Acc)-> Acc1), Acc, dict(), term(), term()) -> Acc1
     when Acc :: term(), Acc1 :: term().
 fold_by_range(F, Acc, #exia_dict{size = 0}, _Max, _Min) when is_function(F, 2) ->
     Acc;

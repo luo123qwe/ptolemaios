@@ -1,10 +1,17 @@
--define(EXIA_TREE_ELEMENT(Key, Record), {Key, Record}).
+
+
+
+%% 逻辑用最大最小值
+-define(EXIA_TREE_MAX, exia_tree_max).
+-define(EXIA_TREE_MIN, exia_tree_min).
+%% 逻辑用key值
+-define(EXIA_TREE_KEY, exia_tree_key).
 
 %% 索引元素
 -record(exia_i, {% exia_index
     key :: exia:key(),
     alias :: exia:alias(),
-    index :: dict:dict()|exia_tree:tree()
+    index :: exia_dict:dict()|exia_tree:root()
 }).
 
 %% 总索引
