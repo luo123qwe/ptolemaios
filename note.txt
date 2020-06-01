@@ -8,6 +8,12 @@
     缩写不可重复, 文件名不能用缩写
 设定七: 模块内record使用缩写, 在定义的地方写缩写对应的英文和中文
 设定八: 进程字典tag使用pb_前序, 进程消息tag使用pm_前序, 如pb_example, {pb_example, 1, 3}
+    ets用ets_前序
+设定九: 同一份数据同一时间只能由一个进程更新
+设定十: 一次消息内提供一定的回滚机制, 时间矫正
+    对应操作commit immediately, hold change, set change
+    cast, info, send msg to client, virture, process dict
+    时间矫正通过包装消息({时间戳, 消息})和进程字典实现
 
 2020/05/27
 文件结构参照 MongooseIM
@@ -21,11 +27,13 @@ ps
 linux
     ERL_FLAGS=" -args_file config/vm.args -config config/sys.config" rebar3 shell
 
-exia 实现一个record数据集合(可以是任意存储结构)的额外索引
+exia
+    实现一个record数据集合(可以是任意存储结构)的额外索引
     不影响原有存储结构, 原有结构仅需要提供is_exist的实现方法
     实现dict和tree索引
 
 2020/05/30
+增加uitl模块
 继续实现exia
     索引结构 = struct(索引数据)
     索引数据 = private_key + 索引key + record
@@ -37,8 +45,6 @@ exia 实现一个record数据集合(可以是任意存储结构)的额外索引
         例如{type, subtype, subsubtype,,}, 且索引中每个值有上下限
         可以通过范围搜索方便的遍历所有type=1,subtype=2的数据
         即 {1, 2, subsubmin,,} =< key =< {1,2, subsubmax,,}
-增加list_util模块
-    一些特定场景list便利操作
 
 2020/5/31
 exia tree
@@ -46,3 +52,23 @@ exia tree
     key从小到大排序, key相等时element乱序
     当 key_exist >= key_new 插入节点
     key值占用 ?EXIA_TREE_KEY 用于优化范围搜索
+
+2020/6/1
+virture
+    实现基于ets的数据缓存, 数据库用mysql
+    算是为玩家进程服务
+    数据量超大的公共进程频率和量级都不一样不太适合
+    只适存在唯一键的数据, 跟应数据库一一对应
+    不过很少没有唯一键的情况就是
+    一般来说数据会有3份
+    process dict + ets + db
+    process <=> ets
+        进程需要拿到锁(悲观锁)才能更新数据
+        进程读取数据后会做本地缓存
+        进程做数据差异比较, 然后同步ets
+        其他进程可以通关ets脏读
+    ets <=> db
+        首次读取时从数据库拿
+        定时落地 + 手动强制落地
+    ets存储结构为单层哈希
+    监督树开进程, 在代码里面传参数

@@ -4,13 +4,14 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 27. 5月 2020 17:57
 %%%-------------------------------------------------------------------
 -module(exia_dict).
 -author("dominic").
 
 -include("exia.hrl").
 -include("util.hrl").
+
+-compile(inline).
 
 %% API
 -export([new/0, lookup/2, store/3, erase/2, fold/3, fold_by_range/5]).

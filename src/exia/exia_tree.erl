@@ -4,13 +4,14 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 27. 5月 2020 16:40
 %%%-------------------------------------------------------------------
 -module(exia_tree).
 -author("dominic").
 
 -include("util.hrl").
 -include("exia.hrl").
+
+-compile(inline).
 
 %% API
 -export([new/0, lookup/2, store/3, erase/2, fold/3]).

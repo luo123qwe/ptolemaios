@@ -4,10 +4,13 @@
 %%% @doc
 %%% 索引
 %%% @end
-%%% Created : 27. 5月 2020 16:04
 %%%-------------------------------------------------------------------
 -module(exia).
 -author("dominic").
+
+-include("exia.hrl").
+
+-compile(inline).
 
 %% 索引操作
 -export([new/1, add/4, remove/3]).
@@ -15,13 +18,9 @@
 %% 数据操作
 -export([lookup/4, lookup/5, store/3, erase/2, fold/5, fold_by_range/7]).
 
--compile(inline).
-
 -type key() :: RecordPos :: integer()|[RecordPos :: integer()].
 -type alias() :: atom().
 -type element_key() :: key()|alias().
-
--include("exia.hrl").
 
 %% @doc 创建一个新的索引结构
 -spec new(key()) -> #exia{}.
