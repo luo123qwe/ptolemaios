@@ -12,8 +12,6 @@
 -include("exia.hrl").
 -include("util.hrl").
 
--compile(inline).
-
 %% API
 -export([new/0, lookup/2, store/3, erase/2, fold/3, fold_by_range/5]).
 
@@ -23,10 +21,11 @@
 
 %% Note: mk_seg/1 must be changed too if seg_size is changed.
 -define(EXIA_DICT_SEG_SIZE, 16).
--define(EXIA_DICT_EXPAND_LOAD, 5).
--define(EXIA_DICT_CONTRACT_LOAD, 3).
--define(EXIA_DICT_EXP_SIZE, (?EXIA_DICT_SEG_SIZE * ?EXIA_DICT_EXPAND_LOAD)).
--define(EXIA_DICT_CON_SIZE, (?EXIA_DICT_SEG_SIZE * ?EXIA_DICT_CONTRACT_LOAD)).
+-define(max_seg, 32).
+-define(expand_load, 5).
+-define(contract_load, 3).
+-define(exp_size, (?EXIA_DICT_SEG_SIZE * ?expand_load)).
+-define(con_size, (?EXIA_DICT_SEG_SIZE * ?contract_load)).
 
 -type segs(_Key, _Value) :: tuple().
 -define(kv(K, V), {K, V}).            % Key-Value pair format
@@ -38,25 +37,27 @@
     n = ?EXIA_DICT_SEG_SIZE :: non_neg_integer(),    % Number of active slots
     maxn = ?EXIA_DICT_SEG_SIZE :: non_neg_integer(),    % Maximum slots
     bso = ?EXIA_DICT_SEG_SIZE div 2 :: non_neg_integer(),    % Buddy slot offset
-    exp_size = ?EXIA_DICT_EXP_SIZE :: non_neg_integer(),    % Size to expand at
-    con_size = ?EXIA_DICT_CON_SIZE :: non_neg_integer(),    % Size to contract at
+    exp_size = ?exp_size :: non_neg_integer(),    % Size to expand at
+    con_size = ?con_size :: non_neg_integer(),    % Size to contract at
     empty :: tuple(),        % Empty segment
     segs :: segs(_, _)            % Segments
 }).
 
+-type dict() :: #exia_dict{}.
+-export_type([dict/0]).
 
 %% @doc 创建一个dict
--spec new() -> #exia_dict{}.
+-spec new() -> dict().
 new() ->
     Empty = mk_seg(?EXIA_DICT_SEG_SIZE),
     #exia_dict{empty = Empty, segs = {Empty}}.
 
 
 %% @doc 根据key查找
--spec lookup(term(), #exia_dict{}) -> [#exia_ie{}].
-lookup(Key, D) ->
-    Slot = get_slot(D, Key),
-    Bkt = get_bucket(D, Slot),
+-spec lookup(term(), dict()) -> [#exia_ie{}].
+lookup(Key, Dict) ->
+    Slot = get_slot(Dict, Key),
+    Bkt = get_bucket(Dict, Slot),
     case lists:keyfind(Key, 1, Bkt) of
         false -> [];
         {_, ElementList} -> ElementList
@@ -64,7 +65,7 @@ lookup(Key, D) ->
 
 
 %% @doc 保存一个element
--spec store(#exia_ie{}|undefined, #exia_ie{}, #exia_dict{}) -> #exia_dict{}.
+-spec store(#exia_ie{}|undefined, #exia_ie{}, dict()) -> dict().
 store(OldElement, NewElement, Dict) ->
     case OldElement == undefined orelse OldElement#exia_ie.key == NewElement#exia_ie.key of
         true ->% 索引值没变
@@ -81,7 +82,7 @@ store(#exia_ie{key = Key, private_key = PrivateKey} = Element, D0) ->
 
 
 %% @doc 删除一个element
--spec erase(#exia_ie{}, #exia_dict{}) -> #exia_dict{}.
+-spec erase(#exia_ie{}, dict()) -> dict().
 erase(#exia_ie{key = Key, private_key = PrivateKey}, D0) ->
     Slot = get_slot(D0, Key),
     {D1, Dc} = on_bucket_erase(Key, PrivateKey, D0, Slot),
@@ -139,7 +140,7 @@ erase_key(Key, PrivateKey, [?kv(Key, ElementList) | Bkt]) ->
 erase_key(Key, PrivateKey, [E | Bkt0]) ->
     {Bkt1, Dc} = erase_key(Key, PrivateKey, Bkt0),
     {[E | Bkt1], Dc};
-erase_key(_, _, []) -> erlang:error(badarg).
+erase_key(_, _, []) -> {[], 0}.
 
 %% In maybe_expand(), the variable Ic only takes the values 0 or 1,
 %% but type inference is not strong enough to infer this. Thus, the
@@ -160,8 +161,8 @@ maybe_expand_aux(T0, Ic) when T0#exia_dict.size + Ic > T0#exia_dict.exp_size ->
     Segs2 = put_bucket_s(Segs1, Slot2, B2),
     T#exia_dict{size = T#exia_dict.size + Ic,
         n = N,
-        exp_size = N * ?EXIA_DICT_EXPAND_LOAD,
-        con_size = N * ?EXIA_DICT_CONTRACT_LOAD,
+        exp_size = N * ?expand_load,
+        con_size = N * ?contract_load,
         segs = Segs2};
 maybe_expand_aux(T, Ic) -> T#exia_dict{size = T#exia_dict.size + Ic}.
 
@@ -184,8 +185,8 @@ maybe_contract(T, Dc) when T#exia_dict.size - Dc < T#exia_dict.con_size,
     N1 = N - 1,
     maybe_contract_segs(T#exia_dict{size = T#exia_dict.size - Dc,
         n = N1,
-        exp_size = N1 * ?EXIA_DICT_EXPAND_LOAD,
-        con_size = N1 * ?EXIA_DICT_CONTRACT_LOAD,
+        exp_size = N1 * ?expand_load,
+        con_size = N1 * ?contract_load,
         segs = Segs2});
 maybe_contract(T, Dc) -> T#exia_dict{size = T#exia_dict.size - Dc}.
 
@@ -263,7 +264,7 @@ contract_segs(Segs) ->
 
 
 %% @doc 遍历字典
--spec fold(fun((#exia_ie{}, Acc)-> Acc1), Acc, #exia_dict{}) -> Acc1
+-spec fold(fun((#exia_ie{}, Acc)-> Acc1), Acc, dict()) -> Acc1
     when Acc :: term(), Acc1 :: term().
 fold(F, Acc, #exia_dict{size = 0}) when is_function(F, 2) ->
     Acc;
@@ -295,7 +296,7 @@ fold_bucket(_F, Acc, []) -> Acc.
 
 
 %% @doc 根据范围遍历字典, 频繁使用的话, 同tree结构更优
--spec fold_by_range(fun((#exia_ie{}, Acc)-> Acc1), Acc, #exia_dict{}, term(), term()) -> Acc1
+-spec fold_by_range(fun((#exia_ie{}, Acc)-> Acc1), Acc, dict(), term(), term()) -> Acc1
     when Acc :: term(), Acc1 :: term().
 fold_by_range(F, Acc, #exia_dict{size = 0}, _Max, _Min) when is_function(F, 2) ->
     Acc;
