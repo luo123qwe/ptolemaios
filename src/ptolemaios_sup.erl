@@ -29,7 +29,21 @@ init([]) ->
     SupFlags = #{strategy => one_for_one,
         intensity => 1,
         period => 5},
-    ChildSpecs = [],
+
+    %% 初始化一些不需要挂进程的东西
+    local_lock:init_ets(),
+    virture:init_ets(),
+
+    %% 子进程
+    {ok, User} = application:get_env(ptolemaios, mysql_user),
+    {ok, Password} = application:get_env(ptolemaios, mysql_password),
+    {ok, Database} = application:get_env(ptolemaios, mysql_database),
+    PoolOptions = [{size, 50}, {max_overflow, 100}],
+    MySqlOptions = [{user, User}, {password, Password}, {database, Database},
+        {keep_alive, true},
+        {prepare, [{test, "SELECT * FROM player WHERE id=?"}]}],
+    ChildSpecs = [mysql_poolboy:child_spec(virture, PoolOptions, MySqlOptions)],
+
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions

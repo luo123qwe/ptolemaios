@@ -10,7 +10,7 @@
 
 -include("util.hrl").
 
--export([list_fold/3]).
+-export([list_fold/3, eval/1]).
 
 -export([kv_get/3, kv_set/3]).
 
@@ -68,3 +68,20 @@ kv_set(Key, Value, {_, _} = GBTree) ->
     gb_trees:insert(Key, Value, GBTree);
 kv_set(_Key, Value, Ets) when is_atom(Ets); is_reference(Ets) ->
     ets:insert(Ets, Value).
+
+
+
+%% @doc 执行一条erlang语句
+-spec eval(string()) -> term().
+eval(Str) ->
+    {ok, Tokens, _} = erl_scan:string(eval_fix_string(Str)),
+    {ok, Exprs} = erl_parse:parse_exprs(Tokens),
+    {value, Value, _} = erl_eval:exprs(Exprs, []),
+    Value.
+
+eval_fix_string([]) ->
+    [$.];
+eval_fix_string([$.]) ->
+    [$.];
+eval_fix_string([H | T]) ->
+    [H | eval_fix_string(T)].

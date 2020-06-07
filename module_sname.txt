@@ -1,11 +1,9 @@
-full name                           |short name         |中文
-ptolemaios                          |                   |
-exia                                |                   |
-exia_tree                           |                   |
-exia_dict                           |                   |
-util                                |                   |
-util_lock                           |                   |
-virture                             |                   |
+full name                           |short name         |中文注释
+ptolemaios                          |                   |这个app
+exia                                |                   |索引
+util                                |                   |工具
+local_lock                          |                   |本地锁
+virture                             |                   |数据操作
 
 
 
