@@ -21,6 +21,7 @@
 
 init_ets() ->
     lists:foreach(fun(Virture) ->
+        create_table(),
         EtsName = make_ets_name(Virture),
         EtsName = ets:new(EtsName, [public, named_table])
                   end, virture_config:all()).
