@@ -60,7 +60,7 @@ remove(ExiaRecordPos, ElementKey, Exia) ->
 
 
 %% @doc 查找数据, 返回record列表
--spec lookup(integer(), element_key(), key(), #exia{}) -> [Record :: tuple()].
+-spec lookup(integer(), element_key(), key(), #exia{}) -> [#exia_ie{}].
 lookup(ExiaRecordPos, ElementKey, Key, ExiaIndex) ->
     ElementList = element(ExiaRecordPos, ExiaIndex),
     case get_element(ElementKey, ElementList) of
@@ -79,14 +79,14 @@ lookup_1(_, _, _) ->
 
 
 %% @doc 根据某个索引查找数据
--spec lookup(integer(), element_key(), key(), key(), #exia{}) -> Record :: tuple()|undefined.
+-spec lookup(integer(), element_key(), key(), key(), #exia{}) -> #exia_ie{}|undefined.
 lookup(ExiaRecordPos, ElementKey, Key, PrivateKey, ExiaIndex) ->
     lookup_private(PrivateKey, ExiaIndex#exia.private_key, lookup(ExiaRecordPos, ElementKey, Key, ExiaIndex)).
 
 lookup_private(_PrivateKey, _KeyIndexList, []) ->
     undefined;
-lookup_private(PrivateKey, KeyIndexList, [H | T]) ->
-    case PrivateKey == make_key(KeyIndexList, H) of
+lookup_private(PrivateKey, KeyIndexList, [#exia_ie{record = Record} = H | T]) ->
+    case PrivateKey == make_key(KeyIndexList, Record) of
         false ->
             lookup_private(PrivateKey, KeyIndexList, T);
         _ ->
