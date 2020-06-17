@@ -8,7 +8,8 @@
     缩写不可重复, 文件名不能用缩写
 设定七: 模块内record使用缩写, 在定义的地方写缩写对应的英文和中文
 设定八: 进程字典tag使用pb_前序, 进程消息tag使用pm_前序, 如pb_example, {pb_example, 1, 3}
-    ets用ets_前序
+    ets用ets_前序, 这类原子都使用宏包装-defined(PD_EXAMPLE(1,2), {pb_example, 1, 3})
+    或 -defined(PD_EXAMPLE, pb_example)
 设定九: 同一份数据同一时间只能由一个进程更新
 设定十: 一次消息内提供一定的回滚机制, 时间矫正
     对应操作commit immediately, hold change, set change
@@ -87,3 +88,7 @@ virture
     实际上99%的表都是有主键的
 实现本地节点锁
 补上一些常用宏
+
+2020/6/14
+不使用exia模块了, 直接用对应的结构
+增加performan文件夹, 放性能测试代码

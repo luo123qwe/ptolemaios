@@ -14,10 +14,12 @@
 -compile(inline).
 
 %% API
--export([new/0, lookup/2, store/3, erase/2, fold/3]).
+-export([new/0, lookup/2, store/3, erase/2, fold/3, fold/5]).
 
+%% 对比测试过, 这组数据比较好
 -define(EXIA_TREE_AVG_NUM, 8).
--define(EXIA_TREE_DIVIDE_NUM, 16).
+-define(EXIA_TREE_DIVIDE_NUM, ?EXIA_TREE_AVG_NUM * 2).
+-define(EXIA_TREE_MERGE_NUM, ?EXIA_TREE_AVG_NUM).
 
 -record(exia_tree_root, {
     children = [],% [#exia_tree{}]
@@ -45,7 +47,7 @@ new() ->
 %% @doc 根据key查找
 -spec lookup(term(), root()) -> [#exia_ie{}].
 lookup(Key, Root) ->
-    fold_by_range(fun(E, Acc) -> [E | Acc] end, [], Root, Key, Key).
+    fold(fun(E, Acc) -> [E | Acc] end, [], Root, Key, Key).
 
 
 %% @doc 保存一个element
@@ -62,11 +64,13 @@ store(OldElement, NewElement, #exia_tree_root{children_num = ChildrenNum, childr
             Tree1 = store_update(NewElement#exia_ie.key, NewElement, Tree, []),
             Root#exia_tree_root{children = Tree1};
         true ->
-            Tree1 = erase(OldElement, Tree),
+            #exia_tree_root{
+                children_num = ChildrenNum1, children = Tree1
+            } = Root1 = erase(OldElement, Root),
             {IsDivide, Tree2} = store_new(NewElement#exia_ie.key, NewElement, Tree1, []),
             case IsDivide of
-                true -> check_root_divide(ChildrenNum + 1, Tree2);
-                false -> Root#exia_tree_root{children = Tree1}
+                true -> check_root_divide(ChildrenNum1 + 1, Tree2);
+                false -> Root1#exia_tree_root{children = Tree2}
             end
     end.
 
@@ -172,7 +176,7 @@ check_root_divide(ChildrenNum, Tree) ->
             {Left, Right, LeftMax, RightMin} = divide(?EXIA_TREE_AVG_NUM, Tree, []),
             LeftTree = #exia_tree{floor = Floor1, min = ?EXIA_TREE_MIN, max = LeftMax, children = Left, children_num = ?EXIA_TREE_AVG_NUM},
             RightTree = #exia_tree{floor = Floor1, min = RightMin, max = ?EXIA_TREE_MAX, children = Right, children_num = ?EXIA_TREE_AVG_NUM},
-            [LeftTree, RightTree];
+            #exia_tree_root{children_num = 2, children = [LeftTree, RightTree]};
         false ->
             #exia_tree_root{children_num = ChildrenNum, children = Tree}
     end.
@@ -285,9 +289,9 @@ erase1(Key, Element, [#exia_tree{min = Min, children = Children, children_num = 
 
 merge(#exia_tree{children_num = 0}, T, Reverse) ->
     {true, lists:reverse(Reverse, T)};
-merge(#exia_tree{children_num = CN1} = H1, [#exia_tree{children_num = CN2} = H2 | T], Reverse) when CN1 + CN2 < ?EXIA_TREE_DIVIDE_NUM ->
+merge(#exia_tree{children_num = CN1} = H1, [#exia_tree{children_num = CN2} = H2 | T], Reverse) when CN1 + CN2 < ?EXIA_TREE_MERGE_NUM ->
     {true, lists:reverse(Reverse, [merge(H1, H2) | T])};
-merge(#exia_tree{children_num = CN2} = H2, T, [#exia_tree{children_num = CN1} = H1 | Reverse]) when CN1 + CN2 < ?EXIA_TREE_DIVIDE_NUM ->
+merge(#exia_tree{children_num = CN2} = H2, T, [#exia_tree{children_num = CN1} = H1 | Reverse]) when CN1 + CN2 < ?EXIA_TREE_MERGE_NUM ->
     {true, lists:reverse(Reverse, [merge(H1, H2) | T])};
 merge(H, T, Reverse) ->
     {false, lists:reverse(Reverse, [H | T])}.
@@ -332,11 +336,11 @@ fold_tree(F, Acc, [#exia_tree{children = Children} | T]) ->
 
 
 %% @doc 根据范围遍历tree, 频繁使用的话, 同tree结构更优
--spec fold_by_range(fun((#exia_ie{}, Acc)-> Acc1), Acc, root(), term(), term()) -> Acc1
+-spec fold(fun((#exia_ie{}, Acc)-> Acc1), Acc, root(), term(), term()) -> Acc1
     when Acc :: term(), Acc1 :: term().
-fold_by_range(F, Acc, #exia_tree_root{children = #exia_tree{floor = 2, children = []}}, _Max, _Min) when is_function(F, 2) ->
+fold(F, Acc, #exia_tree_root{children = #exia_tree{floor = 2, children = []}}, _Max, _Min) when is_function(F, 2) ->
     Acc;
-fold_by_range(F, Acc, #exia_tree_root{children = Tree}, Max, Min) ->
+fold(F, Acc, #exia_tree_root{children = Tree}, Max, Min) ->
     case fold_tree_by_range(F, Acc, Tree, Max, Min) of
         ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
         Acc1 -> Acc1

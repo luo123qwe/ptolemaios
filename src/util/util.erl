@@ -70,7 +70,6 @@ kv_set(_Key, Value, Ets) when is_atom(Ets); is_reference(Ets) ->
     ets:insert(Ets, Value).
 
 
-
 %% @doc 执行一条erlang语句
 -spec eval(string()) -> term().
 eval(Str) ->

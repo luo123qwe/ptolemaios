@@ -21,7 +21,6 @@
 
 init_ets() ->
     lists:foreach(fun(Virture) ->
-        create_table(),
         EtsName = make_ets_name(Virture),
         EtsName = ets:new(EtsName, [public, named_table])
                   end, virture_config:all()).
@@ -74,7 +73,7 @@ get_from_data(Key, List) when is_list(List) ->
         {_, Record} -> Record
     end;
 get_from_data(Key, Dict) ->
-        case dict:find(Key, Dict) of
+    case dict:find(Key, Dict) of
         error -> undefined;
         {ok, Record} -> Record
     end.
