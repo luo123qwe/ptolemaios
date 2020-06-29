@@ -142,11 +142,11 @@ exia_tree(#performan_struct{
     RecordList = [erlang:make_tuple(RecordSize, N) || N <- lists:seq(1, Size)],
     Tree =
         lists:foldl(fun(N, Acc) ->
-            exia_tree:store(undefined, #exia_ie{private_key = N, key = N, record = erlang:make_tuple(RecordSize, N)}, Acc)
-                    end, exia_tree:new(), lists:seq(1, Size)),
+            fractal_tree_origin:store(undefined, #exia_ie{private_key = N, key = N, record = erlang:make_tuple(RecordSize, N)}, Acc)
+                    end, fractal_tree_origin:new(), lists:seq(1, Size)),
     {
         exia_tree,
-        {build, element(1, timer:tc(fun exia_tree_build/4, [BuildTimes, RecordList, RecordList, exia_tree:new()]))},
+        {build, element(1, timer:tc(fun exia_tree_build/4, [BuildTimes, RecordList, RecordList, fractal_tree_origin:new()]))},
         {lookup, element(1, timer:tc(fun exia_tree_lookup/4, [LookupTimes, Size, Size, Tree]))},
         {update, element(1, timer:tc(fun exia_tree_update/4, [UpdateTimes, RecordList, RecordList, Tree]))},
         {delete_insert, element(1, timer:tc(fun exia_tree_delete_insert/5, [DeleteInsertTimes, RecordList, RecordList, Tree, 0]))},
@@ -158,17 +158,17 @@ exia_tree(#performan_struct{
 exia_tree_build(0, _, _, _) ->
     ok;
 exia_tree_build(Times, RecordList, [], _Tree) ->
-    exia_tree_build(Times - 1, RecordList, RecordList, exia_tree:new());
+    exia_tree_build(Times - 1, RecordList, RecordList, fractal_tree_origin:new());
 exia_tree_build(Times, RecordList, [H | T], Tree) ->
     Key = element(1, H),
-    exia_tree_build(Times, RecordList, T, exia_tree:store(undefined, #exia_ie{private_key = Key, key = Key, record = H}, Tree)).
+    exia_tree_build(Times, RecordList, T, fractal_tree_origin:store(undefined, #exia_ie{private_key = Key, key = Key, record = H}, Tree)).
 
 exia_tree_lookup(0, _, _, _) ->
     ok;
 exia_tree_lookup(Times, Size, 0, Tree) ->
     exia_tree_lookup(Times - 1, Size, Size, Tree);
 exia_tree_lookup(Times, Size, N, Tree) ->
-    [_] = exia_tree:lookup(N, Tree),
+    [_] = fractal_tree_origin:lookup(N, Tree),
     exia_tree_lookup(Times, Size, N - 1, Tree).
 
 exia_tree_update(0, _, _, _) ->
@@ -178,7 +178,7 @@ exia_tree_update(Times, RecordList, [], Tree) ->
 exia_tree_update(Times, RecordList, [H | T], Tree) ->
     Key = element(1, H),
     ExiaIE = #exia_ie{private_key = Key, key = Key, record = H},
-    exia_tree_update(Times, RecordList, T, exia_tree:store(ExiaIE, ExiaIE, Tree)).
+    exia_tree_update(Times, RecordList, T, fractal_tree_origin:store(ExiaIE, ExiaIE, Tree)).
 
 exia_tree_delete_insert(0, _, _, _, _) ->
     ok;
@@ -187,25 +187,25 @@ exia_tree_delete_insert(Times, RecordList, [], Tree, Offset) ->
 exia_tree_delete_insert(Times, RecordList, [H | T], Tree, Offset) ->
     Key = element(1, H),
     ExiaIE = #exia_ie{private_key = Key, key = Key + Offset, record = H},
-    Tree2 = exia_tree:store(ExiaIE, ExiaIE#exia_ie{key = Key + Offset + 1}, Tree),
+    Tree2 = fractal_tree_origin:store(ExiaIE, ExiaIE#exia_ie{key = Key + Offset + 1}, Tree),
     exia_tree_delete_insert(Times, RecordList, T, Tree2, Offset).
 
 exia_tree_fold(0, _) ->
     ok;
 exia_tree_fold(Times, Tree) ->
-    _ = exia_tree:fold(fun(#exia_ie{record = R}, Acc) -> [R | Acc] end, [], Tree),
+    _ = fractal_tree_origin:fold(fun(#exia_ie{record = R}, Acc) -> [R | Acc] end, [], Tree),
     exia_tree_fold(Times - 1, Tree).
 
 exia_tree_range(0, _, _, _) ->
     ok;
 exia_tree_range(Times, Min, Max, Tree) ->
-    _ = exia_tree:fold(fun(#exia_ie{record = R}, Acc) -> [R | Acc] end, [], Tree, Min, Max),
+    _ = fractal_tree_origin:fold(fun(#exia_ie{record = R}, Acc) -> [R | Acc] end, [], Tree, Min, Max),
     exia_tree_range(Times - 1, Min, Max, Tree).
 
 exia_tree_sub(0, _, _, _) ->
     ok;
 exia_tree_sub(Times, Start, Len, Tree) ->
-    _ = exia_tree:fold(fun(#exia_ie{record = R}, {S, L, Acc}) ->
+    _ = fractal_tree_origin:fold(fun(#exia_ie{record = R}, {S, L, Acc}) ->
         if
             S > 1 -> {S - 1, L, Acc};
             L =< 1 -> ?UTIL_FOLD_BREAK([R | Acc]);

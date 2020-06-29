@@ -2,7 +2,7 @@
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
 %%% @doc
-%%%
+%%% 类似ets的bag
 %%% @end
 %%%-------------------------------------------------------------------
 -module(exia_dict).
