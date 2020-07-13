@@ -3,11 +3,16 @@
 %%% @copyright (C) 2020, <COMPANY>
 %%% @doc
 %%% 一颗分型树, 节点用列表实现
-%%% 操作的数据越'靠前'效率越高
-%%% 适合热点数据增删和范围查询
+%%  数据从小到大排序
+%%% 操作的数据越'靠前'效率越高, 适合热点数据增删和范围查询
+%%% 改造方向, 需要自己实现
+%%%     一, key不重复, 可以去掉重复key判断, lookup不再使用范围搜索
+%%%     二, 叶节点直接使用record, 去掉构造部分
+%%%     三, 逻辑最大最小值直接给定
+%%%     四, 自动控制数量上限, 增加元素后检测, 剪枝直接去掉最后一个节点即可
 %%% @end
 %%%-------------------------------------------------------------------
--module(fractal_tree_origin).
+-module(fractal_tree).
 -author("dominic").
 
 -include("util.hrl").
@@ -36,15 +41,15 @@
 %% 子节点
 -record(fto_child, {
     high = 2,% 第一层是叶节点, 所以高度从2开始
-    max = ?FTO_MAX,% 节点元素的最大值
-    min = ?FTO_MIN,% 节点元素的最小值
+    max = ?FTO_MAX,% 节点元素的最大值, 最右边叶节点key
+    min = ?FTO_MIN,% 节点元素的最小值, 最左边叶节点key
     children = [],% [#ft_leaf{}|#fto_child{}]
     num = 0
 }).
 
 %% 叶节点
 -record(fto_leaf, {
-    key,% 索引的key, 节点按照该值排序
+    key,% 索引的key, 节点按照该值升序排序
     private_key,% 唯一key, 区分相同key
     data% 数据
 }).
@@ -79,8 +84,12 @@ store(OldData, NewData, #fto_root{children = Child} = Root) ->
     case OldLeaf#fto_leaf.key == NewLeaf#fto_leaf.key of
         true ->
             %% key值不变, 仅更新数据
-            Child1 = store_update(NewLeaf#fto_leaf.key, NewLeaf, Child, []),
-            Root#fto_root{children = Child1};
+            case store_update(NewLeaf#fto_leaf.key, NewLeaf, Child, []) of
+                false ->
+                    throw(badarg);
+                Child1  ->
+                    Root#fto_root{children = Child1}
+            end;
         false ->
             %% 先删除再插入
             #fto_root{num = ChildrenNum1, children = Child1} = Root1 = erase(OldLeaf, Root),
@@ -193,9 +202,10 @@ check_root_divide(ChildrenNum, Child) ->
 
 %% 仅更新
 store_update(_Key, _Leaf, [], _Reverse) ->
-    erlang:error(badarg);
+    false;
 store_update(Key, Leaf, [#fto_child{high = 2, max = Max, children = LeafList} = H | T], Reverse) ->
-    case not is_bigger(Key, Max) andalso lists:keymember(Leaf#fto_leaf.private_key, #fto_leaf.private_key, LeafList) of
+    IsBigger = is_bigger(Key, Max),
+    case not IsBigger andalso lists:keymember(Leaf#fto_leaf.private_key, #fto_leaf.private_key, LeafList) of
         true ->% 在这个节点
             LeafList1 = lists:keyreplace(Leaf#fto_leaf.private_key, #fto_leaf.private_key, LeafList, Leaf),
             H1 = H#fto_child{children = LeafList1},
@@ -208,9 +218,44 @@ store_update(Key, Leaf, [#fto_child{max = Max, children = Children} = H | T], Re
         true ->
             store_update(Key, Leaf, T, [H | Reverse]);
         false ->% 在这个节点
-            Children1 = store_update(Key, Leaf, Children, []),
-            H1 = H#fto_child{children = Children1},
-            lists:reverse(Reverse, [H1 | T])
+            case store_update(Key, Leaf, Children, []) of
+                false ->% 重复key
+                    store_update1(Key, Leaf, T, [H | Reverse]);
+                Children1 ->
+                    H1 = H#fto_child{children = Children1},
+                    lists:reverse(Reverse, [H1 | T])
+            end
+    end.
+
+%% 存在重复key, 跨节点
+store_update1(_Key, _Leaf, [], _Reverse) ->
+    false;
+store_update1(Key, Leaf, [#fto_child{high = 2, min = Min, children = LeafList} = H | T], Reverse) ->
+    case is_bigger(Min, Key) of
+        true ->% 不存在
+            erlang:error(badarg);
+        false ->
+            case lists:keymember(Leaf#fto_leaf.private_key, #fto_leaf.private_key, LeafList) of
+                true ->% 在这个节点
+                    LeafList1 = lists:keyreplace(Leaf#fto_leaf.private_key, #fto_leaf.private_key, LeafList, Leaf),
+                    H1 = H#fto_child{children = LeafList1},
+                    lists:reverse(Reverse, [H1 | T]);
+                false ->
+                    store_update1(Key, Leaf, T, [H | Reverse])
+            end
+    end;
+store_update1(Key, Leaf, [#fto_child{min = Min, children = Children} = H | T], Reverse) ->
+    case is_bigger(Min, Key) of
+        true ->% 不存在的key
+            throw(badarg);
+        false ->% 在这个节点
+            case store_update1(Key, Leaf, Children, []) of
+                false ->% 重复key
+                    store_update1(Key, Leaf, T, [H | Reverse]);
+                Children1 ->
+                    H1 = H#fto_child{children = Children1},
+                    lists:reverse(Reverse, [H1 | T])
+            end
     end.
 
 
@@ -469,25 +514,25 @@ data2leaf(Data) ->
 tree_test_() ->
     D100 =
         lists:foldl(fun(N, Acc) ->
-            fractal_tree_origin:store(undefined, N, Acc) end,
-            fractal_tree_origin:new(), lists:seq(1, 100)),
+            fractal_tree:store(undefined, N, Acc) end,
+            fractal_tree:new(), lists:seq(1, 100)),
     List100 =
-        fractal_tree_origin:fold(fun(N, Acc) ->
+        fractal_tree:fold(fun(N, Acc) ->
             [N | Acc]
                                  end, [], D100),
     D80 =
         lists:foldl(fun(N, Acc) ->
-            fractal_tree_origin:erase(N, Acc)
+            fractal_tree:erase(N, Acc)
                     end, D100, lists:seq(1, 20)),
     List80 =
-        fractal_tree_origin:fold(fun(N, Acc) ->
+        fractal_tree:fold(fun(N, Acc) ->
             [N | Acc]
                                  end, [], D80),
     [
         ?_assertEqual([N2 + N1 * 10 || N2 <- lists:seq(9, 1, -1) ++ [10], N1 <- lists:seq(0, 9)], List100),
         ?_assertEqual([N2 + N1 * 10 || N2 <- lists:seq(9, 1, -1) ++ [10], N1 <- lists:seq(2, 9)], List80),
-        ?_assertEqual([N * 10 + 1 || N <- lists:seq(0, 9)], fractal_tree_origin:lookup(1, D100)),
-        ?_assertEqual([N * 10 + 1 || N <- lists:seq(2, 9)], fractal_tree_origin:lookup(1, D80))
+        ?_assertEqual([N * 10 + 1 || N <- lists:seq(0, 9)], fractal_tree:lookup(1, D100)),
+        ?_assertEqual([N * 10 + 1 || N <- lists:seq(2, 9)], fractal_tree:lookup(1, D80))
     ].
 
 -endif.
