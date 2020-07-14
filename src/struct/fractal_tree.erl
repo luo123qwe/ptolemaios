@@ -5,7 +5,7 @@
 %%% 一颗分型树, 节点用列表实现
 %%  数据从小到大排序
 %%% 操作的数据越'靠前'效率越高, 适合热点数据增删和范围查询
-%%% 改造方向, 需要自己实现
+%%% 改造方向, 需要实现
 %%%     一, key不重复, 可以去掉重复key判断, lookup不再使用范围搜索
 %%%     二, 叶节点直接使用record, 去掉构造部分
 %%%     三, 逻辑最大最小值直接给定
@@ -511,7 +511,7 @@ data2leaf(Data) ->
 
 -include_lib("eunit/include/eunit.hrl").
 
-tree_test_() ->
+base_test_() ->
     D100 =
         lists:foldl(fun(N, Acc) ->
             fractal_tree:store(undefined, N, Acc) end,

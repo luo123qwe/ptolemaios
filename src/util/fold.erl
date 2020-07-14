@@ -11,7 +11,7 @@
 -include("util.hrl").
 
 %% API
--export([list_l/3, list_r/3, dict/3]).
+-export([list_l/3, list_r/3, dict/3, gb_trees_l/3, gb_trees_r/3, gb_trees_l/4, gb_trees_r/4]).
 
 %% @doc lists:foldl/3
 -spec list_l(Fun, Acc0, List) -> Acc1 when
@@ -55,11 +55,16 @@ list_r_1(F, Acc, [H | T]) ->
     case list_r_1(F, Acc, T) of
         ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
         ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
-        Acc1 -> F(H, Acc1)
+        Acc1 ->
+            case F(H, Acc1) of
+                ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc1);
+                ?UTIL_FOLD_BREAK(_Acc2) = Break -> Break;
+                Acc2 -> Acc2
+            end
     end.
 
 %% 从dict.erl复制来的, erl版本变化可能会有问题
--record(dict, {size, nmaxn, bso, exp_size, con_size, empty, segs}).
+-record(dict, {size, n, maxn, bso, exp_size, con_size, empty, segs}).
 -define(kv(K, V), [K | V]).            % Key-Value pair format
 %% @doc dict:fold/3
 -spec dict(Fun, Acc0, Dict) -> Acc1 when
@@ -103,12 +108,154 @@ fold_bucket(F, Acc, [?kv(Key, Val) | Bkt]) ->
     end;
 fold_bucket(F, Acc, []) when is_function(F, 3) -> Acc.
 
+%% 从gb_trees.erl复制来的, erl版本变化可能会有问题
+%% @doc 实际上似乎不太需要前后序遍历, 所以仅提供中序遍历</br>
+%% gb_trees, 左中右, 从小到大
+-spec gb_trees_l(Fun, Acc0, Tree) -> Acc1 when
+    Fun :: fun((K :: T, V :: T, AccIn) -> AccOut),
+    Acc0 :: term(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Tree :: gb_trees:tree(),
+    T :: term().
+gb_trees_l(F, Acc, {_, T}) when is_function(F, 3) ->
+    case gb_trees_l_1(F, Acc, T) of
+        ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+        Acc1 -> Acc1
+    end.
+
+gb_trees_l_1(F, Acc, {Key, Value, Small, Big}) ->
+    case gb_trees_l_1(F, Acc, Small) of
+        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
+        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        Acc1 ->
+            case F(Key, Value, Acc1) of
+                ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc1);
+                ?UTIL_FOLD_BREAK(_Acc2) = Break -> Break;
+                Acc2 ->
+                    case gb_trees_l_1(F, Acc2, Big) of
+                        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc2);
+                        ?UTIL_FOLD_BREAK(_Acc3) = Break -> Break;
+                        Acc3 -> Acc3
+                    end
+            end
+    end;
+gb_trees_l_1(_F, Acc, nil) -> Acc.
+
+%% @doc gb_trees, 左中右, 从小到大, 从Key >= Start开始遍历
+-spec gb_trees_l(Fun, Start, Acc0, Tree) -> Acc1 when
+    Fun :: fun((K :: T, V :: T, AccIn) -> AccOut),
+    Start :: term(),
+    Acc0 :: term(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Tree :: gb_trees:tree(),
+    T :: term().
+gb_trees_l(F, Start, Acc, {_, T}) when is_function(F, 3) ->
+    case gb_trees_l_1(F, Start, Acc, T) of
+        ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+        Acc1 -> Acc1
+    end.
+
+gb_trees_l_1(F, Start, Acc, {Key, _Value, _Small, Big}) when Key < Start ->
+    gb_trees_l_1(F, Start, Acc, Big);
+gb_trees_l_1(F, Start, Acc, {Key, Value, Small, Big}) ->
+    case gb_trees_l_1(F, Start, Acc, Small) of
+        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
+        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        Acc1 ->
+            case F(Key, Value, Acc1) of
+                ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc1);
+                ?UTIL_FOLD_BREAK(_Acc2) = Break -> Break;
+                Acc2 ->
+                    case gb_trees_l_1(F, Start, Acc2, Big) of
+                        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc2);
+                        ?UTIL_FOLD_BREAK(_Acc3) = Break -> Break;
+                        Acc3 -> Acc3
+                    end
+            end
+    end;
+gb_trees_l_1(_F, _Start, Acc, nil) -> Acc.
+
+%% @doc gb_trees, 右中左, 从大到小
+-spec gb_trees_r(Fun, Acc0, Tree) -> Acc1 when
+    Fun :: fun((K :: T, V :: T, AccIn) -> AccOut),
+    Acc0 :: term(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Tree :: gb_trees:tree(),
+    T :: term().
+gb_trees_r(F, Acc, {_, T}) when is_function(F, 3) ->
+    case gb_trees_r_1(F, Acc, T) of
+        ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+        Acc1 -> Acc1
+    end.
+
+gb_trees_r_1(F, Acc, {Key, Value, Small, Big}) ->
+    case gb_trees_r_1(F, Acc, Big) of
+        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
+        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        Acc1 ->
+            case F(Key, Value, Acc1) of
+                ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc1);
+                ?UTIL_FOLD_BREAK(_Acc2) = Break -> Break;
+                Acc2 ->
+                    case gb_trees_r_1(F, Acc2, Small) of
+                        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc2);
+                        ?UTIL_FOLD_BREAK(_Acc3) = Break -> Break;
+                        Acc3 -> Acc3
+                    end
+            end
+    end;
+gb_trees_r_1(_F, Acc, nil) -> Acc.
+
+
+%% @doc gb_trees, 右中左, 从大到小, 从Key =< Start开始遍历
+-spec gb_trees_r(Fun, Start, Acc0, Tree) -> Acc1 when
+    Fun :: fun((K :: T, V :: T, AccIn) -> AccOut),
+    Start :: term(),
+    Acc0 :: term(),
+    Acc1 :: term(),
+    AccIn :: term(),
+    AccOut :: term(),
+    Tree :: gb_trees:tree(),
+    T :: term().
+gb_trees_r(F, Start, Acc, {_, T}) when is_function(F, 3) ->
+    case gb_trees_r_1(F, Start, Acc, T) of
+        ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+        Acc1 -> Acc1
+    end.
+
+gb_trees_r_1(F, Start, Acc, {Key, _Value, Small, _Big}) when Key > Start ->
+    gb_trees_r_1(F, Start, Acc, Small);
+gb_trees_r_1(F, Start, Acc, {Key, Value, Small, Big}) ->
+    case gb_trees_r_1(F, Start, Acc, Big) of
+        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
+        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        Acc1 ->
+            case F(Key, Value, Acc1) of
+                ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc1);
+                ?UTIL_FOLD_BREAK(_Acc2) = Break -> Break;
+                Acc2 ->
+                    case gb_trees_r_1(F, Start, Acc2, Small) of
+                        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc2);
+                        ?UTIL_FOLD_BREAK(_Acc3) = Break -> Break;
+                        Acc3 -> Acc3
+                    end
+            end
+    end;
+gb_trees_r_1(_F, _Start, Acc, nil) -> Acc.
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 base_test_() ->
     Seq = lists:seq(1, 1000),
     Dict = fold:list_l(fun(N, Acc) -> dict:store(N, N, Acc) end, dict:new(), Seq),
+    GBTree = fold:list_l(fun(N, Acc) -> gb_trees:insert(N, N, Acc) end, gb_trees:empty(), Seq),
     [
         %% list_l
         ?_assertEqual(lists:reverse(Seq), fold:list_l(fun(N, Acc) -> [N | Acc] end, [], Seq)),
@@ -119,35 +266,86 @@ base_test_() ->
             end end, [], Seq)),
         ?_assertEqual(lists:seq(501, 1, -1), fold:list_l(fun(N, Acc) ->
             case N > 500 of
-                true -> ?UTIL_FOLD_BREAK(N);
+                true -> ?UTIL_FOLD_BREAK([N | Acc]);
                 _ -> [N | Acc]
             end end, [], Seq)),
         
         %% list_r
         ?_assertEqual(Seq, fold:list_r(fun(N, Acc) -> [N | Acc] end, [], Seq)),
-        ?_assertEqual(lists:seq(1, 500), fold:list_r(fun(N, Acc) ->
-            case N > 500 of
+        ?_assertEqual(lists:seq(500, 1000), fold:list_r(fun(N, Acc) ->
+            case N < 500 of
                 true -> ?UTIL_FOLD_BREAK;
                 _ -> [N | Acc]
             end end, [], Seq)),
-        ?_assertEqual(lists:seq(1, 501), fold:list_r(fun(N, Acc) ->
-            case N > 500 of
-                true -> ?UTIL_FOLD_BREAK(N);
+        ?_assertEqual(lists:seq(499, 1000), fold:list_r(fun(N, Acc) ->
+            case N < 500 of
+                true -> ?UTIL_FOLD_BREAK([N | Acc]);
                 _ -> [N | Acc]
             end end, [], Seq)),
         
         %% dict
-        ?_assertEqual(Seq, lists:sort(fold:dict(fun(N, Acc) -> [N | Acc] end, [], Dict))),
-        ?_assertEqual(500, length(fold:dict(fun(N, Acc) ->
+        ?_assertEqual(Seq, lists:sort(fold:dict(fun(_, N, Acc) -> [N | Acc] end, [], Dict))),
+        ?_assertEqual([], fold:dict(fun(_, _N, _Acc) -> ?UTIL_FOLD_BREAK end, [], Dict)),
+        ?_assertEqual(500, fold:dict(fun(_, N, Acc) ->
+            case N == 500 of
+                true -> ?UTIL_FOLD_BREAK(N);
+                _ -> Acc
+            end end, [], Dict)),
+        
+        %% gb_trees_l
+        ?_assertEqual(lists:reverse(Seq), fold:gb_trees_l(fun(_, N, Acc) -> [N | Acc] end, [], GBTree)),
+        ?_assertEqual(lists:seq(500, 1, -1), fold:gb_trees_l(fun(_, N, Acc) ->
             case N > 500 of
                 true -> ?UTIL_FOLD_BREAK;
                 _ -> [N | Acc]
-            end end, [], Dict))),
-        ?_assertEqual(lists:seq(1, 501), length(fold:dict(fun(N, Acc) ->
+            end end, [], GBTree)),
+        ?_assertEqual(lists:seq(501, 1, -1), fold:gb_trees_l(fun(_, N, Acc) ->
             case N > 500 of
-                true -> ?UTIL_FOLD_BREAK(N);
+                true -> ?UTIL_FOLD_BREAK([N | Acc]);
                 _ -> [N | Acc]
-            end end, [], Dict)))
+            end end, [], GBTree)),
+        
+        %% gb_trees_r
+        ?_assertEqual(Seq, fold:gb_trees_r(fun(_, N, Acc) -> [N | Acc] end, [], GBTree)),
+        ?_assertEqual(lists:seq(500, 1000), fold:gb_trees_r(fun(_, N, Acc) ->
+            case N < 500 of
+                true -> ?UTIL_FOLD_BREAK;
+                _ -> [N | Acc]
+            end end, [], GBTree)),
+        ?_assertEqual(lists:seq(499, 1000), fold:gb_trees_r(fun(_, N, Acc) ->
+            case N < 500 of
+                true -> ?UTIL_FOLD_BREAK([N | Acc]);
+                _ -> [N | Acc]
+            end end, [], GBTree)),
+        
+        %% gb_trees_l/4
+        ?_assertEqual(lists:reverse(lists:seq(500, 1000)),
+            fold:gb_trees_l(fun(_, N, Acc) ->
+                [N | Acc]
+                            end, 500, [], GBTree)),
+        ?_assertEqual(lists:seq(500, 200, -1), fold:gb_trees_l(fun(_, N, Acc) ->
+            case N > 500 of
+                true -> ?UTIL_FOLD_BREAK;
+                _ -> [N | Acc]
+            end end, 200, [], GBTree)),
+        ?_assertEqual(lists:seq(501, 200, -1), fold:gb_trees_l(fun(_, N, Acc) ->
+            case N > 500 of
+                true -> ?UTIL_FOLD_BREAK([N | Acc]);
+                _ -> [N | Acc]
+            end end, 200, [], GBTree)),
+        
+        %% gb_trees_r/4
+        ?_assertEqual(lists:seq(1, 500), fold:gb_trees_r(fun(_, N, Acc) -> [N | Acc] end, 500, [], GBTree)),
+        ?_assertEqual(lists:seq(500, 700), fold:gb_trees_r(fun(_, N, Acc) ->
+            case N < 500 of
+                true -> ?UTIL_FOLD_BREAK;
+                _ -> [N | Acc]
+            end end, 700, [], GBTree)),
+        ?_assertEqual(lists:seq(499, 700), fold:gb_trees_r(fun(_, N, Acc) ->
+            case N < 500 of
+                true -> ?UTIL_FOLD_BREAK([N | Acc]);
+                _ -> [N | Acc]
+            end end, 700, [], GBTree))
     ].
 
 -endif.
