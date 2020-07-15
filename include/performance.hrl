@@ -1,4 +1,4 @@
--record(performan_struct, {
+-record(performance_fractal_tree, {
     size,
     %% 对ets有影响, {N,N,N....}
     record_size,

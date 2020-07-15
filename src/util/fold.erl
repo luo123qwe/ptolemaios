@@ -63,7 +63,7 @@ list_r_1(F, Acc, [H | T]) ->
             end
     end.
 
-%% 从dict.erl复制来的, erl版本变化可能会有问题
+%% 从dict.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
 -record(dict, {size, n, maxn, bso, exp_size, con_size, empty, segs}).
 -define(kv(K, V), [K | V]).            % Key-Value pair format
 %% @doc dict:fold/3
@@ -108,7 +108,7 @@ fold_bucket(F, Acc, [?kv(Key, Val) | Bkt]) ->
     end;
 fold_bucket(F, Acc, []) when is_function(F, 3) -> Acc.
 
-%% 从gb_trees.erl复制来的, erl版本变化可能会有问题
+%% 从gb_trees.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
 %% @doc 实际上似乎不太需要前后序遍历, 所以仅提供中序遍历</br>
 %% gb_trees, 左中右, 从小到大
 -spec gb_trees_l(Fun, Acc0, Tree) -> Acc1 when

@@ -4,24 +4,24 @@
 %%% 数据结构性能测试
 %%% @end
 %%%-------------------------------------------------------------------
--module(performan_fractal_tree).
+-module(performance_fractal_tree).
 -author("dominic").
 
 -include("util.hrl").
--include("performan.hrl").
+-include("performance.hrl").
 
 %% API
 -export([run/1]).
 
-run(#performan_struct{} = Performan) ->
+run(#performance_fractal_tree{} = Performan) ->
     io:format("~200p~n~200p~n~200p~n", [
-        lists:zip(record_info(fields, performan_struct), tl(tuple_to_list(Performan))),
+        lists:zip(record_info(fields, performance_fractal_tree), tl(tuple_to_list(Performan))),
         gb_trees(Performan),
         %% 分形树会有各种额外消耗, 优化后效率可以大幅提高
         fractal_tree(Performan)
     ]).
 
-gb_trees(#performan_struct{
+gb_trees(#performance_fractal_tree{
     size = Size,
     record_size = RecordSize,
     build_times = BuildTimes,
@@ -128,7 +128,7 @@ gb_trees_sub2(Len, Itor) ->
     end.
 
 
-fractal_tree(#performan_struct{
+fractal_tree(#performance_fractal_tree{
     size = Size,
     record_size = RecordSize,
     build_times = BuildTimes,
