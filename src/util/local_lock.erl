@@ -29,7 +29,7 @@
 %% @doc 初始化ets
 -spec init_ets() -> ok.
 init_ets() ->
-    ets_local_lock = ets:new(ets_local_lock, [public, named_table, {keypos, #local_lock.key}]),
+    ?ETS_LOCAL_LOCK = ets:new(?ETS_LOCAL_LOCK, [public, named_table, {keypos, #local_lock.key}]),
     ok.
 
 %% @equiv is_lock(Key, self())
@@ -39,7 +39,7 @@ is_lock(Key) ->
 %% @doc 是否已经上锁
 -spec is_lock(term(), term()) -> boolean().
 is_lock(Key, Owner) ->
-    (catch ets:lookup_element(ets_local_lock, Key, #local_lock.owner)) == Owner.
+    (catch ets:lookup_element(?ETS_LOCAL_LOCK, Key, #local_lock.owner)) == Owner.
 
 %% @equiv lock(Key, self())
 lock(Key) ->
@@ -49,7 +49,7 @@ lock(Key) ->
 %% 已获取锁时依然返回fail
 -spec lock(term(), term()) -> fail|lock.
 lock(Key, Owner) ->
-    case ets:update_counter(ets_local_lock, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of
+    case ets:update_counter(?ETS_LOCAL_LOCK, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of
         1 ->% lock
             lock;
         _ ->
@@ -67,7 +67,7 @@ lock(Key, Interval, Times) ->
 lock(_Key, _Owner, _Interval, Times) when Times =< 0 ->
     fail;
 lock(Key, Owner, Interval, Times) ->
-    case ets:update_counter(ets_local_lock, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of
+    case ets:update_counter(?ETS_LOCAL_LOCK, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of
         1 ->% lock
             lock;
         _ ->
@@ -84,7 +84,7 @@ release(Key) ->
 release(Key, Owner) ->
     case is_lock(Key, Owner) of
         true ->
-            ets:delete(ets_local_lock, Key),
+            ets:delete(?ETS_LOCAL_LOCK, Key),
             release;
         false ->
             erlang:error(not_owner)
@@ -99,11 +99,11 @@ force_lock(Key) ->
 %%%% 已获取锁时会重新获取锁
 -spec force_lock(term(), term()) -> lock|force_lock|fail.
 force_lock(Key, Owner) ->
-    case ets:update_counter(ets_local_lock, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of
+    case ets:update_counter(?ETS_LOCAL_LOCK, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of
         1 ->% lock
             lock;
         _ ->
-            ets:delete(ets_local_lock, Key),
+            ets:delete(?ETS_LOCAL_LOCK, Key),
             case ets:insert_new(Key, #local_lock{key = Key, owner = Owner, lock = 1}) of
                 true -> force_lock;
                 false -> fail
@@ -120,10 +120,10 @@ force_release(Key) ->
 force_release(Key, Owner) ->
     case is_lock(Key, Owner) of
         true ->
-            ets:delete(ets_local_lock, Key),
+            ets:delete(?ETS_LOCAL_LOCK, Key),
             release;
         false ->
-            ets:delete(ets_local_lock, Key),
+            ets:delete(?ETS_LOCAL_LOCK, Key),
             force_release
     end.
 
@@ -135,7 +135,7 @@ base_test_() ->
     [
         {setup,
             fun() -> local_lock:init_ets() end,
-            fun(_) -> ets:delete(ets_local_lock) end,
+            fun(_) -> ets:delete(?ETS_LOCAL_LOCK) end,
             fun(_X) ->
                 [
                     ?_assertEqual(lock, local_lock:lock(a)),

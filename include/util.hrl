@@ -55,6 +55,7 @@
 
 
 %% 本地节点锁
+-define(ETS_LOCAL_LOCK, ets_local_lock).
 -record(local_lock, {
     key,
     owner,

@@ -6,6 +6,9 @@
 -define(VIRTURE_STATE_DELETE, 0).
 -define(VIRTURE_STATE_INSERT, 1).
 
+-define(PD_VIRTURE_CHANGE, pd_virture_change).
+-define(PD_VIRTURE_CACHE, pd_virture_cache).
+
 
 %% field
 -record(virture_field, {

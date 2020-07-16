@@ -40,9 +40,9 @@ lookup(Table, Key) ->
     end.
 
 get_from_cahnge(Key, Table) ->
-    case get(pd_virture_change) of
+    case get(?PD_VIRTURE_CHANGE) of
         undefined ->
-            put(pd_virture_change, []),
+            put(?PD_VIRTURE_CHANGE, []),
             undefined;
         TableChangeList ->
             case lists:keyfind(Table, 1, TableChangeList) of
@@ -60,7 +60,7 @@ get_from_cahnge(Key, Table) ->
     end.
 
 get_from_cache(Key, Table) ->
-    case get({pd_virture_cache, Table}) of
+    case get({?PD_VIRTURE_CACHE, Table}) of
         undefined ->
             Virture = init_virture(Key, virture_config:get(Table));
         Virture -> ok
@@ -108,7 +108,7 @@ init_virture(Key, #virture{table = Table, all_fields = AllField} = Virture) ->
         delete_sql = make_delete_sql(Virture)
     },
     Virture2 = init_data(Key, Virture1),
-    put({pd_virture_cache, Table}, Virture2),
+    put({?PD_VIRTURE_CACHE, Table}, Virture2),
     Virture2.
 
 make_where_sql(Virture) ->
