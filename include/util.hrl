@@ -77,3 +77,9 @@
 -define(LOG_INFO(Format, Args), logger:info(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_DEBUG(Format), logger:debug(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_DEBUG(Format, Args), logger:debug(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
+
+%% kv_op, 默认值, 详情看kv_op.erl -type default()
+-define(KV_OP_DEF(F), {kv_op_def, F}).
+-define(KV_OP_DEF(MOrF, FOrA), {kv_op_def, MOrF, FOrA}).
+-define(KV_OP_DEF(M, F, A), {kv_op_def, M, F, A}).
+-define(KV_OP_DEF, '_').

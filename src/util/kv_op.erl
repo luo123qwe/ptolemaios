@@ -7,6 +7,8 @@
 -module(kv_op).
 -author("dominic").
 
+-include("util.hrl").
+
 %% 效率损耗, 判断数据类型和存储的时候会再次查找一遍
 %% 主要解决深嵌套时的查询和更改
 %% 支持 tuple_list, map, tuple, map, dict, ets
@@ -44,9 +46,9 @@
 %% 默认值
 -type default() ::
 %% 支持apply/2,3, 所以不可以存储以下元组
-{kv_op, M :: atom(), F :: atom()}|{kv_op, M :: atom(), F :: atom(), A :: list()}
-|{kv_op, F :: function()}|{kv_op, F :: atom(), A :: list()}
-|'_'% '_'代表该值必定存在, 不存在的话会报错
+?KV_OP_DEF(M, F)|?KV_OP_DEF(M, F, A)
+|?KV_OP_DEF(F)|?KV_OP_DEF(F, A)
+|?KV_OP_DEF% '_'代表该值必定存在, 不存在的话会报错
 |term().% 默认值
 
 %% 数学运算
@@ -168,15 +170,15 @@ store([{Key, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Str
 store(Key, Value, Struct) ->
     store([{Key, undefined}], Value, Struct).
 
-make_default({kv_op, M, F}, _Key) when is_atom(M), is_atom(F) ->
+make_default(?KV_OP_DEF(M, F), _Key) when is_atom(M), is_atom(F) ->
     apply(M, F, []);
-make_default({kv_op, M, F, A}, _Key) ->
+make_default(?KV_OP_DEF(M, F, A), _Key) ->
     apply(M, F, A);
-make_default({kv_op, F}, _Key) when is_function(F) ->
+make_default(?KV_OP_DEF(F), _Key) when is_function(F) ->
     apply(F, []);
-make_default({kv_op, F, A}, _Key) when is_function(F) ->
+make_default(?KV_OP_DEF(F, A), _Key) when is_function(F) ->
     apply(F, A);
-make_default('_', Key) ->
+make_default(?KV_OP_DEF, Key) ->
     throw({noexist, Key});
 make_default(Term, _Key) ->
     Term.
@@ -512,7 +514,7 @@ base_test_() ->
                             {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
                             {3, '_'},
                             {2, '_'},
-                            {map, dict:new()},
+                            {map, ?KV_OP_DEF(dict, new)},
                             {dict, ?MODULE},
                             {lookup, {lookup, default}}
                         ], {lookup, ok}, [])),
@@ -566,7 +568,7 @@ base_test_() ->
                     {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
                     {3, '_'},
                     {2, '_'},
-                    {map, dict:new()},
+                    {map, ?KV_OP_DEF(dict, new)},
                     {dict, ?MODULE},
                     {lookup, {lookup, default}}
                 ], [], undefined)),
