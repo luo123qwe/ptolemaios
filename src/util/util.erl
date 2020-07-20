@@ -10,7 +10,7 @@
 
 -include("util.hrl").
 
--export([eval/1, current_log_index/0]).
+-export([eval/1]).
 
 
 %% @doc 执行一条erlang语句
@@ -27,12 +27,3 @@ eval_fix_string([$.]) ->
     [$.];
 eval_fix_string([H | T]) ->
     [H | eval_fix_string(T)].
-
-%% @doc 当前日志索引
-current_log_index()->
-    case disk_log:info(ptolemaios) of
-        {error, _} ->
-            disk_log_down;
-        Info ->
-            element(2, lists:keyfind(current_file, 1, Info))
-    end.
