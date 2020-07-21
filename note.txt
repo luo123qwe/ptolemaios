@@ -105,3 +105,5 @@ virture
     接入gpb, 让服务器先起来再说
     配置表, erl客户端, 性能测试
 
+2020/7/21
+re:run(B, "message\s*([A-z0-9_]*)\s*{//\s*([0-9]*)",[global, multiline, {capture,[1,2], binary}]).

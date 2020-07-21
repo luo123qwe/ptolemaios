@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-message proto_test {
-  string str = 1;
-  uint32 ui32 = 2;
-  repeated string rp_str = 3;
-  repeated uint32 rp_ui32 = 4;
-}
