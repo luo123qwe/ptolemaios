@@ -106,4 +106,17 @@ virture
     配置表, erl客户端, 性能测试
 
 2020/7/21
-re:run(B, "message\s*([A-z0-9_]*)\s*{//\s*([0-9]*)",[global, multiline, {capture,[1,2], binary}]).
+自动执行pre和post的escript
+proto 规则
+    设计上
+        <<长度:16, 协议号:16, Bin/binary>>
+        协议号 = index * 100 + id
+        99*99应该够用了, 不够直接32位就好
+    模块文件名, [module]_[index].proto, index方便看所以写在外面
+    import文件名, [module]_i.proto
+    message格式符合
+        ".*?_[0-9]+\.proto", 即
+        message [name]{// [协议号]
+        就会自动生成proto_mapping的代码
+    自动生成, proto_mapping.erl和[module]_[index]_handle.erl
+    index=0, 保留
