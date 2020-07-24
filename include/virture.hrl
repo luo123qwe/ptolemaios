@@ -9,9 +9,8 @@
 -define(PD_VIRTURE_CHANGE, pd_virture_change).
 -define(PD_VIRTURE_CACHE, pd_virture_cache).
 
-
 %% field
--record(virture_field, {
+-record(virture_mysql_field, {
     name :: atom(),
     type :: virture:field_type(),
     pos :: integer(),
@@ -19,12 +18,13 @@
 }).
 
 %% table
--record(virture, {
+-record(virture_mysql, {
     %% 配置项
+    pool :: atom(),% 使用的池子
     table :: atom(),% 数据表名和mysql一样
-    select_key :: [],% 数据库搜索全部数据用的key, 默认player_id
+    select_key :: [],% 数据库搜索全部数据用的key
     private_key :: [],% 数据的主键
-    all_fields :: [#virture_field{}],% 所有行的定义
+    all_fields :: [#virture_mysql_field{}],% 所有列的定义
     record_size :: integer(),% record的定义
     init_fun :: undefined|{M :: atom(), F :: atom()},% fun((Record) -> Record1)
     data :: dict:dict()|list(),% 数据record存储类型

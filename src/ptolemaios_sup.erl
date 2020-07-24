@@ -36,31 +36,11 @@ init([]) ->
         period => 5
     },
     
-    %% 初始化一些不需要挂进程的东西
     local_lock:init_ets(),
     
     %% 子进程
-    %% MYSQL
-    MysqlSpecs = make_mysql_specs(),
-    ?DO_IF(MysqlSpecs =/= [], virture:init_ets()),
-    
-    ChildSpecs = MysqlSpecs,
+    ChildSpecs = virture_config:get_sup_spec(mysql),
     
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions
-make_mysql_specs() ->
-    try
-        {ok, User} = application:get_env(ptolemaios, mysql_user),
-        {ok, Password} = application:get_env(ptolemaios, mysql_password),
-        {ok, Database} = application:get_env(ptolemaios, mysql_database),
-        PoolOptions = [{size, 50}, {max_overflow, 100}],
-        MySqlOptions = [{user, User}, {password, Password}, {database, Database},
-            {keep_alive, true},
-            {prepare, [{test, "SELECT * FROM player WHERE id=?"}]}],
-        [mysql_poolboy:child_spec(virture, PoolOptions, MySqlOptions)]
-    catch
-        C:E ->
-            ?LOG_WARNING("bad mysql config, ~p", [{C, E}]),
-            []
-    end.
