@@ -41,9 +41,9 @@ lookup(Table, Key) ->
     end.
 
 get_from_cahnge(Key, Table) ->
-    case get(?PD_VIRTURE_CHANGE) of
+    case get(?PD_VMYSQL_CHANGE) of
         undefined ->
-            put(?PD_VIRTURE_CHANGE, []),
+            put(?PD_VMYSQL_CHANGE, []),
             undefined;
         TableChangeList ->
             case lists:keyfind(Table, 1, TableChangeList) of
@@ -61,12 +61,12 @@ get_from_cahnge(Key, Table) ->
     end.
 
 get_from_cache(Key, Table) ->
-    case get({?PD_VIRTURE_CACHE, Table}) of
+    case get({?PD_VMYSQL_CACHE, Table}) of
         undefined ->
             Virture = init_virture(Key, virture_config:get(mysql, Table));
         Virture -> ok
     end,
-    get_from_data(Key, Virture#virture_mysql.data).
+    get_from_data(Key, Virture#vmysql.data).
 
 get_from_data(Key, List) when is_list(List) ->
     case lists:keyfind(Key, 1, List) of
@@ -95,13 +95,13 @@ fold_data_list(F, Acc, [{K, V} | T]) ->
     fold_data_list(F, F(K, V, Acc), T).
 
 make_ets_name(Virture) ->
-    list_to_atom("ets_" ++ atom_to_list(Virture#virture_mysql.table)).
+    list_to_atom("ets_" ++ atom_to_list(Virture#vmysql.table)).
 
-init_virture(Key, #virture_mysql{table = Table, all_fields = AllField} = Virture) ->
+init_virture(Key, #vmysql{table = Table, all_fields = AllField} = Virture) ->
     %% 初始化优化sql
-    Virture1 = Virture#virture_mysql{
-        private_key = [lists:keyfind(Field, #virture_mysql_field.name, AllField) || Field <- Virture#virture_mysql.private_key],
-        select_key = [lists:keyfind(Field, #virture_mysql_field.name, AllField) || Field <- Virture#virture_mysql.select_key],
+    Virture1 = Virture#vmysql{
+        private_key = [lists:keyfind(Field, #vmysql_field.name, AllField) || Field <- Virture#vmysql.private_key],
+        select_key = [lists:keyfind(Field, #vmysql_field.name, AllField) || Field <- Virture#vmysql.select_key],
         where_sql = make_where_sql(Virture),
         select_sql = make_select_sql(Virture),
         insert_sql = make_insert_sql(Virture),
@@ -109,11 +109,11 @@ init_virture(Key, #virture_mysql{table = Table, all_fields = AllField} = Virture
         delete_sql = make_delete_sql(Virture)
     },
     Virture2 = init_data(Key, Virture1),
-    put({?PD_VIRTURE_CACHE, Table}, Virture2),
+    put({?PD_VMYSQL_CACHE, Table}, Virture2),
     Virture2.
 
 make_where_sql(Virture) ->
-    case Virture#virture_mysql.private_key of
+    case Virture#vmysql.private_key of
         [H] ->
             [" WHERE " ++ atom_to_list(H) ++ "="];
         [H | T] ->
@@ -123,22 +123,21 @@ make_where_sql(Virture) ->
     end.
 
 make_select_sql(Virture) ->
-    AllField = string:join([atom_to_list(VK#virture_mysql_field.name) || VK <- Virture#virture_mysql.all_fields], ","),
-    "SELECT " ++ AllField ++ " FROM " ++ atom_to_list(Virture#virture_mysql.table).
+    AllField = string:join([atom_to_list(VK#vmysql_field.name) || VK <- Virture#vmysql.all_fields], ","),
+    "SELECT " ++ AllField ++ " FROM " ++ atom_to_list(Virture#vmysql.table).
 
 make_insert_sql(Virture) ->
-    AllField = string:join([atom_to_list(VK#virture_mysql_field.name) || VK <- Virture#virture_mysql.all_fields], ","),
-    ["INSERT " ++ atom_to_list(Virture#virture_mysql.table) ++ " (" ++ AllField ++ ")VALUES"].
+    AllField = string:join([atom_to_list(VK#vmysql_field.name) || VK <- Virture#vmysql.all_fields], ","),
+    ["INSERT " ++ atom_to_list(Virture#vmysql.table) ++ " (" ++ AllField ++ ")VALUES"].
 
 make_update_sql(Virture) ->
-    "UPDATE " ++ atom_to_list(Virture#virture_mysql.table) ++ " SET ".
+    "UPDATE " ++ atom_to_list(Virture#vmysql.table) ++ " SET ".
 
 make_delete_sql(Virture) ->
-    "DELETE FROM " ++ atom_to_list(Virture#virture_mysql.table).
+    "DELETE FROM " ++ atom_to_list(Virture#vmysql.table).
 
 init_data(Key, Virture) ->
-    #virture_mysql{
-        pool = Pool,
+    #vmysql{
         private_key = PrivateKey, select_key = SelectKey,
         where_sql = WhereSql, select_sql = SelectSql,
         data = VData, init_fun = InitFun
@@ -149,34 +148,34 @@ init_data(Key, Virture) ->
         [] ->
             ValueList = [lists:nth(get_nth(Field, PrivateKey, 1), Key) || Field <- SelectKey],
             WhereSql1 = join_where(WhereSql, SelectKey, ValueList),
-            {ok, _ColumnNames, Rows} = mysql_poolboy:query(Pool, [SelectSql, WhereSql1]),
+            {ok, _ColumnNames, Rows} = mysql_poolboy:query(?PD_VMYSQL_POOL, [SelectSql, WhereSql1]),
             Data =
                 lists:foldl(fun(Row, Acc) ->
                     Record = init_record(InitFun, Row, Virture),
-                    K = [element(Pos, Record) || #virture_mysql_field{pos = Pos} <- PrivateKey],
+                    K = [element(Pos, Record) || #vmysql_field{pos = Pos} <- PrivateKey],
                     set_to_data(K, Record, Acc)
                             end, VData, Rows),
             %% 全部初始化成功再放到ets
             fold_data(fun(K, Value, _Acc) ->
                 ets:insert(EtsName, {K, Value})
                       end, Virture, Data),
-            Virture#virture_mysql{data = Data};
+            Virture#vmysql{data = Data};
         EtsData ->
             Data =
                 lists:foldl(fun(Record, Acc) ->
-                    K = [element(Pos, Record) || #virture_mysql_field{pos = Pos} <- PrivateKey],
+                    K = [element(Pos, Record) || #vmysql_field{pos = Pos} <- PrivateKey],
                     set_to_data(K, Record, Acc)
                             end, VData, EtsData),
-            Virture#virture_mysql{data = Data}
+            Virture#vmysql{data = Data}
     end.
 
 make_ets_key_spec(Key, Virture) ->
-    make_ets_key_spec(Key, Virture#virture_mysql.private_key, Virture#virture_mysql.select_key).
+    make_ets_key_spec(Key, Virture#vmysql.private_key, Virture#vmysql.select_key).
 
 make_ets_key_spec([], [], _SelectKey) ->
     [];
-make_ets_key_spec([Value | ValueT], [#virture_mysql_field{name = Name} | PKT], SelectKey) ->
-    case lists:keymember(Name, #virture_mysql_field.name, SelectKey) of
+make_ets_key_spec([Value | ValueT], [#vmysql_field{name = Name} | PKT], SelectKey) ->
+    case lists:keymember(Name, #vmysql_field.name, SelectKey) of
         true ->
             [Value | make_ets_key_spec(ValueT, PKT, SelectKey)];
         _ ->
@@ -185,14 +184,14 @@ make_ets_key_spec([Value | ValueT], [#virture_mysql_field{name = Name} | PKT], S
 
 get_nth(_Field, [], _N) ->
     erlang:error(bad_field);
-get_nth(#virture_mysql_field{name = Find}, [#virture_mysql_field{name = Find} | _T], N) ->
+get_nth(#vmysql_field{name = Find}, [#vmysql_field{name = Find} | _T], N) ->
     N;
 get_nth(Field, [_ | T], N) ->
     get_nth(Field, T, N + 1).
 
 join_where([], [], []) ->
     [];
-join_where([SqlH | SqlT], [#virture_mysql_field{type = Type} | FieldT], [Value | ValueT]) ->
+join_where([SqlH | SqlT], [#vmysql_field{type = Type} | FieldT], [Value | ValueT]) ->
     [SqlH, encode(Type, Value) | join_where(SqlT, FieldT, ValueT)].
 
 encode(to_string, Value) ->
@@ -210,13 +209,13 @@ decode(_, Value) ->
     Value.
 
 init_record(Init, Row, Virture) ->
-    BaseRecord = erlang:make_tuple(Virture#virture_mysql.record_size, undefined, [{1, Virture#virture_mysql.table}]),
-    init_record(Init, Row, Virture#virture_mysql.all_fields, BaseRecord).
+    BaseRecord = erlang:make_tuple(Virture#vmysql.record_size, undefined, [{1, Virture#vmysql.table}]),
+    init_record(Init, Row, Virture#vmysql.all_fields, BaseRecord).
 
 init_record(InitFun, [], [], Record) ->
     case InitFun of
         {M, F} -> M:F(Record);
         _ -> Record
     end;
-init_record(InitFun, [Value | ValueT], [#virture_mysql_field{pos = Pos, type = Type} | FieldT], Record) ->
+init_record(InitFun, [Value | ValueT], [#vmysql_field{pos = Pos, type = Type} | FieldT], Record) ->
     init_record(InitFun, ValueT, FieldT, setelement(Pos, Record, decode(Type, Value))).

@@ -20,26 +20,26 @@ get_sup_spec(mysql) ->
     [#{id => virture_mysql, start => {virture_mysql_sup, start_link, []}, type => supervisor}].
 
 %% @doc 所有#virture写在这里
--spec all(mysql) -> [#virture_mysql{}].
+-spec all(mysql) -> [#vmysql{}].
 all(mysql) ->
-    Base = #virture_mysql{pool = virture_mysql},
     [
-        Base#virture_mysql{
+        #vmysql{
             table = player,
+            private_pos_key = #player.id,
             select_key = [id],
             private_key = [id],
             all_fields = [
-                #virture_mysql_field{name = id, pos = #player.id, type = uint32, default = 0},
-                #virture_mysql_field{name = account, pos = #player.account, type = string, default = <<>>},
-                #virture_mysql_field{name = password, pos = #player.password, type = string, default = <<>>}
+                #vmysql_field{name = id, pos = #player.id, type = uint32, default = 0},
+                #vmysql_field{name = account, pos = #player.account, type = string, default = <<>>},
+                #vmysql_field{name = password, pos = #player.password, type = string, default = <<>>}
             ],
-            record_size = 4,
+            record_size = record_info(size, player),
             data = []
         }
     ].
 
 
 %% @doc 获取某个table的定义
--spec get(mysql, atom()) -> #virture_mysql{}|false.
+-spec get(mysql, atom()) -> #vmysql{}|false.
 get(mysql, Table) ->
-    lists:keyfind(Table, #virture_mysql.table, all(mysql)).
+    lists:keyfind(Table, #vmysql.table, all(mysql)).
