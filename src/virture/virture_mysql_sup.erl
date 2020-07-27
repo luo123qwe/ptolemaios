@@ -9,6 +9,7 @@
 -behaviour(supervisor).
 
 -include("util.hrl").
+-include("virture.hrl").
 
 -export([start_link/0, init/1]).
 
@@ -36,7 +37,7 @@ make_mysql_specs() ->
         MySqlOptions = [{user, User}, {password, Password}, {database, Database},
             {keep_alive, true},
             {prepare, [{test, "SELECT * FROM player WHERE id=?"}]}],
-        [mysql_poolboy:child_spec(virture_mysql, PoolOptions, MySqlOptions)]
+        [mysql_poolboy:child_spec(?VMYSQL_POOL, PoolOptions, MySqlOptions)]
     catch
         C:E ->
             ?LOG_WARNING("bad mysql config, ~p", [{C, E}]),

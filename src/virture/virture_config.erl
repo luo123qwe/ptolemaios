@@ -25,7 +25,8 @@ all(mysql) ->
     [
         #vmysql{
             table = player,
-            private_pos_key = #player.id,
+            private_key_pos = #player.virture_key,
+            state_pos = #player.virture_state,
             select_key = [id],
             private_key = [id],
             all_fields = [
@@ -34,7 +35,8 @@ all(mysql) ->
                 #vmysql_field{name = password, pos = #player.password, type = string, default = <<>>}
             ],
             record_size = record_info(size, player),
-            data = []
+            data = ?VIRTURE_LIST,
+            sync_size = 1
         }
     ].
 
