@@ -14,7 +14,7 @@
 
 -include("virture.hrl").
 
--export([init_ets/0, lookup/2, insert/1, on_msg_end/0]).
+-export([init_ets/0, lookup/2, insert/1, on_msg_end/0, delete/2]).
 
 -type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary.
 -export_type([field_type/0]).
@@ -97,7 +97,7 @@ insert(Record) ->
             Record2 = setelement(PrivateKeyPos, Record1, Key),
             Change = insert_make_change(Key, Record2, ConfigVirture),
             put(?PD_VMYSQL_CHANGE, [Change | get(?PD_VMYSQL_CHANGE)]),
-            insert_check_sync(1, Virture);
+            check_sync(1, Virture);
         Virture ->
             #vmysql{state_pos = StatePos, private_key_pos = PrivateKeyPos} = Virture,
             Record1 = setelement(StatePos, Record, ?VIRTURE_STATE_REPLACE),
@@ -109,13 +109,13 @@ insert(Record) ->
                     Data1 = set_to_data(Key, PrivateKeyPos, Record1, Data),
                     Change1 = Change#vmysql_change{data = Data1},
                     put(?PD_VMYSQL_CHANGE, [Change1 | ChangeList1]),
-                    insert_check_sync(data_size(Data1), Virture);
+                    check_sync(data_size(Data1), Virture);
                 _ ->
                     ConfigVirture = virture_config:get(mysql, Table),
                     Record2 = setelement(PrivateKeyPos, Record1, Key),
                     Change = insert_make_change(Key, Record2, ConfigVirture),
                     put(?PD_VMYSQL_CHANGE, [Change | get(?PD_VMYSQL_CHANGE)]),
-                    insert_check_sync(1, Virture)
+                    check_sync(1, Virture)
             end
     end.
 
@@ -128,7 +128,7 @@ insert_make_change(Key, Record, ConfigVirture) ->
         data = set_to_data(Key, ConfigVirture#vmysql.private_key_pos, Record, ConfigVirture#vmysql.data)
     }.
 
-insert_check_sync(CurrentSize, #vmysql{table = Table, sync_size = SyncSize}) ->
+check_sync(CurrentSize, #vmysql{table = Table, sync_size = SyncSize}) ->
     case CurrentSize >= SyncSize of
         true ->
             case get(?PD_VMYSQL_FLUSH) of
@@ -142,6 +142,29 @@ insert_check_sync(CurrentSize, #vmysql{table = Table, sync_size = SyncSize}) ->
             end;
         _ -> skip
     end.
+
+delete(Table, Key) when is_list(Key) ->
+    ChangeList = get_change(Table, Key),
+    #vmysql{
+        record_size = RecordSize,
+        private_key_pos = PrivateKeyPos,
+        state_pos = StatePos
+    } = Virture = get({?PD_VMYSQL_CACHE, Table}),
+    %% 构造record
+    Record = erlang:make_tuple(RecordSize, undefined, [{1, Table}, {PrivateKeyPos, Key}, {StatePos, ?VIRTURE_STATE_DELETE}]),
+    case lists:keytake(Table, #vmysql_change.table, ChangeList) of
+        {value, #vmysql_change{data = Data} = Change, ChangeList1} ->
+            Data1 = set_to_data(Key, PrivateKeyPos, Record, Data),
+            Change1 = Change#vmysql_change{data = Data1};
+        _ ->
+            ConfigVirture = virture_config:get(mysql, Table),
+            Change1 = insert_make_change(Key, Record, ConfigVirture),
+            ChangeList1 = ChangeList
+    end,
+    put(?PD_VMYSQL_CHANGE, [Change1 | ChangeList1]),
+    check_sync(data_size(Change1#vmysql_change.data), Virture);
+delete(Table, Key) ->
+    delete(Table, [Key]).
 
 on_msg_end() ->
     case get(?PD_VMYSQL_FLUSH) of
@@ -157,36 +180,52 @@ flush_table([Table | T], ChangeList) ->
     {value, #vmysql_change{private_key_pos = PKPos, data = ChangeData}, ChangeList1} = lists:keytake(Table, #vmysql_change.table, ChangeList),
     %% 拿到cache
     #vmysql{
-        data = Data, state_pos = StatePos,
-        replace_sql = ReplaceSql, all_fields = AllFields
+        data = Data, state_pos = StatePos, private_key = PrivateKey,
+        replace_sql = ReplaceSql, delete_sql = DeleteSql, where_sql = WhereSql,
+        all_fields = AllFields
     } = Virture = get({?PD_VMYSQL_CACHE, Table}),
-    {Data1, Sql} =
-        fold_data(fun(Key, Value, {D, S} = Acc) ->
+    %% 拼sql
+    {Data1, ReplaceIOList, DeleteIOList} =
+        fold_data(fun(Key, Value, {D, RIO, DIO} = Acc) ->
             case element(StatePos, Value) of
                 ?VIRTURE_STATE_REPLACE ->
                     Value1 = setelement(StatePos, Value, ?VIRTURE_STATE_NOT_CHANGE),
                     D1 = set_to_data(Key, PKPos, Value1, D),
                     [[_, First] | Left] = [[$,, encode(Type, element(Pos, Value))] || #vmysql_field{type = Type, pos = Pos} <- AllFields],
-                    S1 = [$,, $(, First, Left, $) | S],
-                    {D1, S1};
+                    RIO1 = [$,, $(, First, Left, $) | RIO],
+                    {D1, RIO1, DIO};
+                ?VIRTURE_STATE_DELETE ->
+                    D1 = delete_from_data(Key, PKPos, D),
+                    WhereSql1 = join_where(WhereSql, PrivateKey, Key),
+                    DIO1 = [DeleteSql, WhereSql1, $; | DIO],
+                    {D1, RIO, DIO1};
                 _ ->
                     Acc
             end
-                  end, {Data, []}, PKPos, ChangeData),
-    case Sql of
-        [_ | Sql1] ->
-            case mysql_poolboy:query(?VMYSQL_POOL, [ReplaceSql, Sql1]) of
-                {error, Reason} ->
-                    throw({mysql, Reason});
-                _ ->
-                    %% 保证报错的时候数据一致
-                    Virture1 = Virture#vmysql{data = Data1},
-                    put({?PD_VMYSQL_CACHE, Table}, Virture1),
-                    put(?PD_VMYSQL_FLUSH, T),
-                    put(?PD_VMYSQL_CHANGE, ChangeList1),
-                    flush_table(T, ChangeList1)
-            end;
+                  end, {Data, [], []}, PKPos, ChangeData),
+    case ReplaceIOList of
+        [_ | ReplaceIOList1] -> ok;
+        _ -> ReplaceIOList1 = []
+    end,
+    %% 执行sql
+    MysqlResult =
+        if
+            ReplaceIOList1 =/= [] ->
+                mysql_poolboy:query(?VMYSQL_POOL, [ReplaceSql, ReplaceIOList1, $;, DeleteIOList]);
+            DeleteIOList =/= [] ->
+                mysql_poolboy:query(?VMYSQL_POOL, DeleteIOList);
+            true ->
+                ok
+        end,
+    case MysqlResult of
+        {error, Reason} ->
+            throw({mysql, Reason});
         _ ->
+            %% 保证报错的时候数据一致
+            Virture1 = Virture#vmysql{data = Data1},
+            put({?PD_VMYSQL_CACHE, Table}, Virture1),
+            put(?PD_VMYSQL_FLUSH, T),
+            put(?PD_VMYSQL_CHANGE, ChangeList1),
             flush_table(T, ChangeList1)
     end.
 
@@ -213,6 +252,17 @@ set_to_data(Key, PrivateKeyPos, Value, ?VIRTURE_LIST(Size, List)) ->
 set_to_data(Key, _PrivateKeyPos, Value, Dict) ->
     dict:store(Key, Value, Dict).
 
+%% 从data中删除record
+delete_from_data(Key, PrivateKeyPos, ?VIRTURE_LIST(Size, List) = VirtureList) when is_list(List) ->
+    case lists:keytake(Key, PrivateKeyPos, List) of
+        false ->
+            VirtureList;
+        {value, _, List1} ->
+            ?VIRTURE_LIST(Size - 1, List1)
+    end;
+delete_from_data(Key, _PrivateKeyPos, Dict) ->
+    dict:erase(Key, Dict).
+
 %% 遍历data
 fold_data(F, Acc, PrivateKeyPos, ?VIRTURE_LIST(_Size, List)) when is_list(List), is_function(F, 3) ->
     fold_data_list(F, Acc, PrivateKeyPos, List);
@@ -228,6 +278,15 @@ data_size(?VIRTURE_LIST(Size, _List)) ->
     Size;
 data_size(Dict) ->
     dict:size(Dict).
+
+get_change(Table, Key) ->
+    case get(?PD_VMYSQL_CHANGE) of
+        undefined ->
+            init_virture(Key, virture_config:get(mysql, Table)),
+            [];
+        ChangeList ->
+            ChangeList
+    end.
 
 %% ets名字
 make_ets_name(Virture) ->
