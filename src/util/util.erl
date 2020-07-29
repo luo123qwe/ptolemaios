@@ -15,7 +15,9 @@
 
 %% @doc 执行一条erlang语句
 -spec eval(string()) -> term().
-eval(Str) ->
+eval(Str) when is_binary(Str) ->
+    eval(binary_to_list(Str));
+eval(Str) when is_list(Str) ->
     {ok, Tokens, _} = erl_scan:string(eval_fix_string(Str)),
     {ok, Exprs} = erl_parse:parse_exprs(Tokens),
     {value, Value, _} = erl_eval:exprs(Exprs, []),

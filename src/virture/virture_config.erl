@@ -24,18 +24,35 @@ get_sup_spec(mysql) ->
 all(mysql) ->
     [
         #vmysql{
-            table = player,
-            private_key_pos = #player.virture_key,
-            state_pos = #player.virture_state,
-            select_key = [id],
-            private_key = [id],
+            table = vmysql_test_player,
+            private_key_pos = #vmysql_test_player.vmysql_key,
+            state_pos = #vmysql_test_player.vmysql_state,
+            select_key = [player_id],
+            private_key = [player_id],
             all_fields = [
-                #vmysql_field{name = id, pos = #player.id, type = uint32, default = 0},
-                #vmysql_field{name = account, pos = #player.account, type = string, default = <<>>},
-                #vmysql_field{name = password, pos = #player.password, type = string, default = <<>>}
+                #vmysql_field{name = player_id, pos = #vmysql_test_player.player_id, type = uint32, default = 0},
+                #vmysql_field{name = str, pos = #vmysql_test_player.str, type = string, default = 0},
+                #vmysql_field{name = to_str, pos = #vmysql_test_player.to_str, type = to_string, default = 0},
+                #vmysql_field{name = to_bin, pos = #vmysql_test_player.to_bin, type = to_binary, default = 0}
             ],
-            record_size = record_info(size, player),
+            record_size = record_info(size, vmysql_test_player),
             data = ?VIRTURE_LIST,
+            sync_size = 1
+        },
+        #vmysql{
+            table = vmysql_test_goods,
+            private_key_pos = #vmysql_test_goods.vmysql_key,
+            state_pos = #vmysql_test_goods.vmysql_state,
+            select_key = [player_id],
+            private_key = [player_id, goods_id],
+            all_fields = [
+                #vmysql_field{name = player_id, pos = #vmysql_test_goods.player_id, type = uint32, default = 0},
+                #vmysql_field{name = goods_id, pos = #vmysql_test_goods.goods_id, type = uint32, default = 0},
+                #vmysql_field{name = str, pos = #vmysql_test_goods.str, type = string, default = 0},
+                #vmysql_field{name = to_str, pos = #vmysql_test_goods.to_str, type = to_string, default = 0},
+                #vmysql_field{name = to_bin, pos = #vmysql_test_goods.to_bin, type = to_binary, default = 0}
+            ],
+            record_size = record_info(size, vmysql_test_goods),
             sync_size = 1
         }
     ].
