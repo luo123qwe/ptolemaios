@@ -26,7 +26,7 @@
 
 -export([base_test/0]).
 
--type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary.
+-type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary|to_json.
 -export_type([field_type/0]).
 
 %% @doc 自动创建数据表
