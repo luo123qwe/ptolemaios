@@ -7,6 +7,17 @@
 -define(VIRTURE_LIST, {0, []}).
 -define(VIRTURE_LIST(Size, List), {Size, List}).
 
+%% 数据类型
+-define(VIRTURE_INT32, int32).
+-define(VIRTURE_UINT32, uint32).
+-define(VIRTURE_INT64, int64).
+-define(VIRTURE_UINT64, uint64).
+-define(VIRTURE_FLOAT, float).
+-define(VIRTURE_STRING, string).
+-define(VIRTURE_TO_STRING, to_string).
+-define(VIRTURE_BINARY, binary).
+-define(VIRTURE_TO_BINARY, to_binary).
+
 %% 一份代码相当于对应一个数据库和一个连接池
 %% 所以如果需要使用多个数据库和连接池的话, 复制一份代码并且替换宏即可
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% virture mysql %%%%%%%%%%%%%%%%%%%%%%%%%%%%

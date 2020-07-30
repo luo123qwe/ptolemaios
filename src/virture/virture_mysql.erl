@@ -2,6 +2,7 @@
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
 %%% @doc
+%%% 数据库用的5.7
 %%% 数据缓存和落地
 %%% 原则上只有单个进程能够操作数据
 %%% 通常一组表由一类进程操作, 并且在进程初始化的时候就加锁
@@ -14,21 +15,67 @@
 
 -include("virture.hrl").
 
--export([init_ets/0, init/2, lookup/2, insert/1, on_msg_end/0, delete/2, fold_cache/3, base_test/0, make_ets_name/1, flush_table/0, flush_table/1, hold/0, rollback/1, clean/1, all_table/0]).
+%% 基本操作
+-export([init/2, lookup/2, insert/1, delete/2, fold_cache/3, make_ets_name/1]).
 
+%% 手动回滚, 刷到数据库
+-export([flush/0, hold/0, rollback/1, clean/0, clean/1, all_table/0]).
 
+%% 算是private
+-export([build_table/0, init_ets/0, check_flush/0]).
+
+-export([base_test/0]).
 
 -type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary.
 -export_type([field_type/0]).
 
+%% @doc 自动创建数据表
+-spec build_table() -> [{Table :: atom(), Error :: term()|exists|ok}].
+build_table() ->
+    lists:map(fun(Virture) ->
+        Fields = [[atom_to_list(Field), $ , convert_type(Type), " NOT NULL,"] || #vmysql_field{name = Field, type = Type} <- Virture#vmysql.all_fields],
+        PrivateKey = ["primary key(", string:join([atom_to_list(Field) || Field <- Virture#vmysql.private_key], ","), $)],
+        Sql = ["create table ", atom_to_list(Virture#vmysql.table), "(", Fields, PrivateKey, ")ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
+%%        io:format("~s~n", [Sql]),
+        case mysql_poolboy:query(?VMYSQL_POOL, Sql) of
+            {error, {1050, _, _}} ->% 表已经存在
+                {Virture#vmysql.table, exists};
+            {error, Error} ->
+                {Virture#vmysql.table, Error};
+            _ ->
+                {Virture#vmysql.table, ok}
+        end
+              end, virture_config:all(mysql)).
+
+convert_type(?VIRTURE_INT32) ->
+    "int";
+convert_type(?VIRTURE_UINT32) ->
+    "int unsigned";
+convert_type(?VIRTURE_INT64) ->
+    "bigint";
+convert_type(?VIRTURE_UINT64) ->
+    "bigint unsigned";
+convert_type(?VIRTURE_FLOAT) ->
+    "float";
+convert_type(?VIRTURE_STRING) ->
+    "text";
+convert_type(?VIRTURE_TO_STRING) ->
+    "text";
+convert_type(?VIRTURE_BINARY) ->
+    "blob";
+convert_type(?VIRTURE_TO_BINARY) ->
+    "blob".
+
 %% @doc 初始化ets
+-spec init_ets() -> term().
 init_ets() ->
     lists:foreach(fun(Virture) ->
         EtsName = make_ets_name(Virture),
         EtsName = ets:new(EtsName, [{keypos, Virture#vmysql.private_key_pos} | lists:keydelete(keypos, 1, Virture#vmysql.ets_opt)])
                   end, virture_config:all(mysql)).
 
-%% @doc 初始化
+%% @doc 在当前进程初始化一个表, SelectKey为[]时搜索全部数据
+-spec init(atom(), list()|term()) -> term().
 init(Table, SelectKey) when is_list(SelectKey) ->
     %% 初始化缓存
     Virture1 = init_virture(Table),
@@ -88,7 +135,8 @@ lookup_from_cache(Key, Table) ->
     get_from_data(Key, Virture#vmysql.private_key_pos, Virture#vmysql.data).
 
 
-%% 插入数据
+%% 插入一条数据
+-spec insert(tuple()) -> term().
 insert(Record) ->
     Table = element(1, Record),
     #vmysql{
@@ -130,6 +178,8 @@ insert(Record) ->
             check_sync(1, Virture1)
     end.
 
+%% @doc 删除一条数据
+-spec delete(atom(), list()|term()) -> term().
 delete(Table, Key) when is_list(Key) ->
     ChangeList = get(?PD_VMYSQL_CHANGE),
     #vmysql{
@@ -187,6 +237,8 @@ check_sync(CurrentSize, #vmysql{table = Table, sync_size = SyncSize}) ->
         _ -> skip
     end.
 
+%% @doc 遍历当前数据
+-spec fold_cache(fun((Key :: term(), Record :: term(), Acc :: term())-> Acc1 :: term()), term(), atom()) -> term().
 fold_cache(F, Acc, Table) ->
     #vmysql{private_key_pos = PKPos, data = Data} = get({?PD_VMYSQL_CACHE, Table}),
     ChangeTableList = get(?PD_VMYSQL_CHANGE),
@@ -198,47 +250,54 @@ fold_cache(F, Acc, Table) ->
             fold_data(F, Acc, PKPos, Data)
     end.
 
-%% 单条信息结束
-on_msg_end() ->
+%% 检查是否存在需要flush的表
+-spec check_flush() -> term().
+check_flush() ->
     case get(?PD_VMYSQL_FLUSH) of
         List when is_list(List), List =/= [] ->
-            flush_table(List);
+            flush(List);
         _ ->
             skip
     end.
 
-flush_table() ->
-    do_flush_table(get(?PD_VMYSQL_CHANGE)).
+%% @doc flush所有改变的数据到数据库
+-spec flush() -> ok.
+flush() ->
+    flush_change(get(?PD_VMYSQL_CHANGE), []).
 
-do_flush_table([]) ->
+flush_change([], FailList) ->
+    put(?PD_VMYSQL_CHANGE, FailList),
     ok;
-do_flush_table([H | T]) ->
-    case do_flush_table(H, T) of
+flush_change([H | T], FailList) ->
+    case catch do_flush(H) of
         ok ->
-            do_flush_table(T);
-        _ ->
-            error
+            flush_change(T, FailList);
+        _Error ->
+            flush_change(T, [H | FailList])
     end.
 
-flush_table(TableList) ->
-    flush_table(TableList, get(?PD_VMYSQL_CHANGE)).
+%% flush到数据库, 这个接口不开放了
+%% 保证数据一致性, 用户应该把全部flush或者不flush
+flush(TableList) ->
+    flush(TableList, get(?PD_VMYSQL_CHANGE)).
 
-flush_table([], _ChangeList) ->
+flush([], ChangeList) ->
+    put(?PD_VMYSQL_CHANGE, ChangeList),
     ok;
-flush_table([Table | T], ChangeList) ->
+flush([Table | T], ChangeList) ->
     case lists:keytake(Table, #vmysql_change.table, ChangeList) of
         {value, Change, ChangeList1} ->
-            case do_flush_table(Change, ChangeList1) of
+            case catch do_flush(Change) of
                 ok ->
-                    flush_table(T, ChangeList);
-                _ ->
-                    error
+                    flush(T, ChangeList1);
+                _Error ->
+                    flush(T, ChangeList)
             end;
         _ ->
-            flush_table(T, ChangeList)
+            flush(T, ChangeList)
     end.
 
-do_flush_table(#vmysql_change{table = Table, private_key_pos = PKPos, data = ChangeData}, T) ->
+do_flush(#vmysql_change{table = Table, private_key_pos = PKPos, data = ChangeData}) ->
     %% 拿到cache
     #vmysql{
         ets = EtsName,
@@ -281,9 +340,10 @@ do_flush_table(#vmysql_change{table = Table, private_key_pos = PKPos, data = Cha
         end,
     case MysqlResult of
         {error, Reason} ->
+            %% todo 服务器关闭时保存到dets
             throw({mysql, Reason});
         _ ->
-            %% 保证报错的时候数据一致
+            %% 保存数据
             %% ets
             lists:foreach(fun(Record) ->
                 ets:insert(EtsName, Record)
@@ -294,11 +354,11 @@ do_flush_table(#vmysql_change{table = Table, private_key_pos = PKPos, data = Cha
             %% 缓存
             Virture1 = Virture#vmysql{data = Data1},
             put({?PD_VMYSQL_CACHE, Table}, Virture1),
-            put(?PD_VMYSQL_CHANGE, T),
             ok
     end.
 
-%% 保存当前状态
+%% @doc 获取当前状态, 用于回滚
+-spec hold() -> #vmysql_hold{}.
 hold() ->
     ChangeTableList = get(?PD_VMYSQL_CHANGE),
     Cache =
@@ -307,25 +367,21 @@ hold() ->
                     end, [], ChangeTableList),
     #vmysql_hold{cache = Cache, change = ChangeTableList, flush = get(?PD_VMYSQL_FLUSH)}.
 
-%% 状态回滚
+%% @doc hold()的状态回滚
+-spec rollback(#vmysql_hold{}) -> term().
 rollback(#vmysql_hold{cache = Cache, change = ChangeTableList, flush = Flush}) ->
     put(?PD_VMYSQL_CHANGE, ChangeTableList),
-    put(?PD_VMYSQL_CACHE, Cache),
     lists:foreach(fun(#vmysql{table = Table} = Virture) ->
         put({?PD_VMYSQL_CACHE, Table}, Virture)
                   end, Cache),
     put(?PD_VMYSQL_FLUSH, Flush).
 
-%% 全部table
-all_table() ->
-    lists:foldl(fun
-                    ({?PD_VMYSQL_CACHE, Table}, Acc) ->
-                        [Table | Acc];
-                    (_, Acc) ->
-                        Acc
-                end, [], get_keys()).
+%% @equiv clean(all_table())
+clean() ->
+    clean(all_table()).
 
-%% 清理缓存
+%% @doc 清理缓存
+-spec clean(list()) -> term().
 clean(TableList) ->
     clean(TableList, get(?PD_VMYSQL_CHANGE), get(?PD_VMYSQL_FLUSH)).
 
@@ -336,6 +392,16 @@ clean([], ChangeList, Flush) ->
 clean([Table | T], ChangeList, Flush) ->
     erase({?PD_VMYSQL_CACHE, Table}),
     clean(T, lists:keydelete(Table, #vmysql_change.table, ChangeList), lists:delete(Table, Flush)).
+
+%% @doc 获取全部table
+-spec all_table() -> list().
+all_table() ->
+    lists:foldl(fun
+                    ({?PD_VMYSQL_CACHE, Table}, Acc) ->
+                        [Table | Acc];
+                    (_, Acc) ->
+                        Acc
+                end, [], get_keys()).
 
 %% 从data中取出record
 get_from_data(Key, PrivateKeyPos, ?VIRTURE_LIST(_Size, List)) when is_list(List) ->
@@ -464,13 +530,25 @@ init_data(Key, Virture) ->
         data = VData, init_fun = InitFun
     } = Virture,
     %% 先从ets拿
-    Spec = erlang:make_tuple(RecordSize, '_'),
-    KeySpec = make_ets_key_spec(PrivateKey, SelectKey, Key),
-    Spec1 = setelement(PrivateKeyPos, Spec, KeySpec),
-    case ets:select(EtsName, [{Spec1, [], ['$_']}]) of
+    EtsData =
+        case Key of
+            [] ->
+                %% 搜索全部
+                ets:tab2list(EtsName);
+            _ ->
+                Spec = erlang:make_tuple(RecordSize, '_'),
+                KeySpec = make_ets_key_spec(PrivateKey, SelectKey, Key),
+                Spec1 = setelement(PrivateKeyPos, Spec, KeySpec),
+                ets:select(EtsName, [{Spec1, [], ['$_']}])
+        end,
+    case EtsData of
         [] ->
             %% 从数据库拿
-            WhereSql1 = join_where(WhereSql, SelectKey, Key),
+            WhereSql1 =
+                case Key of
+                    [] -> [];
+                    _ -> join_where(WhereSql, SelectKey, Key)
+                end,
             {ok, _ColumnNames, Rows} = mysql_poolboy:query(?VMYSQL_POOL, [SelectSql, WhereSql1]),
             %% 构造record数据
             Data =
@@ -488,7 +566,7 @@ init_data(Key, Virture) ->
                 ets:insert(EtsName, Value)
                       end, [], PrivateKeyPos, Data),
             Virture#vmysql{data = Data};
-        EtsData ->
+        _EtsData ->
             %% 构造本地缓存
             Data =
                 lists:foldl(fun(Record, Acc) ->
@@ -533,8 +611,11 @@ make_ets_key_spec_find_value(Pos, [_ | FT], [_ | VT]) ->
 
 encode(to_string, Value) ->
     io_lib:format("'~w'", [Value]);
+%% 用的数据库是5.7, 加上_binary才不会报Warning 1300: Invalid utf8mb4 character string
 encode(to_binary, Value) ->
-    mysql_encode:encode(erlang:term_to_binary(Value));
+    ["_binary ", mysql_encode:encode(erlang:term_to_binary(Value))];
+encode(binary, Value) ->
+    ["_binary ", mysql_encode:encode(Value)];
 encode(_, Value) ->
     mysql_encode:encode(Value).
 
@@ -579,7 +660,7 @@ base_test() ->
     virture_mysql:insert(#vmysql_test_goods{player_id = 2, goods_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
     0 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     0 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    virture_mysql:on_msg_end(),
+    virture_mysql:check_flush(),
     2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     4 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
 %%    io:format("~p~n", [get()]),
@@ -597,8 +678,8 @@ base_test() ->
     #vmysql_test_goods{str = <<"11">>} = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
     undefined = virture_mysql:lookup(vmysql_test_goods, [1, 2]),
     #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
-    io:format("~p~n", [get()]),
-    virture_mysql:on_msg_end(),
+%%    io:format("~p~n", [get()]),
+    virture_mysql:check_flush(),
     2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
     #vmysql_test_player{str = <<"11">>} = virture_mysql:lookup(vmysql_test_player, 1),
@@ -607,4 +688,36 @@ base_test() ->
     #vmysql_test_goods{str = <<"11">>} = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
     undefined = virture_mysql:lookup(vmysql_test_goods, [1, 2]),
     #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
+    %% hold
+    Hold = virture_mysql:hold(),
+    virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 1, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, 4),
+    #vmysql_test_goods{} = virture_mysql:lookup(vmysql_test_goods, [4, 1]),
+    #vmysql_test_goods{} = virture_mysql:lookup(vmysql_test_goods, [4, 2]),
+    virture_mysql:rollback(Hold),
+    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+    5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+    undefined = virture_mysql:lookup(vmysql_test_player, 4),
+    undefined = virture_mysql:lookup(vmysql_test_goods, [4, 1]),
+    undefined = virture_mysql:lookup(vmysql_test_goods, [4, 2]),
+    %% all_table
+    [] = virture_mysql:all_table()--[vmysql_test_player, vmysql_test_goods],
+    virture_mysql:clean(virture_mysql:all_table()),
+    [] = virture_mysql:all_table(),
+    %% flush
+    virture_mysql:init(vmysql_test_player, [1]),
+    virture_mysql:init(vmysql_test_goods, [1]),
+    virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 1, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+    5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+    flush([vmysql_test_goods]),
+    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+    7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+    flush([vmysql_test_goods]),
+    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+    7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
     ok.
