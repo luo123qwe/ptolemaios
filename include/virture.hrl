@@ -7,18 +7,6 @@
 -define(VIRTURE_LIST, {0, []}).
 -define(VIRTURE_LIST(Size, List), {Size, List}).
 
-%% JSON结构定义
-%% 支持
-%% 元组 => obj, {1,2} => {"a":1,"b":2}
-%% 列表 => 列表, [1,a] => [1, "a"]
-%% 元组列表 => 对象列表, [{1,2}] => [{"a":1,"b":2}]
--define(VIRTURE_JSON_LIST, json_list).% 列表, ["a", 1, VIRTURE_JSON_嵌套用]
--define(VIRTURE_JSON_LIST(Name), {json_list, Name}).% 嵌套用
--define(VIRTURE_JSON_OBJ(NameList), {json_obj, NameList}).% 元组, {"a":1, "b":1, VIRTURE_JSON_嵌套用}
--define(VIRTURE_JSON_OBJ(Name, NameList), {json_obj, Name, NameList}).% 嵌套用
--define(VIRTURE_JSON_OBJ_LIST(NameList), {json_obj_list, NameList}).% 列表元组, [{"a":1, "b":1}]
--define(VIRTURE_JSON_OBJ_LIST(Name, NameList), {json_obj_list, Name, NameList}).% 嵌套用
-
 %% 数据类型
 -define(VIRTURE_INT32, int32).
 -define(VIRTURE_UINT32, uint32).
@@ -29,7 +17,18 @@
 -define(VIRTURE_TO_STRING, to_string).
 -define(VIRTURE_BINARY, binary).
 -define(VIRTURE_TO_BINARY, to_binary).
--define(VIRTURE_TO_JSON(Struct), {to_json, Struct}).
+%% JSON结构定义
+%% 支持
+%% 元组 => obj, {1,2} => {"a":1,"b":2}
+%% 列表 => 列表, [1,a] => [1, "a"]
+%% 元组列表 => 对象列表, [{1,2}] => [{"a":1,"b":2}]
+%% 不支持列表里面混合一般元素和obj
+-define(VIRTURE_JSON_LIST, json_list).% 列表, ["a", 1, VIRTURE_JSON_嵌套用]
+-define(VIRTURE_JSON_LIST(Name), {json_list, Name}).% 嵌套用
+-define(VIRTURE_JSON_OBJ(NameList), {json_obj, NameList}).% 元组, {"a":1, "b":1, VIRTURE_JSON_嵌套用}
+-define(VIRTURE_JSON_OBJ(Name, NameList), {json_obj, Name, NameList}).% 嵌套用
+-define(VIRTURE_JSON_OBJ_LIST(NameList), {json_obj_list, NameList}).% 列表元组, [{"a":1, "b":1}]
+-define(VIRTURE_JSON_OBJ_LIST(Name, NameList), {json_obj_list, Name, NameList}).% 嵌套用
 
 
 %% 一份代码相当于对应一个数据库和一个连接池
@@ -98,7 +97,8 @@
     player_id,
     str,
     to_str,
-    to_bin
+    to_bin,
+    to_json
 }).
 
 %% 测试符合主键

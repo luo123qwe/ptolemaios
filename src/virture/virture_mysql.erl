@@ -26,7 +26,8 @@
 
 -export([base_test/0]).
 
--type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary|to_json.
+-type json_def() :: term().
+-type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary|json_def().
 -export_type([field_type/0]).
 
 %% @doc 自动创建数据表
@@ -64,7 +65,13 @@ convert_type(?VIRTURE_TO_STRING) ->
 convert_type(?VIRTURE_BINARY) ->
     "blob";
 convert_type(?VIRTURE_TO_BINARY) ->
-    "blob".
+    "blob";
+convert_type(?VIRTURE_JSON_LIST) ->
+    "json";
+convert_type(?VIRTURE_JSON_OBJ(_)) ->
+    "json";
+convert_type(?VIRTURE_JSON_OBJ_LIST(_)) ->
+    "json".
 
 %% @doc 初始化ets
 -spec init_ets() -> term().
@@ -616,15 +623,82 @@ encode(to_binary, Value) ->
     ["_binary ", mysql_encode:encode(erlang:term_to_binary(Value))];
 encode(binary, Value) ->
     ["_binary ", mysql_encode:encode(Value)];
+encode(?VIRTURE_JSON_LIST, List) ->
+    encode_json_list(List);
+encode(?VIRTURE_JSON_OBJ(NameList), Value) ->
+    encode_json_obj(NameList, Value);
+encode(?VIRTURE_JSON_OBJ_LIST(NameList), Value) ->
+    encode_json_obj_list(NameList, Value);
 encode(_, Value) ->
     mysql_encode:encode(Value).
+
+encode_json_list(List) ->
+    ["JSON_ARRAY(", do_encode_json_list(List), $)].
+
+do_encode_json_list([]) ->
+    [];
+do_encode_json_list([H]) ->
+    mysql_encode:encode(H);
+do_encode_json_list([H | T]) ->
+    [mysql_encode:encode(H), $, | do_encode_json_list(T)].
+
+encode_json_obj(NameList, Value) ->
+    ["JSON_OBJECT(", do_encode_json_obj(NameList, tuple_to_list(Value)), $)].
+
+do_encode_json_obj([], []) ->
+    [];
+do_encode_json_obj([N], [V]) ->
+    [do_encode_json_single_obj(N, V)];
+do_encode_json_obj([N | NT], [V | VT]) ->
+    [do_encode_json_single_obj(N, V), $, | do_encode_json_obj(NT, VT)].
+
+encode_json_obj_list(NameList, List) ->
+    ["JSON_ARRAY(", do_encode_json_obj_list(NameList, List), $)].
+
+do_encode_json_obj_list(_NameList, []) ->
+    [];
+do_encode_json_obj_list(NameList, [V]) ->
+    encode_json_obj(NameList, V);
+do_encode_json_obj_list(NameList, [V | VT]) ->
+    [encode_json_obj(NameList, V), $, | do_encode_json_obj_list(NameList, VT)].
+
+do_encode_json_single_obj(?VIRTURE_JSON_LIST(Name), V) ->
+    [$', Name, $', $,, encode_json_list(V)];
+do_encode_json_single_obj(?VIRTURE_JSON_OBJ(Name, NameList), V) ->
+    [$', Name, $', $,, encode_json_obj(NameList, V)];
+do_encode_json_single_obj(?VIRTURE_JSON_OBJ_LIST(Name, NameList), V) ->
+    [$', Name, $', $,, encode_json_obj_list(NameList, V)];
+do_encode_json_single_obj(Name, V) ->
+    [$', Name, $', $,, mysql_encode:encode(V)].
+
 
 decode(to_string, Value) ->
     util:eval(Value);
 decode(to_binary, Value) ->
     erlang:binary_to_term(Value);
+decode(?VIRTURE_JSON_LIST, Value) ->
+    jsx:decode(Value);
+decode(?VIRTURE_JSON_OBJ(NameList), Value) ->
+    decode_json_obj(NameList, jsx:decode(Value));
+decode(?VIRTURE_JSON_OBJ_LIST(NameList), Value) ->
+    decode_json_obj_list(NameList, jsx:decode(Value));
 decode(_, Value) ->
     Value.
+
+decode_json_obj(NameList, Map) ->
+    list_to_tuple([decode_json_single_obj(Name, Map) || Name <- NameList]).
+
+decode_json_obj_list(NameList, List) ->
+    [decode_json_obj(NameList, Obj) || Obj <- List].
+
+decode_json_single_obj(?VIRTURE_JSON_LIST(Name), Map) ->
+    jsx:decode(maps:get(Name, Map));
+decode_json_single_obj(?VIRTURE_JSON_OBJ(Name, NameList), Map) ->
+    decode_json_obj(NameList, maps:get(Name, Map));
+decode_json_single_obj(?VIRTURE_JSON_OBJ_LIST(Name, NameList), Map) ->
+    decode_json_obj_list(NameList, maps:get(Name, Map));
+decode_json_single_obj(Name, Map) ->
+    maps:get(Name, Map).
 
 %% 初始化record
 init_record(Init, Row, Virture) ->
@@ -643,7 +717,7 @@ init_record(InitFun, [Value | ValueT], [#vmysql_field{pos = Pos, type = Type} | 
 base_test() ->
     %% 创建test数据表
     mysql_poolboy:query(?VMYSQL_POOL, "drop table if exists vmysql_test_player;
-    create table vmysql_test_player(player_id int,str varchar(100),to_str varchar(100),to_bin blob,primary key(player_id));
+    create table vmysql_test_player(player_id int,str varchar(100),to_str varchar(100),to_bin blob,to_json json,primary key(player_id));
     drop table if exists vmysql_test_goods;
     create table vmysql_test_goods(player_id int,goods_id int,str varchar(100),to_str varchar(100),to_bin blob,primary key(player_id,goods_id));"),
     %% 初始化
@@ -652,8 +726,8 @@ base_test() ->
     %% 插入数据
     undefined = virture_mysql:lookup(vmysql_test_player, 1),
     undefined = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
-    virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>}),
-    virture_mysql:insert(#vmysql_test_player{player_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
+    virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
+    virture_mysql:insert(#vmysql_test_player{player_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
     virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>}),
     virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
     virture_mysql:insert(#vmysql_test_goods{player_id = 2, goods_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>}),
@@ -665,11 +739,11 @@ base_test() ->
     4 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
 %%    io:format("~p~n", [get()]),
     %% 插入+更新+删除
-    virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"11">>, to_str = <<"11">>, to_bin = <<"11">>}),
+    virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"11">>, to_str = <<"11">>, to_bin = <<"11">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
     virture_mysql:delete(vmysql_test_player, 2),
     virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 1, str = <<"11">>, to_str = <<"11">>, to_bin = <<"11">>}),
     virture_mysql:delete(vmysql_test_goods, [1, 2]),
-    virture_mysql:insert(#vmysql_test_player{player_id = 3, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>}),
+    virture_mysql:insert(#vmysql_test_player{player_id = 3, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
     virture_mysql:insert(#vmysql_test_goods{player_id = 3, goods_id = 1, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>}),
     virture_mysql:insert(#vmysql_test_goods{player_id = 3, goods_id = 2, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>}),
     #vmysql_test_player{str = <<"11">>} = virture_mysql:lookup(vmysql_test_player, 1),
@@ -690,7 +764,7 @@ base_test() ->
     #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
     %% hold
     Hold = virture_mysql:hold(),
-    virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
     virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 1, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
     virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
     #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, 4),
