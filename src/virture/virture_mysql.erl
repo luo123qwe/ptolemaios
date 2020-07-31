@@ -24,7 +24,7 @@
 -export([flush/0, hold/0, rollback/1, clean/0, clean/1, all_table/0]).
 
 %% 算是private
--export([build_table/0, init_ets/0, check_flush/0]).
+-export([build_table/0, init_ets/0, check_flush/0, flush_dets/0]).
 
 -export([base_test/0]).
 
@@ -377,6 +377,25 @@ do_flush(#vmysql_change{table = Table, private_key_pos = PKPos, data = ChangeDat
             put({?PD_VMYSQL_CACHE, Table}, Virture1),
             ok
     end.
+
+
+%% @doc mysql失败的数据保存到dets
+flush_dets() ->
+    flush_dets(get(?PD_VMYSQL_CHANGE)).
+
+flush_dets([]) ->
+    ok;
+flush_dets([#vmysql_change{table = Table, data = Data} | T]) ->
+    #vmysql{private_key_pos = PKPos} = virture_config:get(mysql, Table),
+    case dets:open_file(Table, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(Table)}, {keypos, PKPos}]) of
+        {ok, Table} ->
+            fold_data(fun(_K, V, _) ->
+                dets:insert(Table, V)
+                      end, [], PKPos, Data);
+        Error ->
+            Error
+    end,
+    flush_dets(T).
 
 %% @doc 获取当前状态, 用于回滚
 -spec hold() -> #vmysql_hold{}.
