@@ -9,6 +9,8 @@
 %%% 所以这里的方法不提供锁检测, 需要上层保证加锁
 %%% 例如操作某个玩家的数据, 应该为那个玩家加上锁
 %%% 而不是仅对某个表加锁
+%%% todo fix record
+%%% todo dets
 %%% @end
 %%%-------------------------------------------------------------------
 -module(virture_mysql).
@@ -82,7 +84,19 @@ init_ets() ->
                   end, virture_config:all(mysql)).
 
 %% @doc 在当前进程初始化一个表, SelectKey为[]时搜索全部数据
--spec init(atom(), list()|term()) -> term().
+-spec init(atom(), undefined|list()|term()) -> term().
+init(Table, undefined) ->
+    %% 初始化缓存
+    Virture1 = init_virture(Table),
+    %% 初始化进程字典
+    init_pd(Virture1),
+    %% 定时检查落地
+    case Virture1#vmysql.sync_time of
+        After when is_integer(After) ->
+            erlang:send_after(After * 1000, self(), vmysql_sync);
+        _ ->
+            skip
+    end;
 init(Table, SelectKey) when is_list(SelectKey) ->
     %% 初始化缓存
     Virture1 = init_virture(Table),
