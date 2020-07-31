@@ -24,7 +24,7 @@
 -export([flush/0, hold/0, rollback/1, clean/0, clean/1, all_table/0]).
 
 %% 算是private
--export([build_table/0, init_ets/0, check_flush/0, flush_dets/0]).
+-export([build_table/0, init_system/0, check_flush/0, flush_dets/0]).
 
 -export([base_test/0]).
 
@@ -75,9 +75,13 @@ convert_type(?VIRTURE_JSON_OBJ(_)) ->
 convert_type(?VIRTURE_JSON_OBJ_LIST(_)) ->
     "json".
 
-%% @doc 初始化ets
--spec init_ets() -> term().
-init_ets() ->
+%% @doc 初始化
+-spec init_system() -> term().
+init_system() ->
+    case filelib:is_dir(?VMYSQL_DETS_PATH) of
+        true -> ok;
+        _ -> file:make_dir(?VMYSQL_DETS_PATH)
+    end,
     lists:foreach(fun(Virture) ->
         EtsName = make_ets_name(Virture),
         EtsName = ets:new(EtsName, [{keypos, Virture#vmysql.private_key_pos} | lists:keydelete(keypos, 1, Virture#vmysql.ets_opt)])

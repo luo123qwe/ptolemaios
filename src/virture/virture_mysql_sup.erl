@@ -20,7 +20,7 @@ init([]) ->
     Specs = make_mysql_specs(),
     
     %% 配置正常才开启
-    ?DO_IF(Specs =/= [], virture_mysql:init_ets()),
+    ?DO_IF(Specs =/= [], virture_mysql:init_system()),
     
     {ok, {#{strategy => one_for_one,
         intensity => 1,
