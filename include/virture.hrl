@@ -38,7 +38,10 @@
 -define(PD_VMYSQL_CHANGE, pd_vmysql_change).% 99%通常单条信息操作的表数量不多(少于32), 所以change使用[#vmysql_change{}]
 -define(PD_VMYSQL_CACHE, pd_vmysql_cache).
 -define(PD_VMYSQL_FLUSH, pd_vmysql_flush).% 每条消息结束后检查, 需要同步的表[table]
--define(VMYSQL_DETS_PATH, "vmysql").% 数据保存到数据失败时保存到dets
+% 数据保存到数据失败时保存到dets
+-define(VMYSQL_DETS, vmysql).% 配置保存表名
+-define(VMYSQL_DETS_PATH, "vmysql").% dets文件夹
+-define(VMYSQL_FIX_LIMIT, 1000).% 单次操作拼sql的条数
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% field
