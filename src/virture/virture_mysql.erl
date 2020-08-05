@@ -78,7 +78,7 @@ convert_type(?VIRTURE_JSON_OBJ_LIST(_)) ->
 -spec init_system() -> term().
 init_system() ->
     case filelib:is_dir(?VMYSQL_DETS_PATH) of
-        true -> ok;
+        true -> check_dets();
         _ -> file:make_dir(?VMYSQL_DETS_PATH)
     end,
     {ok, ?VMYSQL_DETS} = dets:open_file(?VMYSQL_DETS, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?VMYSQL_DETS)}, {keypos, #vmysql.table}]),
@@ -614,6 +614,46 @@ all_table() ->
                     (_, Acc) ->
                         Acc
                 end, [], get_keys()).
+
+hotfix(Fun) ->
+    hotfix(Fun, all_table()).
+
+hotfix(Fun, []) ->
+    ok;
+hotfix(Fun, [Table | T]) ->
+    OldVirture = get({?PD_VMYSQL_CACHE, Table}),
+    Hold = hold(),
+    case catch do_hotfix(Fun, OldVirture) of
+        ok -> ok;
+        Error ->
+            io:format("hotfix~n~p~n", [Error]),
+            rollback(Hold),
+            put({?PD_VMYSQL_CACHE, Table}, OldVirture)
+    end,
+    hotfix(Fun, T).
+
+do_hotfix(Fun, #vmysql{table = Table} = OldVirture) ->
+    case virture_config:get(mysql, Table) of
+        #vmysql{} = NewConfig ->
+            case is_diff_def(OldVirture, NewConfig) of
+                false ->% 定义没改变
+                    skip;
+                _ ->
+                    %% 初始化新的
+                    NewVirture = init_virture(NewConfig),
+                    Data =
+                        fold_data(fun(K, R, Acc) ->
+                            R1 = Fun(R),
+                            set_to_data(K, NewConfig#vmysql.private_key_pos, R1, Acc)
+                                  end, NewConfig#vmysql.data, OldVirture#vmysql.private_key_pos, OldVirture#vmysql.data),
+                    NewVirture1 = NewVirture#vmysql{data = Data},
+            end;
+        _ ->% 表被删除了
+            erase({?PD_VMYSQL_CACHE, Table}),
+            put(?PD_VMYSQL_CHANGE, lists:keydelete(Table, #vmysql_change.table, get(?PD_VMYSQL_CHANGE))),
+            put(?PD_VMYSQL_FLUSH, lists:delete(Table, get(?PD_VMYSQL_FLUSH)))
+    end,
+    ok.
 
 %% 从data中取出record
 get_from_data(Key, PrivateKeyPos, ?VIRTURE_LIST(_Size, List)) when is_list(List) ->
