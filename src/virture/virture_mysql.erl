@@ -170,18 +170,19 @@ dirty_lookup(Table, Key) ->
             case get({?PD_VMYSQL_CACHE, Table}) of
                 undefined ->
                     init(Table, undefined, undefined),
-                    db_lookup(get({?PD_VMYSQL_CACHE, Table}), Key);
+                    dirty_lookup_db(get({?PD_VMYSQL_CACHE, Table}), Key);
                 Virture ->
-                    db_lookup(Virture, Key)
+                    dirty_lookup_db(Virture, Key)
             end
     end.
 
-db_lookup(#vmysql{
+dirty_lookup_db(#vmysql{
     table = Table,
     private_key = PrivateKey, private_key_pos = PrivateKeyPos, state_pos = StatePos,
     select_where_sql = WhereSql, select_sql = SelectSql, select_key = SelectKey,
     init_fun = InitFun
-} = Virture, Key) ->
+} = Virture, PKey) ->
+    Key = private_key_to_select_key(SelectKey, PrivateKey, PKey),
     EtsName = make_ets_name(Table),
     %% 从数据库拿
     WhereSql1 =
@@ -207,7 +208,21 @@ db_lookup(#vmysql{
         %% 保证初始化不会覆盖即可
         ets:insert_new(EtsName, Record)
                   end, Data),
-    Data.
+    case lists:keyfind(PKey, PrivateKeyPos, Data) of
+        false -> undefined;
+        R -> R
+    end.
+
+%% 根据主键构造搜索键
+private_key_to_select_key([], _PrivateList, _ValueList) ->
+    [];
+private_key_to_select_key([#vmysql_field{pos = Pos} | ST], PrivateList, ValueList) ->
+    [private_key_to_select_key_1(Pos, PrivateList, ValueList) | private_key_to_select_key(ST, PrivateList, ValueList)].
+
+private_key_to_select_key_1(Pos, [#vmysql_field{pos = Pos} | _PT], [V | _VT]) ->
+    V;
+private_key_to_select_key_1(Pos, [_ | PT], [_ | VT]) ->
+    private_key_to_select_key_1(Pos, PT, VT).
 
 %% 插入一条数据
 -spec insert(tuple()) -> term().
@@ -1014,4 +1029,8 @@ base_test() ->
     ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_player)),
     virture_mysql:init(vmysql_test_player, []),
     #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, [4]),
+    %% dirty lookup
+    ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_goods)),
+    erase(),
+    #vmysql_test_goods{} = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
     ok.
