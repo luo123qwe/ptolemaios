@@ -48,8 +48,7 @@
 -record(vmysql_field, {
     name :: atom(),
     type :: virture:field_type(),
-    pos :: integer(),
-    default :: term()
+    pos :: integer()
 }).
 
 %% table

@@ -30,11 +30,11 @@ all(mysql) ->
             select_key = [player_id],
             private_key = [player_id],
             all_fields = [
-                #vmysql_field{name = player_id, pos = #vmysql_test_player.player_id, type = uint32, default = 0},
-                #vmysql_field{name = str, pos = #vmysql_test_player.str, type = string, default = 0},
-                #vmysql_field{name = to_str, pos = #vmysql_test_player.to_str, type = to_string, default = 0},
-                #vmysql_field{name = to_bin, pos = #vmysql_test_player.to_bin, type = to_binary, default = 0},
-                #vmysql_field{name = to_json, pos = #vmysql_test_player.to_json, type = ?VIRTURE_JSON_OBJ_LIST([<<"a">>, ?VIRTURE_JSON_OBJ(<<"b">>, [<<"c">>, <<"d">>])]), default = 0}
+                #vmysql_field{name = player_id, pos = #vmysql_test_player.player_id, type = ?VIRTURE_UINT32},
+                #vmysql_field{name = str, pos = #vmysql_test_player.str, type = ?VIRTURE_STRING},
+                #vmysql_field{name = to_str, pos = #vmysql_test_player.to_str, type = ?VIRTURE_TO_STRING},
+                #vmysql_field{name = to_bin, pos = #vmysql_test_player.to_bin, type = ?VIRTURE_TO_BINARY},
+                #vmysql_field{name = to_json, pos = #vmysql_test_player.to_json, type = ?VIRTURE_JSON_OBJ_LIST([<<"a">>, ?VIRTURE_JSON_OBJ(<<"b">>, [<<"c">>, <<"d">>])])}
             ],
             record_size = record_info(size, vmysql_test_player),
             data = ?VIRTURE_LIST,
@@ -47,11 +47,11 @@ all(mysql) ->
             select_key = [player_id],
             private_key = [player_id, goods_id],
             all_fields = [
-                #vmysql_field{name = player_id, pos = #vmysql_test_goods.player_id, type = uint32, default = 0},
-                #vmysql_field{name = goods_id, pos = #vmysql_test_goods.goods_id, type = uint32, default = 0},
-                #vmysql_field{name = str, pos = #vmysql_test_goods.str, type = string, default = 0},
-                #vmysql_field{name = to_str, pos = #vmysql_test_goods.to_str, type = to_string, default = 0},
-                #vmysql_field{name = to_bin, pos = #vmysql_test_goods.to_bin, type = to_binary, default = 0}
+                #vmysql_field{name = player_id, pos = #vmysql_test_goods.player_id, type = ?VIRTURE_UINT32},
+                #vmysql_field{name = goods_id, pos = #vmysql_test_goods.goods_id, type = ?VIRTURE_UINT32},
+                #vmysql_field{name = str, pos = #vmysql_test_goods.str, type = ?VIRTURE_STRING},
+                #vmysql_field{name = to_str, pos = #vmysql_test_goods.to_str, type = ?VIRTURE_TO_STRING},
+                #vmysql_field{name = to_bin, pos = #vmysql_test_goods.to_bin, type = ?VIRTURE_TO_BINARY}
             ],
             record_size = record_info(size, vmysql_test_goods),
             sync_size = 1

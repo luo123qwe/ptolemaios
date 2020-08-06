@@ -23,7 +23,7 @@
 -export([flush/0, hold/0, rollback/1, clean/0, clean/1, all_table/0]).
 
 %% 算是private
--export([build_table/0, init_system/0, check_flush/0, flush_dets/0, fix_dets/1, check_dets/0]).
+-export([build_table/0, build_table/1, init_system/0, check_flush/0, flush_dets/0, fix_dets/1, check_dets/0, hotfix/2]).
 
 -export([base_test/0]).
 
@@ -34,8 +34,12 @@
 %% @doc 自动创建数据表
 -spec build_table() -> [{Table :: atom(), Error :: term()|exists|ok}].
 build_table() ->
+    build_table(virture_config:all(mysql)).
+
+build_table(VirtureList) ->
     lists:map(fun(Virture) ->
-        Fields = [[atom_to_list(Field), $ , convert_type(Type), " NOT NULL,"] || #vmysql_field{name = Field, type = Type} <- Virture#vmysql.all_fields],
+        Fields = [[atom_to_list(Field), $ , convert_type(Type), " NOT NULL,"]
+            || #vmysql_field{name = Field, type = Type} <- Virture#vmysql.all_fields],
         PrivateKey = ["primary key(", string:join([atom_to_list(Field) || Field <- Virture#vmysql.private_key], ","), $)],
         Sql = ["create table ", atom_to_list(Virture#vmysql.table), "(", Fields, PrivateKey, ")ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
 %%        io:format("~s~n", [Sql]),
@@ -47,7 +51,7 @@ build_table() ->
             _ ->
                 {Virture#vmysql.table, ok}
         end
-              end, virture_config:all(mysql)).
+              end, VirtureList).
 
 convert_type(?VIRTURE_INT32) ->
     "int";
@@ -497,6 +501,7 @@ check_dets() ->
         end, []).
 
 %% @doc 修复dets数据, 同步到数据库
+%% Fun函数里面必须包含insert或者delete操作, 否则数据会丢失
 %% 简单的修复, A数据在dets, 仅使用正常的数据+坏掉数据A修复
 %% 如果涉及复杂修复, 请直接使用dets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
 -spec fix_dets(fun((Record :: tuple())-> term())) -> term().
@@ -574,9 +579,9 @@ do_fix_dets_sync(Table, FixList) ->
 hold() ->
     ChangeTableList = get(?PD_VMYSQL_CHANGE),
     Cache =
-        lists:foldl(fun(#vmysql_change{table = Table}, Acc) ->
+        lists:foldl(fun(Table, Acc) ->
             [get({?PD_VMYSQL_CACHE, Table}) | Acc]
-                    end, [], ChangeTableList),
+                    end, [], all_table()),
     #vmysql_hold{cache = Cache, change = ChangeTableList, flush = get(?PD_VMYSQL_FLUSH)}.
 
 %% @doc hold()的状态回滚
@@ -615,38 +620,83 @@ all_table() ->
                         Acc
                 end, [], get_keys()).
 
-hotfix(Fun) ->
-    hotfix(Fun, all_table()).
-
-hotfix(Fun, []) ->
-    ok;
-hotfix(Fun, [Table | T]) ->
-    OldVirture = get({?PD_VMYSQL_CACHE, Table}),
+%% @doc 热修复某个表
+%% 如果定义变了(is_diff_def/2) ,Fun函数里面必须包含insert或者delete操作, 否则数据会丢失
+%% 因为ets热修复不会进行重置
+%% 所以ets参数不会覆盖, private_key_pos不能改变
+%% 简单的修复, A数据在缓存, 仅使用正常的数据+坏掉数据A修复
+%% 如果涉及复杂修复, 请直接使用fold_cache和ets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
+hotfix(Table, Fun) ->
     Hold = hold(),
-    case catch do_hotfix(Fun, OldVirture) of
+    case catch do_hotfix(Fun, get({?PD_VMYSQL_CACHE, Table})) of
         ok -> ok;
         Error ->
             io:format("hotfix~n~p~n", [Error]),
             rollback(Hold),
-            put({?PD_VMYSQL_CACHE, Table}, OldVirture)
-    end,
-    hotfix(Fun, T).
+            error
+    end.
 
-do_hotfix(Fun, #vmysql{table = Table} = OldVirture) ->
+do_hotfix(Fun, #vmysql{table = Table, private_key_pos = PKPos} = OldVirture) ->
     case virture_config:get(mysql, Table) of
         #vmysql{} = NewConfig ->
-            case is_diff_def(OldVirture, NewConfig) of
-                false ->% 定义没改变
-                    skip;
+            case PKPos == NewConfig#vmysql.private_key_pos of
+                true -> skip;
+                _ ->
+                    %% 主键位置不能改变因为ets无法中途变更
+                    throw({vmysql, Table, private_key_pos, cant, change})
+            end,
+            case is_same_def(OldVirture, NewConfig) of
+                true ->% 数据定义没改变, 杂项更新
+                    OldVirture1 = OldVirture#vmysql{
+                        init_fun = NewConfig#vmysql.init_fun,
+                        sync_time = NewConfig#vmysql.sync_time,
+                        sync_size = NewConfig#vmysql.sync_size
+                    },
+                    put({?PD_VMYSQL_CACHE, Table}, OldVirture1),
+                    ChangeList = get(?PD_VMYSQL_CHANGE),
+                    case lists:keyfind(Table, #vmysql_change.table, ChangeList) of
+                        false ->
+                            ChangeData = get_empty_data(OldVirture#vmysql.data);
+                        #vmysql_change{data = ChangeData} ->
+                            ok
+                    end,
+                    %% 执行Fun
+                    do_hotfix_fun(Fun, PKPos, OldVirture#vmysql.data),
+                    do_hotfix_fun(Fun, PKPos, ChangeData);
                 _ ->
                     %% 初始化新的
                     NewVirture = init_virture(NewConfig),
-                    Data =
-                        fold_data(fun(K, R, Acc) ->
-                            R1 = Fun(R),
-                            set_to_data(K, NewConfig#vmysql.private_key_pos, R1, Acc)
-                                  end, NewConfig#vmysql.data, OldVirture#vmysql.private_key_pos, OldVirture#vmysql.data),
-                    NewVirture1 = NewVirture#vmysql{data = Data},
+                    put({?PD_VMYSQL_CACHE, Table}, NewVirture),
+                    %% change部分
+                    ChangeList = get(?PD_VMYSQL_CHANGE),
+                    case lists:keyfind(Table, #vmysql_change.table, ChangeList) of
+                        false ->
+                            ChangeData = get_empty_data(OldVirture#vmysql.data);
+                        #vmysql_change{data = ChangeData} = Change ->
+                            Change1 = Change#vmysql_change{
+                                state_pos = OldVirture#vmysql.state_pos,
+                                data = NewConfig#vmysql.data
+                            },
+                            ChangeList1 = lists:keystore(Table, #vmysql_change.table, ChangeList, Change1),
+                            put(?PD_VMYSQL_CHANGE, ChangeList1)
+                    end,
+                    %% 执行Fun
+                    do_hotfix_fun(Fun, PKPos, OldVirture#vmysql.data),
+                    do_hotfix_fun(Fun, PKPos, ChangeData)
+            end,
+            %% 刷到ets
+            NewChangeList = get(?PD_VMYSQL_CHANGE),
+            case lists:keyfind(Table, #vmysql_change.table, NewChangeList) of
+                false ->
+                    skip;
+                #vmysql_change{state_pos = NewStatePos, data = NewChangeData} ->
+                    Ets = make_ets_name(Table),
+                    fold_data(fun(K, R, _Acc) ->
+                        case element(NewStatePos, R) of
+                            ?VIRTURE_STATE_DELETE -> ets:delete(Ets, K);
+                            ?VIRTURE_STATE_REPLACE -> ets:insert(Ets, R)
+                        end
+                              end, [], PKPos, NewChangeData)
             end;
         _ ->% 表被删除了
             erase({?PD_VMYSQL_CACHE, Table}),
@@ -654,6 +704,19 @@ do_hotfix(Fun, #vmysql{table = Table} = OldVirture) ->
             put(?PD_VMYSQL_FLUSH, lists:delete(Table, get(?PD_VMYSQL_FLUSH)))
     end,
     ok.
+
+do_hotfix_fun(Fun, PKPos, Data) ->
+    fold_data(fun(_K, R, _Acc) ->
+        Fun(R)
+              end, [], PKPos, Data).
+
+%% 定义是否改变
+is_same_def(Old, New) ->
+    Old#vmysql.state_pos == New#vmysql.state_pos
+        andalso Old#vmysql.select_key == New#vmysql.select_key
+        andalso Old#vmysql.private_key == New#vmysql.private_key
+        andalso Old#vmysql.all_fields == New#vmysql.all_fields
+        andalso Old#vmysql.record_size == New#vmysql.record_size.
 
 %% 从data中取出record
 get_from_data(Key, PrivateKeyPos, ?VIRTURE_LIST(_Size, List)) when is_list(List) ->
@@ -971,11 +1034,11 @@ init_record(InitFun, [Value | ValueT], [#vmysql_field{pos = Pos, type = Type} | 
 
 %% 不想写_SUIT, 凑合用着先吧
 base_test() ->
-    %% 创建test数据表
+    %% 删除test数据表
     mysql_poolboy:query(?VMYSQL_POOL, "drop table if exists vmysql_test_player;
-    create table vmysql_test_player(player_id int,str varchar(100),to_str varchar(100),to_bin blob,to_json json,primary key(player_id));
-    drop table if exists vmysql_test_goods;
-    create table vmysql_test_goods(player_id int,goods_id int,str varchar(100),to_str varchar(100),to_bin blob,primary key(player_id,goods_id));"),
+    drop table if exists vmysql_test_goods;"),
+    %% build
+    io:format("~w~n", [virture_mysql:build_table([virture_config:get(mysql, vmysql_test_player), virture_config:get(mysql, vmysql_test_goods)])]),
     %% 初始化
     virture_mysql:init(vmysql_test_player, [1]),
     virture_mysql:init(vmysql_test_goods, [1]),
@@ -1055,7 +1118,7 @@ base_test() ->
     erase(),
     %% dets
     virture_mysql:init(vmysql_test_player, []),
-    %% 没有json, flush会失败
+    %% 没有json, flush会失败, 会有一个正常报错
     virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
     flush(),
     flush_dets(),
@@ -1073,4 +1136,23 @@ base_test() ->
     ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_goods)),
     erase(),
     #vmysql_test_goods{} = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
-    ok.
+    %% fold_cache
+    clean(),
+    virture_mysql:init(vmysql_test_goods, [4]),
+    2 = fold_cache(fun(_K, _V, Acc) ->
+        Acc + 1
+                   end, 0, vmysql_test_goods),
+    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 3, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+    3 = fold_cache(fun(_K, _V, Acc) ->
+        Acc + 1
+                   end, 0, vmysql_test_goods),
+    %% 热更新定义, shell 执行
+    %% vmysql_test_goods的to_str改成string类型
+    %% os:cmd("rebar3 compile"), rr("include/*"), l(virture_mysql), l(virture_config).
+    %% virture_mysql:hotfix(vmysql_test_goods, fun(R) -> virture_mysql:insert(R#vmysql_test_goods{to_str = <<"hotfix">>}) end).
+    %% #vmysql_test_goods{str = <<"hotfix">>} = ets:lookup(virture_mysql:make_ets_name(vmysql_test_goods), [4, 1]).
+    %% virture_mysql:flush().
+    %% 看数据库
+    %% clean(), ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_goods)).
+    %% virture_mysql:init(vmysql_test_goods, [4])
+    {base_test, ok}.
