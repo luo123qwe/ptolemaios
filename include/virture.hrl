@@ -35,8 +35,7 @@
 %% 所以如果需要使用多个数据库和连接池的话, 复制一份代码并且替换宏即可
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% virture mysql %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(VMYSQL_POOL, vmysql_pool).
--define(PD_VMYSQL_CHANGE, pd_vmysql_change).% 99%通常单条信息操作的表数量不多(少于32), 所以change使用[#vmysql_change{}]
--define(PD_VMYSQL_CACHE, pd_vmysql_cache).
+-define(PD_VMYSQL, pd_vmysql).%% #{table => #vmysql{}}
 -define(PD_VMYSQL_FLUSH, pd_vmysql_flush).% 每条消息结束后检查, 需要同步的表[table]
 % 数据保存到数据失败时保存到dets
 -define(VMYSQL_DETS, vmysql).% 配置保存表名
@@ -62,34 +61,20 @@
     all_fields = error({require, all_fields}) :: [#vmysql_field{}],% 所有列的定义
     record_size = error({require, record_size}) :: integer(),% record的定义, 因为record的字段不一定全都是数据库里面的
     init_fun :: undefined|{M :: atom(), F :: atom()},% fun((Record) -> Record1), 初始化缓存变量
-    data = dict:new() :: dict:dict()|{Size :: integer(), list()},% record底层存储类型, 单条数据会转换为tuple, 如果数据量比较大的话使用dict效率更高
     ets_opt = [public, named_table, {write_concurrency, true}] :: list(),% ets参数
     %% 同步策略, 可以同时存在, 互相独立
     sync_time :: undefined|integer(),% 上次同步后N秒再次检查同步
     sync_size :: undefined|integer(),% 变化数据达到N条同步
     
-    %% 不用管的, 小优化
+    %% 不用管的
     ets :: atom(),
+    data = #{},
+    change = #{},
     private_where_sql :: iolist(),
     select_where_sql :: iolist(),
     select_sql :: iolist(),
     replace_sql :: iolist(),
     delete_sql :: iolist()
-}).
-
-%% 和#vmysql字段一致
--record(vmysql_change, {
-    table :: atom(),
-    private_key_pos :: integer(),
-    state_pos :: integer(),
-    data :: term()
-}).
-
-%% hold数据, 可以回滚
--record(vmysql_hold, {
-    cache,
-    change,
-    flush
 }).
 
 %% 测试普通主键

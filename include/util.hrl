@@ -12,7 +12,7 @@
         false -> False
     end).
 -define(IF_NOT(Expr, True, False),
-    case not Expr of
+    case not (Expr) of
         true -> True;
         false -> False
     end).
@@ -22,7 +22,7 @@
         false -> skip
     end).
 -define(DO_IF_NOT(Expr, True),
-    case not Expr of
+    case not (Expr) of
         true -> True;
         false -> skip
     end).

@@ -23,7 +23,7 @@
 -export([flush/0, hold/0, rollback/1, clean/0, clean/1, all_table/0]).
 
 %% 算是private
--export([build_table/0, build_table/1, init_system/0, check_flush/0, flush_dets/0, fix_dets/1, check_dets/0, hotfix/2]).
+-export([build_table/0, build_table/1, init_system/0, check_flush/0, flush_dets/0, fix_dets/3, check_dets/0, hotfix/2]).
 
 -export([base_test/0]).
 
@@ -126,44 +126,40 @@ init(Table, SelectKey, WhereSql) ->
 %% 查询一条数据
 -spec lookup(atom(), list()) -> Record :: tuple()|undefined.
 lookup(Table, Key) when is_list(Key) ->
-    %% 先从变更的缓存中拿
-    case lookup_from_change(Key, Table) of
-        delete ->
-            undefined;
-        undefined ->
-            %% 从缓存中拿
-            lookup_from_cache(Key, Table);
-        Record ->
-            Record
+    case get(?PD_VMYSQL) of
+        #{Table := #vmysql{state_pos = StatePos, data = Data, change = ChangeData}} ->
+            %% 先从变更的缓存中拿
+            case lookup_from_change(Key, StatePos, ChangeData) of
+                delete ->
+                    undefined;
+                undefined ->
+                    %% 从缓存中拿
+                    maps:get(Key, Data, undefined);
+                Record ->
+                    Record
+            end;
+        _ ->
+            undefined
     end.
 
 %% 先从变更的缓存中拿
-lookup_from_change(Key, Table) ->
-    TableChangeList = get(?PD_VMYSQL_CHANGE),
-    case lists:keyfind(Table, #vmysql_change.table, TableChangeList) of
-        false -> undefined;
-        #vmysql_change{private_key_pos = PKPos, state_pos = StatePos, data = Data} ->
-            case get_from_data(Key, PKPos, Data) of
-                undefined ->
-                    undefined;
-                Record ->
-                    %% 判断是否已删除
-                    case element(StatePos, Record) of
-                        ?VIRTURE_STATE_DELETE ->
-                            delete;
-                        _ ->
-                            Record
-                    end
+lookup_from_change(Key, StatePos, Data) ->
+    case maps:get(Key, Data, undefined) of
+        undefined ->
+            undefined;
+        Record ->
+            %% 判断是否已删除
+            case element(StatePos, Record) of
+                ?VIRTURE_STATE_DELETE ->
+                    delete;
+                _ ->
+                    Record
             end
     end.
 
-%% 从缓存中拿
-lookup_from_cache(Key, Table) ->
-    Virture = get({?PD_VMYSQL_CACHE, Table}),
-    get_from_data(Key, Virture#vmysql.private_key_pos, Virture#vmysql.data).
-
 
 %% @doc 脏读, 先读ets, 再读数据库
+%% 不会读缓存中的数据
 %% 数据不会保存到进程字典缓存中
 -spec dirty_lookup(atom(), list()) -> undefined|tuple().
 dirty_lookup(Table, Key) ->
@@ -171,11 +167,11 @@ dirty_lookup(Table, Key) ->
         [Record] ->
             Record;
         _ ->
-            case get({?PD_VMYSQL_CACHE, Table}) of
-                undefined ->
-                    init(Table, undefined, undefined),
-                    dirty_lookup_db(get({?PD_VMYSQL_CACHE, Table}), Key);
-                Virture ->
+            case get(?PD_VMYSQL) of
+                #{Table := Virture} ->
+                    dirty_lookup_db(Virture, Key);
+                _ ->
+                    Virture = init_virture(virture_config:get(mysql, Table)),
                     dirty_lookup_db(Virture, Key)
             end
     end.
@@ -196,26 +192,26 @@ dirty_lookup_db(#vmysql{
         end,
     {ok, _ColumnNames, Rows} = mysql_poolboy:query(?VMYSQL_POOL, [SelectSql, WhereSql1]),
     %% 构造record数据
-    Data =
-        lists:foldl(fun(Row, Acc) ->
+    {FindRecord, Data} =
+        lists:foldl(fun(Row, {FR, D}) ->
             Record = init_record(InitFun, Row, Virture),
             %% 构造key
             K = make_private_key(PrivateKey, Record),
             Record1 = setelement(PrivateKeyPos, Record, K),
             %% 设置状态
             Record2 = erlang:setelement(StatePos, Record1, ?VIRTURE_STATE_NOT_CHANGE),
-            [Record2 | Acc]
-                    end, [], Rows),
+            case K == PKey of
+                true -> {Record2, [Record2 | D]};
+                _ -> {FR, [Record2 | D]}
+            end
+                    end, {undefined, []}, Rows),
     %% 全部初始化成功再放到ets
     lists:foreach(fun(Record) ->
         %% 读进程可以很多个, 但是写进程只有一个
         %% 保证初始化不会覆盖即可
         ets:insert_new(EtsName, Record)
                   end, Data),
-    case lists:keyfind(PKey, PrivateKeyPos, Data) of
-        false -> undefined;
-        R -> R
-    end.
+    FindRecord.
 
 %% 根据主键构造搜索键
 private_key_to_select_key([], _PrivateList, _ValueList) ->
@@ -232,10 +228,10 @@ private_key_to_select_key_1(Pos, [_ | PT], [_ | VT]) ->
 -spec insert(tuple()) -> term().
 insert(Record) ->
     Table = element(1, Record),
-    #vmysql{
+    #{Table := #vmysql{
         state_pos = StatePos, private_key_pos = PrivateKeyPos,
-        private_key = PrivateKey, data = VData
-    } = Virture = get({?PD_VMYSQL_CACHE, Table}),
+        private_key = PrivateKey, data = Data, change = ChangeData
+    } = Virture} = VMysql = get(?PD_VMYSQL),
     Record1 = setelement(StatePos, Record, ?VIRTURE_STATE_REPLACE),
     %% 新数据自动构造key
     case element(PrivateKeyPos, Record1) of
@@ -245,85 +241,54 @@ insert(Record) ->
         Key ->
             Record2 = Record1
     end,
-    ChangeList = get(?PD_VMYSQL_CHANGE),
     %% 表是否有change缓存
-    case lists:keytake(Table, #vmysql_change.table, ChangeList) of
-        {value, #vmysql_change{data = Data} = Change, ChangeList1} ->
-            Data1 = set_to_data(Key, PrivateKeyPos, Record2, Data),
-            Change1 = Change#vmysql_change{data = Data1},
-            put(?PD_VMYSQL_CHANGE, [Change1 | ChangeList1]),
-            %% 检查是否需要删除原本的缓存
-            case data_size(Data) =/= data_size(Data1) of
-                true ->
-                    VData1 = delete_from_data(Key, PrivateKeyPos, VData),
-                    Virture1 = Virture#vmysql{data = VData1},
-                    put({?PD_VMYSQL_CACHE, Table}, Virture1),
-                    check_sync(data_size(Data1), Virture1);
-                false ->
-                    check_sync(data_size(Data1), Virture)
-            end;
-        _ ->
-            Change = make_change(Key, Record2, Virture),
-            put(?PD_VMYSQL_CHANGE, [Change | get(?PD_VMYSQL_CHANGE)]),
-            VData1 = delete_from_data(Key, PrivateKeyPos, VData),
-            Virture1 = Virture#vmysql{data = VData1},
-            put({?PD_VMYSQL_CACHE, Table}, Virture1),
-            check_sync(1, Virture1)
+    ChangeData1 = ChangeData#{Key => Record2},
+    ChangeSize1 = maps:size(ChangeData1),
+    %% 检查是否需要删除原本的缓存
+    case ChangeSize1 =/= maps:size(ChangeData) of
+        true ->
+            Data1 = maps:remove(Key, Data),
+            Virture1 = Virture#vmysql{data = Data1, change = ChangeData1},
+            put(?PD_VMYSQL, VMysql#{Table => Virture1}),
+            check_sync(ChangeSize1, Virture1);
+        false ->
+            Virture1 = Virture#vmysql{change = ChangeData1},
+            put(?PD_VMYSQL, VMysql#{Table => Virture1}),
+            check_sync(ChangeSize1, Virture)
     end.
 
 %% @doc 删除一条数据
 -spec delete(atom(), list()) -> term().
 delete(Table, Key) when is_list(Key) ->
-    ChangeList = get(?PD_VMYSQL_CHANGE),
-    #vmysql{
-        private_key_pos = PrivateKeyPos,
-        state_pos = StatePos, data = VData
-    } = Virture = get({?PD_VMYSQL_CACHE, Table}),
+    #{Table := #vmysql{
+        state_pos = StatePos, private_key_pos = PrivateKeyPos,
+        data = Data, change = ChangeData
+    } = Virture} = VMysql = get(?PD_VMYSQL),
     %% 构造record, 不需要全部的record字段, 关键数据在就可以
     Record = erlang:make_tuple(max(StatePos, PrivateKeyPos), undefined, [{1, Table}, {PrivateKeyPos, Key}, {StatePos, ?VIRTURE_STATE_DELETE}]),
-    case lists:keytake(Table, #vmysql_change.table, ChangeList) of
-        {value, #vmysql_change{data = Data} = Change, ChangeList1} ->
-            Data1 = set_to_data(Key, PrivateKeyPos, Record, Data),
-            Change1 = Change#vmysql_change{data = Data1},
-            %% 检查是否需要删除原本的缓存
-            case data_size(Data) =/= data_size(Data1) of
-                true ->
-                    VData1 = delete_from_data(Key, PrivateKeyPos, VData),
-                    Virture1 = Virture#vmysql{data = VData1};
-                false ->
-                    Virture1 = Virture
-            end;
-        _ ->
-            Change1 = make_change(Key, Record, Virture),
-            ChangeList1 = ChangeList,
-            VData1 = delete_from_data(Key, PrivateKeyPos, VData),
-            Virture1 = Virture#vmysql{data = VData1}
-    end,
-    put(?PD_VMYSQL_CHANGE, [Change1 | ChangeList1]),
-    put({?PD_VMYSQL_CACHE, Table}, Virture1),
-    check_sync(data_size(Change1#vmysql_change.data), Virture1).
-
-%% 构造change结构并且插入第一条数据
-make_change(Key, Record, Virture) ->
-    #vmysql_change{
-        table = Virture#vmysql.table,
-        private_key_pos = Virture#vmysql.private_key_pos,
-        state_pos = Virture#vmysql.state_pos,
-        data = set_to_data(Key, Virture#vmysql.private_key_pos, Record, get_empty_data(Virture#vmysql.data))
-    }.
+    ChangeData1 = ChangeData#{Key => Record},
+    ChangeSize1 = maps:size(ChangeData1),
+    %% 检查是否需要删除原本的缓存
+    case ChangeSize1 =/= maps:size(ChangeData) of
+        true ->
+            Data1 = maps:remove(Key, Data),
+            Virture1 = Virture#vmysql{data = Data1, change = ChangeData1},
+            put(?PD_VMYSQL, VMysql#{Table => Virture1}),
+            check_sync(ChangeSize1, Virture1);
+        false ->
+            Virture1 = Virture#vmysql{change = ChangeData1},
+            put(?PD_VMYSQL, VMysql#{Table => Virture1}),
+            check_sync(ChangeSize1, Virture)
+    end.
 
 %% 检查是否触发同步
 check_sync(CurrentSize, #vmysql{table = Table, sync_size = SyncSize}) ->
     case CurrentSize >= SyncSize of
         true ->
-            case get(?PD_VMYSQL_FLUSH) of
-                FlushList when is_list(FlushList) ->
-                    case lists:member(Table, FlushList) of
-                        true -> ok;
-                        _ -> put(?PD_VMYSQL_FLUSH, [Table | FlushList])
-                    end;
-                _ ->
-                    put(?PD_VMYSQL_FLUSH, [Table])
+            FlushList = get(?PD_VMYSQL_FLUSH),
+            case lists:member(Table, FlushList) of
+                true -> ok;
+                _ -> put(?PD_VMYSQL_FLUSH, [Table | FlushList])
             end;
         _ -> skip
     end.
@@ -331,15 +296,9 @@ check_sync(CurrentSize, #vmysql{table = Table, sync_size = SyncSize}) ->
 %% @doc 遍历当前数据
 -spec fold_cache(fun((Key :: term(), Record :: term(), Acc :: term())-> Acc1 :: term()), term(), atom()) -> term().
 fold_cache(F, Acc, Table) ->
-    #vmysql{private_key_pos = PKPos, data = Data} = get({?PD_VMYSQL_CACHE, Table}),
-    ChangeTableList = get(?PD_VMYSQL_CHANGE),
-    case lists:keyfind(Table, #vmysql_change.table, ChangeTableList) of
-        #vmysql_change{data = ChangeData} ->
-            Acc1 = fold_data(F, Acc, PKPos, ChangeData),
-            fold_data(F, Acc1, PKPos, Data);
-        _ ->
-            fold_data(F, Acc, PKPos, Data)
-    end.
+    #{Table := #vmysql{data = Data, change = ChangeData}} = get(?PD_VMYSQL),
+    Acc1 = maps:fold(F, Acc, ChangeData),
+    maps:fold(F, Acc1, Data).
 
 %% 检查是否存在需要flush的表
 -spec check_flush() -> term().
@@ -354,63 +313,64 @@ check_flush() ->
 %% @doc flush所有改变的数据到数据库
 -spec flush() -> ok.
 flush() ->
-    case get(?PD_VMYSQL_CHANGE) of
-        ChangeList when is_list(ChangeList) ->
-            flush_change(get(?PD_VMYSQL_CHANGE), []);
+    case get(?PD_VMYSQL) of
+        VMysql when is_map(VMysql) ->
+            VMysql1 =
+                maps:fold(fun(Table, Virture, Acc) ->
+                    case catch do_flush(Virture) of
+                        {ok, Virture1} ->
+                            Acc#{Table => Virture1};
+                        Error ->
+                            ?LOG_ERROR("flush error~n~p", [Error]),
+                            Acc
+                    end
+                          end, VMysql, VMysql),
+            put(?PD_VMYSQL, VMysql1),
+            put(?PD_VMYSQL_FLUSH, []);
         _ ->
             ok
-    end.
-
-flush_change([], FailList) ->
-    put(?PD_VMYSQL_CHANGE, FailList),
-    ok;
-flush_change([H | T], FailList) ->
-    case catch do_flush(H) of
-        ok ->
-            flush_change(T, FailList);
-        Error ->
-            io:format("flush error~n~p~n", [Error]),
-            flush_change(T, [H | FailList])
     end.
 
 %% flush到数据库, 这个接口不开放了
 %% 保证数据一致性, 用户应该把全部flush或者不flush
 flush(TableList) ->
-    flush(TableList, get(?PD_VMYSQL_CHANGE)).
+    flush(TableList, get(?PD_VMYSQL_FLUSH), get(?PD_VMYSQL)).
 
-flush([], ChangeList) ->
-    put(?PD_VMYSQL_CHANGE, ChangeList),
+flush([], FlushList, VMysql) ->
+    put(?PD_VMYSQL_FLUSH, FlushList),
+    put(?PD_VMYSQL, VMysql),
     ok;
-flush([Table | T], ChangeList) ->
-    case lists:keytake(Table, #vmysql_change.table, ChangeList) of
-        {value, Change, ChangeList1} ->
-            case catch do_flush(Change) of
-                ok ->
-                    flush(T, ChangeList1);
+flush([Table | T], FlushList, VMysql) ->
+    case VMysql of
+        #{Table := Virture} ->
+            case catch do_flush(Virture) of
+                {ok, Virture1} ->
+                    VMysql1 = VMysql#{Table => Virture1},
+                    flush(T, lists:delete(Table, FlushList), VMysql1);
                 Error ->
-                    io:format("flush error~n~p~n", [Error]),
-                    flush(T, ChangeList)
+                    ?LOG_ERROR("flush error~n~p", [Error]),
+                    flush(T, FlushList, VMysql)
             end;
         _ ->
-            flush(T, ChangeList)
+            flush(T, FlushList, VMysql)
     end.
 
-do_flush(#vmysql_change{table = Table, private_key_pos = PKPos, data = ChangeData}) ->
-    %% 拿到cache
+do_flush(#vmysql{change = Change} = Virture) when map_size(Change) == 0 ->
+    {ok, Virture};
+do_flush(Virture) ->
     #vmysql{
-        ets = EtsName,
-        data = Data, state_pos = StatePos, private_key = PrivateKey,
+        ets = EtsName, state_pos = StatePos, private_key = PrivateKey,
         replace_sql = ReplaceSql, delete_sql = DeleteSql, private_where_sql = WhereSql,
-        all_fields = AllFields
-    } = Virture = get({?PD_VMYSQL_CACHE, Table}),
+        all_fields = AllFields, data = Data, change = ChangeData
+    } = Virture,
     %% 拼sql, 统计改变
     {Data1, ReplaceIOList, DeleteIOList, ReplaceList, DeleteList} =
-        fold_data(fun(Key, Value, {D, RIO, DIO, RL, DL}) ->
-            case element(StatePos, Value) of
+        maps:fold(fun(Key, Record, {D, RIO, DIO, RL, DL}) ->
+            case element(StatePos, Record) of
                 ?VIRTURE_STATE_REPLACE ->
-                    Value1 = setelement(StatePos, Value, ?VIRTURE_STATE_NOT_CHANGE),
-                    D1 = set_to_data(Key, PKPos, Value1, D),
-                    [[_, First] | Left] = [[$,, encode(Type, element(Pos, Value))] || #vmysql_field{type = Type, pos = Pos} <- AllFields],
+                    Value1 = setelement(StatePos, Record, ?VIRTURE_STATE_NOT_CHANGE),
+                    D1 = D#{Key => Record},
+                    [[_, First] | Left] = [[$,, encode(Type, element(Pos, Record))] || #vmysql_field{type = Type, pos = Pos} <- AllFields],
                     RIO1 = [$,, $(, First, Left, $) | RIO],
                     {D1, RIO1, DIO, [Value1 | RL], DL};
                 ?VIRTURE_STATE_DELETE ->
@@ -421,7 +381,7 @@ do_flush(#vmysql_change{table = Table, private_key_pos = PKPos, data = ChangeDat
                     %% ???????
                     throw({flush, unknow, Unknow})
             end
-                  end, {Data, [], [], [], []}, PKPos, ChangeData),
+                  end, {Data, [], [], [], []}, ChangeData),
     case ReplaceIOList of
         [_ | ReplaceIOList1] -> ok;
         _ -> ReplaceIOList1 = []
@@ -448,31 +408,32 @@ do_flush(#vmysql_change{table = Table, private_key_pos = PKPos, data = ChangeDat
             lists:foreach(fun(Key) ->
                 ets:delete(EtsName, Key)
                           end, DeleteList),
-            %% 缓存
-            Virture1 = Virture#vmysql{data = Data1},
-            put({?PD_VMYSQL_CACHE, Table}, Virture1),
-            ok
+            {ok, Virture#vmysql{data = Data1, change = #{}}}
     end.
 
 
 %% @doc mysql失败的数据保存到dets
 flush_dets() ->
-    flush_dets(get(?PD_VMYSQL_CHANGE)).
-
-flush_dets([]) ->
-    ok;
-flush_dets([#vmysql_change{table = Table, data = Data} | T]) ->
-    #vmysql{private_key_pos = PKPos} = virture_config:get(mysql, Table),
-    case dets:open_file(Table, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(Table)}, {keypos, PKPos}]) of
-        {ok, Table} ->
-            fold_data(fun(_K, V, _) ->
-                dets:insert(Table, V)
-                      end, [], PKPos, Data),
-            dets:close(Table);
-        Error ->
-            Error
-    end,
-    flush_dets(T).
+    case get(?PD_VMYSQL) of
+        VMysql when is_map(VMysql) ->
+            FailList =
+                maps:fold(fun(Table, #vmysql{change = ChangeData}, Acc) ->
+                    #vmysql{private_key_pos = PKPos} = virture_config:get(mysql, Table),
+                    case dets:open_file(Table, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(Table)}, {keypos, PKPos}]) of
+                        {ok, Table} ->
+                            maps:fold(fun(_K, V, _) ->
+                                dets:insert(Table, V)
+                                      end, [], ChangeData),
+                            dets:close(Table),
+                            Acc;
+                        Error ->
+                            [Error | Acc]
+                    end
+                          end, [], VMysql),
+            ?DO_IF_NOT(FailList == [], ?LOG_ERROR("flush dets fail~n~p", [FailList]));
+        _ ->
+            skip
+    end.
 
 %% @doc 检查dets
 check_dets() ->
@@ -501,16 +462,18 @@ check_dets() ->
         end, []).
 
 %% @doc 修复dets数据, 同步到数据库
+%% 提供两个钩子, 全部修复开始前, 全部修复成功后
 %% Fun函数里面必须包含insert或者delete操作, 否则数据会丢失
 %% 简单的修复, A数据在dets, 仅使用正常的数据+坏掉数据A修复
 %% 如果涉及复杂修复, 请直接使用dets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
--spec fix_dets(fun((Record :: tuple())-> term())) -> term().
-fix_dets(Fun) ->
+-spec fix_dets(undefined|function(), fun((Record :: tuple())-> term()), undefined|function()) -> term().
+fix_dets(Before, Fun, After) ->
     Self = self(),
     OldTrapExit = erlang:process_flag(trap_exit, true),
     Spawn =
         spawn_link(fun() ->
             {ok, ?VMYSQL_DETS} = dets:open_file(?VMYSQL_DETS, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?VMYSQL_DETS)}, {keypos, #vmysql.table}]),
+            ?DO_IF(is_function(Before), Before()),
             filelib:fold_files(?VMYSQL_DETS_PATH, ".*", false,
                 fun(FileName, _Acc) ->
                     Table = list_to_atom(filename:basename(FileName)),
@@ -539,6 +502,7 @@ fix_dets(Fun) ->
                             end
                     end
                 end, []),
+            ?DO_IF(is_function(After), After()),
             Self ! fix
                    end),
     Result =
@@ -565,8 +529,9 @@ do_fix_dets_sync(_Table, []) ->
 do_fix_dets_sync(Table, FixList) ->
     %% 同步数据库
     flush(),
-    case get(?PD_VMYSQL_CHANGE) of
-        [] ->
+    %% 检查是否同步成功, 其他数据默认会成功
+    case get(?PD_VMYSQL) of
+        #{Table := #vmysql{change = #{}}} ->
             %% 删除dets
             lists:foreach(fun(Record) -> dets:delete_object(Table, Record) end, FixList);
         _ ->
@@ -575,50 +540,40 @@ do_fix_dets_sync(Table, FixList) ->
     end.
 
 %% @doc 获取当前状态, 用于回滚
--spec hold() -> #vmysql_hold{}.
+-spec hold() -> {list(), map()}.
 hold() ->
-    ChangeTableList = get(?PD_VMYSQL_CHANGE),
-    Cache =
-        lists:foldl(fun(Table, Acc) ->
-            [get({?PD_VMYSQL_CACHE, Table}) | Acc]
-                    end, [], all_table()),
-    #vmysql_hold{cache = Cache, change = ChangeTableList, flush = get(?PD_VMYSQL_FLUSH)}.
+    {get(?PD_VMYSQL_FLUSH), get(?PD_VMYSQL)}.
 
 %% @doc hold()的状态回滚
--spec rollback(#vmysql_hold{}) -> term().
-rollback(#vmysql_hold{cache = Cache, change = ChangeTableList, flush = Flush}) ->
-    put(?PD_VMYSQL_CHANGE, ChangeTableList),
-    lists:foreach(fun(#vmysql{table = Table} = Virture) ->
-        put({?PD_VMYSQL_CACHE, Table}, Virture)
-                  end, Cache),
-    put(?PD_VMYSQL_FLUSH, Flush).
+-spec rollback({list(), map()}) -> term().
+rollback({FlushList, VMysql}) ->
+    put(?PD_VMYSQL_FLUSH, FlushList),
+    put(?PD_VMYSQL, VMysql).
 
 %% @equiv clean(all_table())
 clean() ->
-    clean(all_table()).
+    erase(?PD_VMYSQL),
+    erase(?PD_VMYSQL_FLUSH).
 
 %% @doc 清理缓存
 -spec clean(list()) -> term().
 clean(TableList) ->
-    clean(TableList, get(?PD_VMYSQL_CHANGE), get(?PD_VMYSQL_FLUSH)).
+    clean(TableList, get(?PD_VMYSQL), get(?PD_VMYSQL_FLUSH)).
 
-clean([], ChangeList, Flush) ->
-    put(?PD_VMYSQL_CHANGE, ChangeList),
+clean([], VMysql, Flush) ->
+    put(?PD_VMYSQL, VMysql),
     put(?PD_VMYSQL_FLUSH, Flush),
     ok;
-clean([Table | T], ChangeList, Flush) ->
-    erase({?PD_VMYSQL_CACHE, Table}),
-    clean(T, lists:keydelete(Table, #vmysql_change.table, ChangeList), lists:delete(Table, Flush)).
+clean([Table | T], VMysql, Flush) ->
+    clean(T, maps:remove(Table, VMysql), lists:delete(Table, Flush)).
 
 %% @doc 获取全部table
 -spec all_table() -> list().
 all_table() ->
-    lists:foldl(fun
-                    ({?PD_VMYSQL_CACHE, Table}, Acc) ->
-                        [Table | Acc];
-                    (_, Acc) ->
-                        Acc
-                end, [], get_keys()).
+    case get(?PD_VMYSQL) of
+        VMysql when is_map(VMysql) -> maps:keys(VMysql);
+        _ -> []
+    end.
 
 %% @doc 热修复某个表
 %% 如果定义变了(is_diff_def/2) ,Fun函数里面必须包含insert或者delete操作, 否则数据会丢失
@@ -628,15 +583,16 @@ all_table() ->
 %% 如果涉及复杂修复, 请直接使用fold_cache和ets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
 hotfix(Table, Fun) ->
     Hold = hold(),
-    case catch do_hotfix(Fun, get({?PD_VMYSQL_CACHE, Table})) of
+    #{Table := Virture} = VMsql = get(?PD_VMYSQL),
+    case catch do_hotfix(Fun, Virture, VMsql) of
         ok -> ok;
         Error ->
-            io:format("hotfix~n~p~n", [Error]),
+            ?LOG_ERROR("hotfix~n~p", [Error]),
             rollback(Hold),
             error
     end.
 
-do_hotfix(Fun, #vmysql{table = Table, private_key_pos = PKPos} = OldVirture) ->
+do_hotfix(Fun, #vmysql{table = Table, private_key_pos = PKPos, data = Data, change = ChangeData} = OldVirture, VMsql) ->
     case virture_config:get(mysql, Table) of
         #vmysql{} = NewConfig ->
             case PKPos == NewConfig#vmysql.private_key_pos of
@@ -645,70 +601,42 @@ do_hotfix(Fun, #vmysql{table = Table, private_key_pos = PKPos} = OldVirture) ->
                     %% 主键位置不能改变因为ets无法中途变更
                     throw({vmysql, Table, private_key_pos, cant, change})
             end,
-            case is_same_def(OldVirture, NewConfig) of
-                true ->% 数据定义没改变, 杂项更新
-                    OldVirture1 = OldVirture#vmysql{
-                        init_fun = NewConfig#vmysql.init_fun,
-                        sync_time = NewConfig#vmysql.sync_time,
-                        sync_size = NewConfig#vmysql.sync_size
-                    },
-                    put({?PD_VMYSQL_CACHE, Table}, OldVirture1),
-                    ChangeList = get(?PD_VMYSQL_CHANGE),
-                    case lists:keyfind(Table, #vmysql_change.table, ChangeList) of
-                        false ->
-                            ChangeData = get_empty_data(OldVirture#vmysql.data);
-                        #vmysql_change{data = ChangeData} ->
-                            ok
-                    end,
-                    %% 执行Fun
-                    do_hotfix_fun(Fun, PKPos, OldVirture#vmysql.data),
-                    do_hotfix_fun(Fun, PKPos, ChangeData);
-                _ ->
-                    %% 初始化新的
-                    NewVirture = init_virture(NewConfig),
-                    put({?PD_VMYSQL_CACHE, Table}, NewVirture),
-                    %% change部分
-                    ChangeList = get(?PD_VMYSQL_CHANGE),
-                    case lists:keyfind(Table, #vmysql_change.table, ChangeList) of
-                        false ->
-                            ChangeData = get_empty_data(OldVirture#vmysql.data);
-                        #vmysql_change{data = ChangeData} = Change ->
-                            Change1 = Change#vmysql_change{
-                                state_pos = OldVirture#vmysql.state_pos,
-                                data = NewConfig#vmysql.data
-                            },
-                            ChangeList1 = lists:keystore(Table, #vmysql_change.table, ChangeList, Change1),
-                            put(?PD_VMYSQL_CHANGE, ChangeList1)
-                    end,
-                    %% 执行Fun
-                    do_hotfix_fun(Fun, PKPos, OldVirture#vmysql.data),
-                    do_hotfix_fun(Fun, PKPos, ChangeData)
-            end,
+            NewVirture =
+                case is_same_def(OldVirture, NewConfig) of
+                    true ->% 数据定义没改变, 杂项更新
+                        OldVirture#vmysql{
+                            init_fun = NewConfig#vmysql.init_fun,
+                            sync_time = NewConfig#vmysql.sync_time,
+                            sync_size = NewConfig#vmysql.sync_size
+                        };
+                    _ ->
+                        %% 初始化新的
+                        init_virture(NewConfig)
+                end,
+            VMsql1 = VMsql#{Table => NewVirture},
+            put(?PD_VMYSQL, VMsql1),
+            %% 执行Fun
+            WarpFun = fun(_K, R, _Acc) -> Fun(R) end,
+            maps:fold(WarpFun, [], Data),
+            maps:fold(WarpFun, [], ChangeData),
             %% 刷到ets
-            NewChangeList = get(?PD_VMYSQL_CHANGE),
-            case lists:keyfind(Table, #vmysql_change.table, NewChangeList) of
-                false ->
-                    skip;
-                #vmysql_change{state_pos = NewStatePos, data = NewChangeData} ->
-                    Ets = make_ets_name(Table),
-                    fold_data(fun(K, R, _Acc) ->
-                        case element(NewStatePos, R) of
-                            ?VIRTURE_STATE_DELETE -> ets:delete(Ets, K);
-                            ?VIRTURE_STATE_REPLACE -> ets:insert(Ets, R)
-                        end
-                              end, [], PKPos, NewChangeData)
-            end;
+            do_hotfix_flush_ets(Table);
         _ ->% 表被删除了
-            erase({?PD_VMYSQL_CACHE, Table}),
-            put(?PD_VMYSQL_CHANGE, lists:keydelete(Table, #vmysql_change.table, get(?PD_VMYSQL_CHANGE))),
+            VMsql1 = maps:remove(Table, VMsql),
+            put(?PD_VMYSQL, VMsql1),
             put(?PD_VMYSQL_FLUSH, lists:delete(Table, get(?PD_VMYSQL_FLUSH)))
     end,
     ok.
 
-do_hotfix_fun(Fun, PKPos, Data) ->
-    fold_data(fun(_K, R, _Acc) ->
-        Fun(R)
-              end, [], PKPos, Data).
+do_hotfix_flush_ets(Table) ->
+    #{Table := #vmysql{state_pos = StatePos, change = ChangeData}} = get(?PD_VMYSQL),
+    Ets = make_ets_name(Table),
+    maps:fold(fun(K, R, _Acc) ->
+        case element(StatePos, R) of
+            ?VIRTURE_STATE_DELETE -> ets:delete(Ets, K);
+            ?VIRTURE_STATE_REPLACE -> ets:insert(Ets, R)
+        end
+              end, [], ChangeData).
 
 %% 定义是否改变
 is_same_def(Old, New) ->
@@ -717,62 +645,6 @@ is_same_def(Old, New) ->
         andalso Old#vmysql.private_key == New#vmysql.private_key
         andalso Old#vmysql.all_fields == New#vmysql.all_fields
         andalso Old#vmysql.record_size == New#vmysql.record_size.
-
-%% 从data中取出record
-get_from_data(Key, PrivateKeyPos, ?VIRTURE_LIST(_Size, List)) when is_list(List) ->
-    case lists:keyfind(Key, PrivateKeyPos, List) of
-        false -> undefined;
-        Record -> Record
-    end;
-get_from_data(Key, _PrivateKeyPos, Dict) ->
-    case dict:find(Key, Dict) of
-        error -> undefined;
-        {ok, Record} -> Record
-    end.
-
-%% 保存record到data
-set_to_data(Key, PrivateKeyPos, Value, ?VIRTURE_LIST(Size, List)) ->
-    case lists:keytake(Key, PrivateKeyPos, List) of
-        false ->
-            ?VIRTURE_LIST(Size + 1, [Value | List]);
-        {value, _, List1} ->
-            ?VIRTURE_LIST(Size, [Value | List1])
-    end;
-set_to_data(Key, _PrivateKeyPos, Value, Dict) ->
-    dict:store(Key, Value, Dict).
-
-%% 从data中删除record
-delete_from_data(Key, PrivateKeyPos, ?VIRTURE_LIST(Size, List) = VirtureList) when is_list(List) ->
-    case lists:keytake(Key, PrivateKeyPos, List) of
-        false ->
-            VirtureList;
-        {value, _, List1} ->
-            ?VIRTURE_LIST(Size - 1, List1)
-    end;
-delete_from_data(Key, _PrivateKeyPos, Dict) ->
-    dict:erase(Key, Dict).
-
-%% 遍历data
-fold_data(F, Acc, PrivateKeyPos, ?VIRTURE_LIST(_Size, List)) when is_list(List), is_function(F, 3) ->
-    fold_data_list(F, Acc, PrivateKeyPos, List);
-fold_data(F, Acc, _PrivateKeyPos, Dict) ->
-    dict:fold(F, Acc, Dict).
-
-fold_data_list(_F, Acc, _PrivateKeyPos, []) ->
-    Acc;
-fold_data_list(F, Acc, PrivateKeyPos, [H | T]) ->
-    fold_data_list(F, F(element(PrivateKeyPos, H), H, Acc), PrivateKeyPos, T).
-
-data_size(?VIRTURE_LIST(Size, _List)) ->
-    Size;
-data_size(Dict) ->
-    dict:size(Dict).
-
-%% 获取一个空的data结构
-get_empty_data(?VIRTURE_LIST(_Size, List)) when is_list(List) ->
-    ?VIRTURE_LIST(0, []);
-get_empty_data(_) ->
-    dict:new().
 
 %% 初始化
 init_virture(#vmysql{all_fields = AllField, private_key = PrivateKey, select_key = Selectkey} = Virture) ->
@@ -883,30 +755,31 @@ init_data(Key, ExtWhereSql, Virture) ->
                     Record1 = setelement(PrivateKeyPos, Record, K),
                     %% 设置状态
                     Record2 = erlang:setelement(StatePos, Record1, ?VIRTURE_STATE_NOT_CHANGE),
-                    set_to_data(K, PrivateKeyPos, Record2, Acc)
+                    Acc#{K => Record2}
                             end, VData, Rows),
             %% 全部初始化成功再放到ets
-            fold_data(fun(_K, Value, _Acc) ->
+            maps:fold(fun(_K, Value, _Acc) ->
                 %% 读进程可以很多个, 但是写进程只有一个
                 %% 保证初始化不会覆盖即可
                 ets:insert_new(EtsName, Value)
-                      end, [], PrivateKeyPos, Data),
+                      end, [], Data),
             Virture#vmysql{data = Data};
         _EtsData ->
             %% 构造本地缓存
             Data =
                 lists:foldl(fun(Record, Acc) ->
-                    set_to_data(element(PrivateKeyPos, Record), PrivateKeyPos, Record, Acc)
+                    Acc#{element(PrivateKeyPos, Record) => Record}
                             end, VData, EtsData),
             Virture#vmysql{data = Data}
     end.
 
 %% 初始化进程字典
 init_pd(Virture) ->
-    put({?PD_VMYSQL_CACHE, Virture#vmysql.table}, Virture),
-    case get(?PD_VMYSQL_CHANGE) of
-        undefined -> put(?PD_VMYSQL_CHANGE, []);
-        _ -> skip
+    case get(?PD_VMYSQL) of
+        undefined ->
+            put(?PD_VMYSQL, #{Virture#vmysql.table => Virture});
+        VMysql ->
+            put(?PD_VMYSQL, VMysql#{Virture#vmysql.table => Virture})
     end,
     case get(?PD_VMYSQL_FLUSH) of
         undefined -> put(?PD_VMYSQL_FLUSH, []);
@@ -1124,10 +997,10 @@ base_test() ->
     flush_dets(),
     erase(),
     [] = ets:lookup(virture_mysql:make_ets_name(vmysql_test_player), [4]),
-    fix_dets(fun(R) ->
+    fix_dets(undefined, fun(R) ->
         R1 = R#vmysql_test_player{to_json = [{1, {2, 3}}, {11, {22, 33}}]},
         virture_mysql:insert(R1)
-             end),
+                        end, undefined),
     [#vmysql_test_player{}] = ets:lookup(virture_mysql:make_ets_name(vmysql_test_player), [4]),
     ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_player)),
     virture_mysql:init(vmysql_test_player, []),
@@ -1150,9 +1023,9 @@ base_test() ->
     %% vmysql_test_goods的to_str改成string类型
     %% os:cmd("rebar3 compile"), rr("include/*"), l(virture_mysql), l(virture_config).
     %% virture_mysql:hotfix(vmysql_test_goods, fun(R) -> virture_mysql:insert(R#vmysql_test_goods{to_str = <<"hotfix">>}) end).
-    %% #vmysql_test_goods{str = <<"hotfix">>} = ets:lookup(virture_mysql:make_ets_name(vmysql_test_goods), [4, 1]).
+    %% [#vmysql_test_goods{str = <<"hotfix">>}] = ets:lookup(virture_mysql:make_ets_name(vmysql_test_goods), [4, 1]).
     %% virture_mysql:flush().
     %% 看数据库
-    %% clean(), ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_goods)).
-    %% virture_mysql:init(vmysql_test_goods, [4])
+    %% virture_mysql:clean(), ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_goods)).
+    %% virture_mysql:init(vmysql_test_goods, [4]), virture_mysql:lookup(vmysql_test_goods, [4, 1]).
     {base_test, ok}.
