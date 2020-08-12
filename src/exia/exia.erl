@@ -13,28 +13,33 @@
 
 -include("exia.hrl").
 
-%% API
--export([start/3, start/4,
+%% 原本的API
+-export([
+    start/3, start/4,
     start_link/3, start_link/4,
     start_monitor/3, start_monitor/4,
     stop/1, stop/3,
-    
+    call/2, call/3, cast/2,
+    send_request/2, wait_response/2, check_response/2,
+    reply/2, abcast/2, abcast/3,
+    multi_call/2, multi_call/3, multi_call/4,
+    get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
+    enter_loop/3, enter_loop/4, enter_loop/5, wake_hib/6
+]).
+
+%% exia的
+-export([
     set_dest/1, set_dest/2, get_dest/0, get_dest/1,
     call_execute/2, cast_execute/2,
-    call/2, call/3, cast/2, warp_call/2, warp_call/3, warp_call/4, warp_cast/2, warp_cast/3,
-    spawn_call/4, spawn_call/5,
-    send_request/2, wait_response/2, check_response/2,
+    warp_call/2, warp_call/3, warp_call/4, warp_cast/2, warp_cast/3,
+    spawn_call/4, spawn_call/5, spawn_warp_call/4, spawn_warp_call/5, spawn_warp_call/6,
     %% 进程内使用
     send/1, send/2, send_after/2, send_after/3, send_at/2, send_at/3, send_after/4,
     send_immediately/1, send_immediately/2, send_after_immediately/2, send_after_immediately/3, send_at_immediately/2, send_at_immediately/3, send_after_immediately/4,
     exia_cast/1, exia_cast/2, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
     cast_immediately/1, cast_immediately/2, cast_after_immediately/2, cast_after_immediately/3, cast_at_immediately/2, cast_at_immediately/3, cast_after_immediately/4,
-    hold/0, rollback/1, flush/0, flush_msg/0, reply/2,
-    
-    abcast/2, abcast/3,
-    multi_call/2, multi_call/3, multi_call/4,
-    get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
-    enter_loop/3, enter_loop/4, enter_loop/5, wake_hib/6]).
+    hold/0, rollback/1, flush/0, flush_msg/0
+]).
 
 %% System exports
 -export([system_continue/3,
@@ -200,12 +205,7 @@ call(Name, Request, Timeout) ->
     end.
 
 warp_call(Name, Request) ->
-    case catch gen:call(Name, '$gen_call', #exia_msg{expect_time = erlang:system_time(millisecond), msg = Request}) of
-        {ok, Res} ->
-            Res;
-        {'EXIT', Reason} ->
-            exit({Reason, {?MODULE, call, [Name, Request]}})
-    end.
+    warp_call(Name, erlang:system_time(millisecond), Request).
 
 warp_call(Name, ExpectTime, Request) ->
     case catch gen:call(Name, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}) of
@@ -243,6 +243,42 @@ spawn_call(Name, Request, SuccessFun, FailFun) ->
 spawn_call(Name, Request, Timeout, SuccessFun, FailFun) ->
     spawn(fun() ->
         case catch gen:call(Name, '$gen_call', Request, Timeout) of
+            {ok, Res} ->
+                case SuccessFun of
+                    undefined -> skip;
+                    _ -> SuccessFun(Res)
+                end;
+            {'EXIT', Reason} ->
+                case FailFun of
+                    undefined -> skip;
+                    _ -> FailFun(Reason)
+                end
+        end
+          end).
+
+%% spawn一个进程执行call操作
+spawn_warp_call(Name, Request, SuccessFun, FailFun) ->
+    spawn_warp_call(Name, erlang:system_time(millisecond), Request, SuccessFun, FailFun).
+
+spawn_warp_call(Name, ExpectTime, Request, SuccessFun, FailFun) ->
+    spawn(fun() ->
+        case catch gen:call(Name, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}) of
+            {ok, Res} ->
+                case SuccessFun of
+                    undefined -> skip;
+                    _ -> SuccessFun(Res)
+                end;
+            {'EXIT', Reason} ->
+                case FailFun of
+                    undefined -> skip;
+                    _ -> FailFun(Reason)
+                end
+        end
+          end).
+
+spawn_warp_call(Name, ExpectTime, Request, Timeout, SuccessFun, FailFun) ->
+    spawn(fun() ->
+        case catch gen:call(Name, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}, Timeout) of
             {ok, Res} ->
                 case SuccessFun of
                     undefined -> skip;
