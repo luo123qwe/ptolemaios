@@ -18,16 +18,20 @@
     start_link/3, start_link/4,
     start_monitor/3, start_monitor/4,
     stop/1, stop/3,
-    set_dest/1, get_dest/0,
-    call/2, call/3,
+    
+    set_dest/1, set_dest/2, get_dest/0, get_dest/1,
+    call_execute/2, cast_execute/2,
+    call/2, call/3, cast/2, warp_call/2, warp_call/3, warp_call/4, warp_cast/2, warp_cast/3,
     spawn_call/4, spawn_call/5,
     send_request/2, wait_response/2, check_response/2,
+    %% 进程内使用
     send/1, send/2, send_after/2, send_after/3, send_at/2, send_at/3, send_after/4,
-    send_immediately/1, send_immediately/2, send_after_immediately/2, send_after_immediately/3, send_at_immediately/2, send_at_immediately/3,
-    cast/1, cast/2, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
-    cast_immediately/1, cast_immediately/2, cast_after_immediately/1, cast_after_immediately/2,
-    flush_msg/0,
-    reply/2, abcast/2, abcast/3,
+    send_immediately/1, send_immediately/2, send_after_immediately/2, send_after_immediately/3, send_at_immediately/2, send_at_immediately/3, send_after_immediately/4,
+    exia_cast/1, exia_cast/2, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
+    cast_immediately/1, cast_immediately/2, cast_after_immediately/2, cast_after_immediately/3, cast_at_immediately/2, cast_at_immediately/3, cast_after_immediately/4,
+    hold/0, rollback/1, flush/0, flush_msg/0, reply/2,
+    
+    abcast/2, abcast/3,
     multi_call/2, multi_call/3, multi_call/4,
     get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
     enter_loop/3, enter_loop/4, enter_loop/5, wake_hib/6]).
@@ -156,8 +160,21 @@ stop(Name, Reason, Timeout) ->
 set_dest(Dest) ->
     put(?PD_EXIA_DEST, Dest).
 
+set_dest(Dest, SetDest) ->
+    call(Dest, {exia_private, set_dest, SetDest}).
+
 get_dest() ->
     get(?PD_EXIA_DEST).
+
+get_dest(Dest) ->
+    call(Dest, {exia_private, get_dest}).
+
+%% 执行一个函数
+call_execute(Dest, Execute) ->
+    call(Dest, {exia_private, execute, Execute}).
+
+cast_execute(Dest, Execute) ->
+    cast(Dest, {exia_private, execute, Execute}).
 
 %% -----------------------------------------------------------------
 %% Make a call to a generic server.
@@ -176,6 +193,30 @@ call(Name, Request) ->
 
 call(Name, Request, Timeout) ->
     case catch gen:call(Name, '$gen_call', Request, Timeout) of
+        {ok, Res} ->
+            Res;
+        {'EXIT', Reason} ->
+            exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
+    end.
+
+warp_call(Name, Request) ->
+    case catch gen:call(Name, '$gen_call', #exia_msg{expect_time = erlang:system_time(millisecond), msg = Request}) of
+        {ok, Res} ->
+            Res;
+        {'EXIT', Reason} ->
+            exit({Reason, {?MODULE, call, [Name, Request]}})
+    end.
+
+warp_call(Name, ExpectTime, Request) ->
+    case catch gen:call(Name, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}) of
+        {ok, Res} ->
+            Res;
+        {'EXIT', Reason} ->
+            exit({Reason, {?MODULE, call, [Name, Request]}})
+    end.
+
+warp_call(Name, ExpectTime, Request, Timeout) ->
+    case catch gen:call(Name, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}, Timeout) of
         {ok, Res} ->
             Res;
         {'EXIT', Reason} ->
@@ -238,10 +279,20 @@ check_response(Msg, RequestId) ->
 %% -----------------------------------------------------------------
 %% Make a cast to a generic server.
 %% -----------------------------------------------------------------
-cast(Request) ->
+cast(Dest, Request) ->
+    do_send(Dest, cast_msg(Request)).
+
+warp_cast(Dest, Request) ->
+    do_send(Dest, #exia_msg{expect_time = erlang:system_time(millisecond), msg = cast_msg(Request)}).
+
+warp_cast(Dest, ExpectTime, Request) ->
+    do_send(Dest, #exia_msg{expect_time = ExpectTime, msg = cast_msg(Request)}).
+
+%% 只是跟原有的同名了
+exia_cast(Request) ->
     send(cast_msg(Request)).
 
-cast(Dest, Request) ->
+exia_cast(Dest, Request) ->
     send(Dest, cast_msg(Request)).
 
 cast_after(After, Request) ->
@@ -250,8 +301,35 @@ cast_after(After, Request) ->
 cast_after(After, Dest, Request) ->
     send_after(After, Dest, cast_msg(Request)).
 
+cast_at(ExceptTime, Request) ->
+    send_at(ExceptTime, cast_msg(Request)).
+
+cast_at(Dest, ExceptTime, Request) ->
+    send_at(Dest, ExceptTime, cast_msg(Request)).
+
 cast_after(After, Dest, ExceptTime, Request) ->
-    send_at(After, Dest, ExceptTime, cast_msg(Request)).
+    send_after(After, Dest, ExceptTime, cast_msg(Request)).
+
+cast_immediately(Request) ->
+    send_immediately(cast_msg(Request)).
+
+cast_immediately(Dest, Request) ->
+    send_immediately(Dest, cast_msg(Request)).
+
+cast_after_immediately(After, Request) ->
+    send_after_immediately(After, cast_msg(Request)).
+
+cast_after_immediately(After, Dest, Request) ->
+    send_after_immediately(After, Dest, cast_msg(Request)).
+
+cast_at_immediately(ExceptTime, Request) ->
+    send_at_immediately(ExceptTime, cast_msg(Request)).
+
+cast_at_immediately(Dest, ExceptTime, Request) ->
+    send_at_immediately(Dest, ExceptTime, cast_msg(Request)).
+
+cast_after_immediately(After, Dest, ExceptTime, Request) ->
+    send_after_immediately(After, Dest, ExceptTime, Request).
 
 cast_msg(Request) -> {'$gen_cast', Request}.
 
@@ -265,10 +343,10 @@ send(Dest, Request) ->
     put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(Dest, undefined, (Request)) | get(?PD_EXIA_SEND)]).
 
 send_after(After, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), get_expect_second() + After, (Request)) | get(?PD_EXIA_SEND)]).
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), get_expect_millisecond() + After, (Request)) | get(?PD_EXIA_SEND)]).
 
 send_after(After, Dest, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(Dest, get_expect_second() + After, (Request)) | get(?PD_EXIA_SEND)]).
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(Dest, get_expect_millisecond() + After, (Request)) | get(?PD_EXIA_SEND)]).
 
 send_at(ExceptTime, Request) ->
     put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), ExceptTime, (Request)) | get(?PD_EXIA_SEND)]).
@@ -289,16 +367,22 @@ send_immediately(Dest, Request) ->
     flush_msg([?EXIA_PREPARE_MSG(Dest, undefined, (Request))], get_msg_millisecond()).
 
 send_after_immediately(After, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), get_expect_second() + After, (Request))], get_msg_millisecond()).
+    flush_msg([?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), get_expect_millisecond() + After, (Request))], get_msg_millisecond()).
 
 send_after_immediately(After, Dest, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(Dest, get_expect_second() + After, (Request))], get_msg_millisecond()).
+    flush_msg([?EXIA_PREPARE_MSG(Dest, get_expect_millisecond() + After, (Request))], get_msg_millisecond()).
 
 send_at_immediately(ExceptTime, Request) ->
     flush_msg([?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), ExceptTime, (Request))], get_msg_millisecond()).
 
 send_at_immediately(Dest, ExceptTime, Request) ->
     flush_msg([?EXIA_PREPARE_MSG(Dest, ExceptTime, (Request))], get_msg_millisecond()).
+
+%% Dest收到消息时认为是ExceptTime时间
+%% 例如, send_after(0, Dest, 10秒后的时间戳, Request)
+%% 调试有用, 实际生产不要用!!!!
+send_after_immediately(After, Dest, ExceptTime, Request) ->
+    flush_msg([?EXIA_PREPARE_MSG(After, Dest, ExceptTime, (Request))], get_msg_millisecond()).
 
 flush_msg() ->
     flush_msg(lists:reverse(get(?PD_EXIA_SEND)), get_msg_millisecond()),
@@ -318,6 +402,9 @@ flush_msg([?EXIA_PREPARE_MSG(Dest, ExceptTime, Request) | T], MsgMilliSecond) ->
             After = ExceptTime - MsgMilliSecond,
             erlang:send_after(After, Dest, #exia_msg{expect_time = ExceptTime, msg = Request})
     end,
+    flush_msg(T, MsgMilliSecond);
+flush_msg([?EXIA_PREPARE_MSG(After, Dest, ExceptTime, Request) | T], MsgMilliSecond) ->
+    erlang:send_after(After, Dest, #exia_msg{expect_time = ExceptTime, msg = Request}),
     flush_msg(T, MsgMilliSecond).
 
 do_send({global, Name}, Request) ->
@@ -497,8 +584,8 @@ init_it(Mod, Args) ->
 %%% ---------------------------------------------------
 
 loop(Parent, Name, State, Mod, {continue, Continue} = Msg, HibernateAfterTimeout, Debug) ->
-    BeforeMsg = before_msg(),
-    Reply = try_dispatch(Mod, handle_continue, Continue, State),
+    {Msg1, BeforeMsg} = before_msg(Continue),
+    Reply = try_dispatch(Mod, handle_continue, Msg1, State),
     case Debug of
         [] ->
             handle_common_reply(Reply, Parent, Name, undefined, Msg, Mod,
@@ -741,6 +828,13 @@ start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
 %% stacktraces.
 %% ---------------------------------------------------
 
+try_dispatch({'$gen_cast', {exia_private, execute, Execute}}, _Mod, State) ->
+    try
+        {ok, prim_execute(Execute, State)}
+    catch
+        Class:R:Stacktrace ->
+            {'EXIT', Class, R, Stacktrace}
+    end;
 try_dispatch({'$gen_cast', Msg}, Mod, State) ->
     try_dispatch(Mod, handle_cast, Msg, State);
 try_dispatch(Info, Mod, State) ->
@@ -754,12 +848,42 @@ try_dispatch(Mod, Func, Msg, State) ->
             {'EXIT', Class, R, Stacktrace}
     end.
 
+try_handle_call(_Mod, {exia_private, get_dest}, _From, State) ->
+    {ok, {reply, get(?PD_EXIA_DEST), State}};
+try_handle_call(_Mod, {exia_private, set_dest, Dest}, _From, State) ->
+    {ok, {reply, put(?PD_EXIA_DEST, Dest), State}};
+try_handle_call(_Mod, {exia_private, execute, Execute}, _From, State) ->
+    try
+        {ok, prim_execute(Execute, State)}
+    catch
+        Class:R:Stacktrace ->
+            {'EXIT', Class, R, Stacktrace}
+    end;
+try_handle_call(Mod, #exia_msg{msg = Msg}, From, State) ->
+    try
+        {ok, Mod:handle_call(Msg, From, State)}
+    catch
+        Class:R:Stacktrace ->
+            {'EXIT', Class, R, Stacktrace}
+    end;
 try_handle_call(Mod, Msg, From, State) ->
     try
         {ok, Mod:handle_call(Msg, From, State)}
     catch
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
+    end.
+
+prim_execute(Execute, State) ->
+    case Execute of
+        {M, F, A} when is_atom(M), is_atom(F), is_list(A) ->
+            apply(M, F, A ++ [State]);
+        {M, F} when is_atom(M), is_atom(F) ->
+            apply(M, F, [State]);
+        {F, A} when is_function(F), is_list(A) ->
+            apply(F, A ++ [State]);
+        F when is_function(F) ->
+            apply(F, [State])
     end.
 
 try_terminate(Mod, Reason, State) ->
@@ -781,8 +905,8 @@ try_terminate(Mod, Reason, State) ->
 %%% ---------------------------------------------------
 
 handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTimeout) ->
-    BeforeMsg = before_msg(),
-    Result = try_handle_call(Mod, Msg, From, State),
+    {Msg1, BeforeMsg} = before_msg(Msg),
+    Result = try_handle_call(Mod, Msg1, From, State),
     case Result of
         {ok, {reply, Reply, NState}} ->
             reply(From, Reply),
@@ -796,20 +920,20 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTim
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, []);
         {ok, {stop, Reason, Reply, NState}} ->
             try
-                terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, BeforeMsg, [])
+                terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, BeforeMsg, [])
             after
                 reply(From, Reply)
             end;
-        Other -> handle_common_reply(Other, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, BeforeMsg)
+        Other -> handle_common_reply(Other, Parent, Name, From, Msg1, Mod, HibernateAfterTimeout, State, BeforeMsg)
     end;
 handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout) ->
-    BeforeMsg = before_msg(),
-    Reply = try_dispatch(Msg, Mod, State),
-    handle_common_reply(Reply, Parent, Name, undefined, Msg, Mod, HibernateAfterTimeout, State, BeforeMsg).
+    {Msg1, BeforeMsg} = before_msg(Msg),
+    Reply = try_dispatch(Msg1, Mod, State),
+    handle_common_reply(Reply, Parent, Name, undefined, Msg1, Mod, HibernateAfterTimeout, State, BeforeMsg).
 
 handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTimeout, Debug) ->
-    BeforeMsg = before_msg(),
-    Result = try_handle_call(Mod, Msg, From, State),
+    {Msg1, BeforeMsg} = before_msg(Msg),
+    Result = try_handle_call(Mod, Msg1, From, State),
     case Result of
         {ok, {reply, Reply, NState}} ->
             Debug1 = reply(Name, From, Reply, NState, Debug),
@@ -827,17 +951,17 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTim
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
         {ok, {stop, Reason, Reply, NState}} ->
             try
-                terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, BeforeMsg, Debug)
+                terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, BeforeMsg, Debug)
             after
                 _ = reply(Name, From, Reply, NState, Debug)
             end;
         Other ->
-            handle_common_reply(Other, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, Debug, BeforeMsg)
+            handle_common_reply(Other, Parent, Name, From, Msg1, Mod, HibernateAfterTimeout, State, Debug, BeforeMsg)
     end;
 handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout, Debug) ->
-    BeforeMsg = before_msg(),
-    Reply = try_dispatch(Msg, Mod, State),
-    handle_common_reply(Reply, Parent, Name, undefined, Msg, Mod, HibernateAfterTimeout, State, Debug, BeforeMsg).
+    {Msg1, BeforeMsg} = before_msg(Msg),
+    Reply = try_dispatch(Msg1, Mod, State),
+    handle_common_reply(Reply, Parent, Name, undefined, Msg1, Mod, HibernateAfterTimeout, State, Debug, BeforeMsg).
 
 handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, BeforeMsg) ->
     case Reply of
@@ -899,18 +1023,50 @@ reply(Name, From, Reply, State, Debug) ->
 
 %% 处理消息前后
 before_msg() ->
-    #exia_before_msg{
+    Now = erlang:system_time(millisecond),
+    put(?PD_EXIA_MSG_TIME, Now),
+    put(?PD_EXIA_EXPECT_TIME, Now),
+    #exia_rollback{
         dest = get(?PD_EXIA_DEST),
         virture = virture_mysql:hold()
     }.
+
+before_msg(#exia_msg{msg = Msg, expect_time = ExpectTime}) ->
+    Now = erlang:system_time(millisecond),
+    put(?PD_EXIA_MSG_TIME, Now),
+    put(?PD_EXIA_EXPECT_TIME, ExpectTime),
+    {Msg, #exia_rollback{
+        dest = get(?PD_EXIA_DEST),
+        virture = virture_mysql:hold()
+    }};
+before_msg(Msg) ->
+    Now = erlang:system_time(millisecond),
+    put(?PD_EXIA_MSG_TIME, Now),
+    put(?PD_EXIA_EXPECT_TIME, Now),
+    {Msg, #exia_rollback{
+        dest = get(?PD_EXIA_DEST),
+        virture = virture_mysql:hold()
+    }}.
 
 after_msg() ->
     flush_msg(),
     virture_mysql:check_flush().
 
-rollback(#exia_before_msg{dest = Dest, virture = Virture}) ->
+flush() ->
+    flush_msg(),
+    virture_mysql:check_flush().
+
+%% 可能这个东西不应该开放给用户, flush就够了
+hold() ->
+    #exia_rollback{
+        dest = get(?PD_EXIA_DEST),
+        send = get(?PD_EXIA_SEND),
+        virture = virture_mysql:hold()
+    }.
+
+rollback(#exia_rollback{dest = Dest, send = Send, virture = Virture}) ->
     put(?PD_EXIA_DEST, Dest),
-    put(?PD_EXIA_SEND, []),
+    put(?PD_EXIA_SEND, Send),
     virture_mysql:rollback(Virture).
 
 after_terminate() ->

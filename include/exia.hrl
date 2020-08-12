@@ -13,7 +13,8 @@
 }).
 
 %% 处理消息前保存数据
--record(exia_before_msg, {
+-record(exia_rollback, {
     virture,
-    dest
+    dest,
+    send = []
 }).

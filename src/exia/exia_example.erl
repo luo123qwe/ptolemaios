@@ -21,19 +21,41 @@
 %%%===================================================================
 
 start() ->
-    exia:start({local, ?SERVER}, ?MODULE, [], []).
+    exia:start(?MODULE, [], []).
 
 init([]) ->
-    throw({ok, #exia_example_state{}}).
+    {ok, #exia_example_state{}}.
 
 handle_call(_Request, _From, State = #exia_example_state{}) ->
-    throw({reply, ok, State}).
+    {reply, ok, State}.
 
+handle_cast(test_msg_time, State = #exia_example_state{}) ->
+    io:format("exia ~w~n", [test_msg_time]),
+    io:format("exia ~w~n", [exia:get_msg_second()]),
+    timer:sleep(1000),
+    io:format("exia ~w~n", [exia:get_msg_second()]),
+    exia:send(test_msg_time),
+    {noreply, State};
+handle_cast(test_expect_time, State = #exia_example_state{}) ->
+    io:format("exia ~w~n", [test_expect_time]),
+    io:format("exia ~w~n", [exia:get_expect_second()]),
+    io:format("exia ~w~n", [exia:get_msg_second()]),
+    exia:send(test_expect_time),
+    {noreply, State};
+handle_cast(test_auto_send, State = #exia_example_state{}) ->
+    io:format("exia ~w~n", [test_auto_send]),
+    exia:send(test_auto_send),
+    {noreply, State};
+handle_cast(test_auto_rollback, State = #exia_example_state{}) ->
+    io:format("exia ~w~n", [test_auto_rollback]),
+    exia:send(test_auto_rollback),
+    throw(test),
+    {noreply, State};
 handle_cast(_Request, State = #exia_example_state{}) ->
-    throw({noreply, State}).
+    {noreply, State}.
 
 handle_info(_Info, State = #exia_example_state{}) ->
-    throw({noreply, State}).
+    {noreply, State}.
 
 terminate(_Reason, _State = #exia_example_state{}) ->
     ok.
