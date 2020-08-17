@@ -6,11 +6,10 @@
 %%%-------------------------------------------------------------------
 -module(exia_example).
 
--behaviour(gen_server).
+-behaviour(exia).
 
 -export([start/0]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-    code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
 

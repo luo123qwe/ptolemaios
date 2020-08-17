@@ -3,9 +3,11 @@
 %%% @copyright (C) 2020, <COMPANY>
 %%% @doc
 %%% 复制gen_server修改的behaviour
-%%% 处理消息前使用hold保存数据, 出错时使用rollback回滚
 %%% 去掉throw返回的设定, 主要是文档也没说, 看了代码才发现可以这样
 %%% 增加默认的消息接收进程, 使用进程字典
+%%% 增加消息时间和期望时间设定
+%%% 增加回滚设定
+%%% 增加模拟进程字典
 %%% @end
 %%%-------------------------------------------------------------------
 -module(exia).
@@ -23,22 +25,24 @@
     send_request/2, wait_response/2, check_response/2,
     reply/2, abcast/2, abcast/3,
     multi_call/2, multi_call/3, multi_call/4,
-    get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
     enter_loop/3, enter_loop/4, enter_loop/5, wake_hib/6
 ]).
 
 %% exia的
 -export([
-    set_dest/1, set_dest/2, get_dest/0, get_dest/1,
+    set_dest/2, get_dest/1,
     call_execute/2, cast_execute/2,
     warp_call/2, warp_call/3, warp_call/4, warp_cast/2, warp_cast/3,
     spawn_call/4, spawn_call/5, spawn_warp_call/4, spawn_warp_call/5, spawn_warp_call/6,
-    %% 进程内使用
+    %% 仅可进程内使用
+    set_dest/1, get_dest/0,
     send/1, send/2, send_after/2, send_after/3, send_at/2, send_at/3, send_after/4,
     send_immediately/1, send_immediately/2, send_after_immediately/2, send_after_immediately/3, send_at_immediately/2, send_at_immediately/3, send_after_immediately/4,
-    exia_cast/1, exia_cast/2, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
+    ecast/1, ecast/2, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
     cast_immediately/1, cast_immediately/2, cast_after_immediately/2, cast_after_immediately/3, cast_at_immediately/2, cast_at_immediately/3, cast_after_immediately/4,
-    hold/0, rollback/1, flush/0, flush_msg/0
+    hold/1, rollback/1, flush/0, flush_msg/0,
+    get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
+    eget/2, eset/2
 ]).
 
 %% System exports
@@ -160,8 +164,9 @@ stop(Name) ->
 stop(Name, Reason, Timeout) ->
     gen:stop(Name, Reason, Timeout).
 
-
+%% -----------------------------------------------------------------
 %% 默认的消息接收进程
+%% -----------------------------------------------------------------
 set_dest(Dest) ->
     put(?PD_EXIA_DEST, Dest).
 
@@ -174,7 +179,10 @@ get_dest() ->
 get_dest(Dest) ->
     call(Dest, {exia_private, get_dest}).
 
+%% -----------------------------------------------------------------
 %% 执行一个函数
+%% -----------------------------------------------------------------
+%% Execute = {M,F,A}|{M,F}|{F,A}|F
 call_execute(Dest, Execute) ->
     call(Dest, {exia_private, execute, Execute}).
 
@@ -204,6 +212,9 @@ call(Name, Request, Timeout) ->
             exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
+%% -----------------------------------------------------------------
+%% 包装成一个exia消息
+%% -----------------------------------------------------------------
 warp_call(Name, Request) ->
     warp_call(Name, erlang:system_time(millisecond), Request).
 
@@ -223,7 +234,15 @@ warp_call(Name, ExpectTime, Request, Timeout) ->
             exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
+warp_cast(Dest, Request) ->
+    do_send(Dest, #exia_msg{expect_time = erlang:system_time(millisecond), msg = cast_msg(Request)}).
+
+warp_cast(Dest, ExpectTime, Request) ->
+    do_send(Dest, #exia_msg{expect_time = ExpectTime, msg = cast_msg(Request)}).
+
+%% -----------------------------------------------------------------
 %% spawn一个进程执行call操作
+%% -----------------------------------------------------------------
 spawn_call(Name, Request, SuccessFun, FailFun) ->
     spawn(fun() ->
         case catch gen:call(Name, '$gen_call', Request) of
@@ -318,17 +337,11 @@ check_response(Msg, RequestId) ->
 cast(Dest, Request) ->
     do_send(Dest, cast_msg(Request)).
 
-warp_cast(Dest, Request) ->
-    do_send(Dest, #exia_msg{expect_time = erlang:system_time(millisecond), msg = cast_msg(Request)}).
-
-warp_cast(Dest, ExpectTime, Request) ->
-    do_send(Dest, #exia_msg{expect_time = ExpectTime, msg = cast_msg(Request)}).
-
 %% 只是跟原有的同名了
-exia_cast(Request) ->
+ecast(Request) ->
     send(cast_msg(Request)).
 
-exia_cast(Dest, Request) ->
+ecast(Dest, Request) ->
     send(Dest, cast_msg(Request)).
 
 cast_after(After, Request) ->
@@ -420,6 +433,7 @@ send_at_immediately(Dest, ExceptTime, Request) ->
 send_after_immediately(After, Dest, ExceptTime, Request) ->
     flush_msg([?EXIA_PREPARE_MSG(After, Dest, ExceptTime, (Request))], get_msg_millisecond()).
 
+%% 刷新msg缓存
 flush_msg() ->
     flush_msg(lists:reverse(get(?PD_EXIA_SEND)), get_msg_millisecond()),
     put(?PD_EXIA_SEND, []).
@@ -502,7 +516,9 @@ multi_call(Nodes, Name, Req, Timeout)
     do_multi_call(Nodes, Name, Req, Timeout).
 
 
+%%% -----------------------------------------------------------------
 %% 时间相关
+%%% -----------------------------------------------------------------
 %% 期望毫秒
 get_expect_millisecond() ->
     get(?PD_EXIA_EXPECT_TIME).
@@ -518,6 +534,15 @@ get_msg_millisecond() ->
 %% 消息到达时秒
 get_msg_second() ->
     get(?PD_EXIA_MSG_TIME) div 1000.
+
+%%% -----------------------------------------------------------------
+%% 模拟进程字典
+%%% -----------------------------------------------------------------
+eget(Key, Default) ->
+    maps:get(Key, get(?PD_EXIA_PD), Default).
+
+eset(Key, Value) ->
+    put(?PD_EXIA_PD, maps:put(Key, Value, get(?PD_EXIA_PD))).
 
 %%-----------------------------------------------------------------
 %% enter_loop(Mod, Options, State, <ServerName>, <TimeOut>) ->_
@@ -567,16 +592,16 @@ init_it(Starter, Parent, Name0, Mod, Args, Options) ->
     Name = gen:name(Name0),
     Debug = gen:debug_options(Name, Options),
     HibernateAfterTimeout = gen:hibernate_after(Options),
-    put(?PD_EXIA_SEND, []),
+    init_pd(),
     
     case init_it(Mod, Args) of
         {ok, {ok, State}} ->
             proc_lib:init_ack(Starter, {ok, self()}),
-            flush_msg(),
+            after_msg(),
             loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug);
         {ok, {ok, State, Timeout}} ->
             proc_lib:init_ack(Starter, {ok, self()}),
-            flush_msg(),
+            after_msg(),
             loop(Parent, Name, State, Mod, Timeout, HibernateAfterTimeout, Debug);
         {ok, {stop, Reason}} ->
             %% For consistency, we must make sure that the
@@ -587,17 +612,17 @@ init_it(Starter, Parent, Name0, Mod, Args, Options) ->
             %% tried starting the process again.)
             gen:unregister_name(Name0),
             proc_lib:init_ack(Starter, {error, Reason}),
-            flush_msg(),
+            after_msg(),
             exit(Reason);
         {ok, ignore} ->
             gen:unregister_name(Name0),
             proc_lib:init_ack(Starter, ignore),
-            flush_msg(),
+            after_msg(),
             exit(normal);
         {ok, Else} ->
             Error = {bad_return_value, Else},
             proc_lib:init_ack(Starter, {error, Error}),
-            flush_msg(),
+            after_msg(),
             exit(Error);
         {'EXIT', Class, Reason, Stacktrace} ->
             gen:unregister_name(Name0),
@@ -620,16 +645,16 @@ init_it(Mod, Args) ->
 %%% ---------------------------------------------------
 
 loop(Parent, Name, State, Mod, {continue, Continue} = Msg, HibernateAfterTimeout, Debug) ->
-    {Msg1, BeforeMsg} = before_msg(Continue),
+    {Msg1, Rollback} = before_msg(Continue, State),
     Reply = try_dispatch(Mod, handle_continue, Msg1, State),
     case Debug of
         [] ->
             handle_common_reply(Reply, Parent, Name, undefined, Msg, Mod,
-                HibernateAfterTimeout, State, BeforeMsg);
+                HibernateAfterTimeout, State, Rollback);
         _ ->
             Debug1 = sys:handle_debug(Debug, fun print_event/3, Name, Msg),
             handle_common_reply(Reply, Parent, Name, undefined, Msg, Mod,
-                HibernateAfterTimeout, State, Debug1, BeforeMsg)
+                HibernateAfterTimeout, State, Debug1, Rollback)
     end;
 
 loop(Parent, Name, State, Mod, hibernate, HibernateAfterTimeout, Debug) ->
@@ -665,8 +690,8 @@ decode_msg(Msg, Parent, Name, State, Mod, Time, HibernateAfterTimeout, Debug, Hi
             sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
                 [Name, State, Mod, Time, HibernateAfterTimeout], Hib);
         {'EXIT', Parent, Reason} ->
-            BeforeMsg = before_msg(),
-            terminate(Reason, ?STACKTRACE(), Name, undefined, Msg, Mod, State, BeforeMsg, Debug);
+            Rollback = before_msg(State),
+            terminate(Reason, ?STACKTRACE(), Name, undefined, Msg, Mod, State, Rollback, Debug);
         _Msg when Debug =:= [] ->
             handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout);
         _Msg ->
@@ -941,7 +966,7 @@ try_terminate(Mod, Reason, State) ->
 %%% ---------------------------------------------------
 
 handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTimeout) ->
-    {Msg1, BeforeMsg} = before_msg(Msg),
+    {Msg1, Rollback} = before_msg(Msg, State),
     Result = try_handle_call(Mod, Msg1, From, State),
     case Result of
         {ok, {reply, Reply, NState}} ->
@@ -956,19 +981,19 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTim
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, []);
         {ok, {stop, Reason, Reply, NState}} ->
             try
-                terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, BeforeMsg, [])
+                terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, Rollback, [])
             after
                 reply(From, Reply)
             end;
-        Other -> handle_common_reply(Other, Parent, Name, From, Msg1, Mod, HibernateAfterTimeout, State, BeforeMsg)
+        Other -> handle_common_reply(Other, Parent, Name, From, Msg1, Mod, HibernateAfterTimeout, State, Rollback)
     end;
 handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout) ->
-    {Msg1, BeforeMsg} = before_msg(Msg),
+    {Msg1, Rollback} = before_msg(Msg, State),
     Reply = try_dispatch(Msg1, Mod, State),
-    handle_common_reply(Reply, Parent, Name, undefined, Msg1, Mod, HibernateAfterTimeout, State, BeforeMsg).
+    handle_common_reply(Reply, Parent, Name, undefined, Msg1, Mod, HibernateAfterTimeout, State, Rollback).
 
 handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTimeout, Debug) ->
-    {Msg1, BeforeMsg} = before_msg(Msg),
+    {Msg1, Rollback} = before_msg(Msg, State),
     Result = try_handle_call(Mod, Msg1, From, State),
     case Result of
         {ok, {reply, Reply, NState}} ->
@@ -987,19 +1012,19 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTim
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
         {ok, {stop, Reason, Reply, NState}} ->
             try
-                terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, BeforeMsg, Debug)
+                terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, Rollback, Debug)
             after
                 _ = reply(Name, From, Reply, NState, Debug)
             end;
         Other ->
-            handle_common_reply(Other, Parent, Name, From, Msg1, Mod, HibernateAfterTimeout, State, Debug, BeforeMsg)
+            handle_common_reply(Other, Parent, Name, From, Msg1, Mod, HibernateAfterTimeout, State, Debug, Rollback)
     end;
 handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout, Debug) ->
-    {Msg1, BeforeMsg} = before_msg(Msg),
+    {Msg1, Rollback} = before_msg(Msg, State),
     Reply = try_dispatch(Msg1, Mod, State),
-    handle_common_reply(Reply, Parent, Name, undefined, Msg1, Mod, HibernateAfterTimeout, State, Debug, BeforeMsg).
+    handle_common_reply(Reply, Parent, Name, undefined, Msg1, Mod, HibernateAfterTimeout, State, Debug, Rollback).
 
-handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, BeforeMsg) ->
+handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, Rollback) ->
     case Reply of
         {ok, {noreply, NState}} ->
             after_msg(),
@@ -1009,19 +1034,19 @@ handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, 
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, []);
         {ok, {stop, Reason, NState}} ->
             after_msg(),
-            terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, BeforeMsg, []);
+            terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, Rollback, []);
         %% stop是唯一关闭进程的方法
         {'EXIT', Class, Reason, Stacktrace} ->
             ?LOG_ERROR("~p, ~p~n~p", [Class, Reason, Stacktrace]),
-            rollback(BeforeMsg),
+            rollback(Rollback),
             loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, []);
         {ok, BadReply} ->
             ?LOG_ERROR("~p~n~p", [bad_return_value, BadReply]),
-            rollback(BeforeMsg),
+            rollback(Rollback),
             loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, [])
     end.
 
-handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, Debug, BeforeMsg) ->
+handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, Debug, Rollback) ->
     case Reply of
         {ok, {noreply, NState}} ->
             after_msg(),
@@ -1035,19 +1060,19 @@ handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, 
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
         {ok, {stop, Reason, NState}} ->
             after_msg(),
-            terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, BeforeMsg, Debug);
+            terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, Rollback, Debug);
         %% stop是唯一关闭进程的方法
         {'EXIT', Class, Reason, Stacktrace} ->
             ?LOG_ERROR("~p, ~p~n~p", [Class, Reason, Stacktrace]),
             Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                 {noreply, State}),
-            rollback(BeforeMsg),
+            rollback(Rollback),
             loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug1);
         {ok, BadReply} ->
             ?LOG_ERROR("~p~n~p", [bad_return_value, BadReply]),
             Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                 {noreply, State}),
-            rollback(BeforeMsg),
+            rollback(Rollback),
             loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug1)
     end.
 
@@ -1056,30 +1081,40 @@ reply(Name, From, Reply, State, Debug) ->
     sys:handle_debug(Debug, fun print_event/3, Name,
         {out, Reply, From, State}).
 
+%% 初始化进程字典
+init_pd() ->
+    put(?PD_EXIA_SEND, []),
+    put(?PD_EXIA_PD, #{}),
+    Now = erlang:system_time(millisecond),
+    put(?PD_EXIA_MSG_TIME, Now),
+    put(?PD_EXIA_EXPECT_TIME, Now).
 
 %% 处理消息前后
-before_msg() ->
+before_msg(State) ->
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
     put(?PD_EXIA_EXPECT_TIME, Now),
     #exia_rollback{
+        state = State,
         dest = get(?PD_EXIA_DEST),
         virture = virture_mysql:hold()
     }.
 
-before_msg(#exia_msg{msg = Msg, expect_time = ExpectTime}) ->
+before_msg(#exia_msg{msg = Msg, expect_time = ExpectTime}, State) ->
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
     put(?PD_EXIA_EXPECT_TIME, ExpectTime),
     {Msg, #exia_rollback{
+        state = State,
         dest = get(?PD_EXIA_DEST),
         virture = virture_mysql:hold()
     }};
-before_msg(Msg) ->
+before_msg(Msg, State) ->
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
     put(?PD_EXIA_EXPECT_TIME, Now),
     {Msg, #exia_rollback{
+        state = State,
         dest = get(?PD_EXIA_DEST),
         virture = virture_mysql:hold()
     }}.
@@ -1088,22 +1123,27 @@ after_msg() ->
     flush_msg(),
     virture_mysql:check_flush().
 
+%% 刷新缓存
 flush() ->
     flush_msg(),
     virture_mysql:check_flush().
 
-%% 可能这个东西不应该开放给用户, flush就够了
-hold() ->
+%%-----------------------------------------------------------------
+%% 回滚相关
+%%-----------------------------------------------------------------
+hold(State) ->
     #exia_rollback{
+        state = State,
         dest = get(?PD_EXIA_DEST),
         send = get(?PD_EXIA_SEND),
         virture = virture_mysql:hold()
     }.
 
-rollback(#exia_rollback{dest = Dest, send = Send, virture = Virture}) ->
+rollback(#exia_rollback{state = State, dest = Dest, send = Send, virture = Virture}) ->
     put(?PD_EXIA_DEST, Dest),
     put(?PD_EXIA_SEND, Send),
-    virture_mysql:rollback(Virture).
+    virture_mysql:rollback(Virture),
+    State.
 
 after_terminate() ->
     flush_msg(),
@@ -1119,17 +1159,17 @@ system_continue(Parent, Debug, [Name, State, Mod, Time, HibernateAfterTimeout]) 
 -spec system_terminate(_, _, _, [_]) -> no_return().
 
 system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time, _HibernateAfterTimeout]) ->
-    BeforeMsg = before_msg(),
-    terminate(Reason, ?STACKTRACE(), Name, undefined, [], Mod, State, BeforeMsg, Debug).
+    Rollback = before_msg(State),
+    terminate(Reason, ?STACKTRACE(), Name, undefined, [], Mod, State, Rollback, Debug).
 
 system_code_change([Name, State, Mod, Time, HibernateAfterTimeout], _Module, OldVsn, Extra) ->
-    BeforeMsg = before_msg(),
+    Rollback = before_msg(State),
     case catch Mod:code_change(OldVsn, State, Extra) of
         {ok, NewState} ->
             after_msg(),
             {ok, [Name, NewState, Mod, Time, HibernateAfterTimeout]};
         Else ->
-            rollback(BeforeMsg),
+            rollback(Rollback),
             Else
     end.
 
@@ -1182,15 +1222,15 @@ print_event(Dev, Event, Name) ->
 %%% ---------------------------------------------------
 
 -spec terminate(_, _, _, _, _, _, _, _, _) -> no_return().
-terminate(Reason, Stacktrace, Name, From, Msg, Mod, State, BeforeMsg, Debug) ->
-    terminate(exit, Reason, Stacktrace, Reason, Name, From, Msg, Mod, State, BeforeMsg, Debug).
+terminate(Reason, Stacktrace, Name, From, Msg, Mod, State, Rollback, Debug) ->
+    terminate(exit, Reason, Stacktrace, Reason, Name, From, Msg, Mod, State, Rollback, Debug).
 
 -spec terminate(_, _, _, _, _, _, _, _, _, _, _) -> no_return().
-terminate(Class, Reason, Stacktrace, ReportReason, Name, From, Msg, Mod, State, BeforeMsg, Debug) ->
+terminate(Class, Reason, Stacktrace, ReportReason, Name, From, Msg, Mod, State, Rollback, Debug) ->
     Reply = try_terminate(Mod, terminate_reason(Class, Reason, Stacktrace), State),
     case Reply of
         {'EXIT', C, R, S} ->
-            rollback(BeforeMsg),
+            rollback(Rollback),
             error_info({R, S}, Name, From, Msg, Mod, State, Debug),
             erlang:raise(C, R, S);
         _ ->
@@ -1199,7 +1239,7 @@ terminate(Class, Reason, Stacktrace, ReportReason, Name, From, Msg, Mod, State, 
                 {exit, shutdown} -> ok;
                 {exit, {shutdown, _}} -> ok;
                 _ ->
-                    rollback(BeforeMsg),
+                    rollback(Rollback),
                     error_info(ReportReason, Name, From, Msg, Mod, State, Debug)
             end
     end,
