@@ -40,7 +40,7 @@
     send_immediately/1, send_immediately/2, send_after_immediately/2, send_after_immediately/3, send_at_immediately/2, send_at_immediately/3, send_after_immediately/4,
     ecast/1, ecast/2, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
     cast_immediately/1, cast_immediately/2, cast_after_immediately/2, cast_after_immediately/3, cast_at_immediately/2, cast_at_immediately/3, cast_after_immediately/4,
-    flush/1,
+    flush/1, return/1,
     get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
     eget/2, eset/2
 ]).
@@ -636,6 +636,7 @@ init_it(Mod, Args) ->
     try
         {ok, Mod:init(Args)}
     catch
+        throw:{exia_private, return, R} -> {ok, R};
         Class:R:S -> {'EXIT', Class, R, S}
     end.
 
@@ -895,6 +896,7 @@ try_dispatch({'$gen_cast', {exia_private, execute, Execute}}, _Mod, State) ->
     try
         {ok, prim_execute(Execute, State)}
     catch
+        throw:{exia_private, return, R} -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end;
@@ -907,6 +909,7 @@ try_dispatch(Mod, Func, Msg, State) ->
     try
         {ok, Mod:Func(Msg, State)}
     catch
+        throw:{exia_private, return, R} -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end.
@@ -919,6 +922,7 @@ try_handle_call(_Mod, {exia_private, execute, Execute}, _From, State) ->
     try
         {ok, prim_execute(Execute, State)}
     catch
+        throw:{exia_private, return, R} -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end;
@@ -926,6 +930,7 @@ try_handle_call(Mod, #exia_msg{msg = Msg}, From, State) ->
     try
         {ok, Mod:handle_call(Msg, From, State)}
     catch
+        throw:{exia_private, return, R} -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end;
@@ -933,6 +938,7 @@ try_handle_call(Mod, Msg, From, State) ->
     try
         {ok, Mod:handle_call(Msg, From, State)}
     catch
+        throw:{exia_private, return, R} -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end.
@@ -955,6 +961,7 @@ try_terminate(Mod, Reason, State) ->
             try
                 {ok, Mod:terminate(Reason, State)}
             catch
+                throw:{exia_private, return, R} -> {ok, R};
                 Class:R:Stacktrace ->
                     {'EXIT', Class, R, Stacktrace}
             end;
@@ -1129,6 +1136,10 @@ flush(State) ->
     flush_msg(),
     virture_mysql:check_flush(),
     put(?PD_EXIA_ROLLBACK, hold(State)).
+
+%% 返回
+return(Return) ->
+    throw({exia_private, return, Return}).
 
 %%-----------------------------------------------------------------
 %% 回滚相关

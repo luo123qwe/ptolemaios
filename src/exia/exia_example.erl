@@ -24,7 +24,7 @@ start() ->
     exia:start(?MODULE, [], []).
 
 init([]) ->
-    {ok, #exia_example_state{}}.
+    exia:return({ok, #exia_example_state{}}).
 
 
 handle_call(test_msg_time, _From, State = #exia_example_state{}) ->
@@ -44,19 +44,25 @@ handle_call(test_flush, _From, State = #exia_example_state{}) ->
     exia:flush(State#exia_example_state{id = test_flush}),
     throw(test),
     {reply, ok, State};
+handle_call(test_call_return, _From, State = #exia_example_state{}) ->
+    exia:return({reply, ok, State#exia_example_state{id = test_call_return}});
 handle_call(get_state, _From, State = #exia_example_state{}) ->
     {reply, State, State};
 handle_call(_Request, _From, State = #exia_example_state{}) ->
     {reply, ok, State}.
 
+handle_cast(test_cast_return, State = #exia_example_state{}) ->
+    exia:return({noreply, State#exia_example_state{id = test_cast_return}});
 handle_cast(_Request, State = #exia_example_state{}) ->
     {noreply, State}.
 
+handle_info(test_info_return, State = #exia_example_state{}) ->
+    exia:return({noreply, State#exia_example_state{id = test_info_return}});
 handle_info(_Info, State = #exia_example_state{}) ->
     {noreply, State}.
 
 terminate(_Reason, _State = #exia_example_state{}) ->
-    ok.
+    exia:return(ok).
 
 code_change(_OldVsn, State = #exia_example_state{}, _Extra) ->
     {ok, State}.
@@ -95,7 +101,14 @@ base_test_() ->
                                #exia_msg{msg = test_flush} -> ok;
                                Other -> throw({test_flush, Other})
                            after 0 -> throw(test_flush) end),
-                    ?_assertEqual(#exia_example_state{id = test_flush}, exia:call(Pid, get_state))
+                    ?_assertEqual(#exia_example_state{id = test_flush}, exia:call(Pid, get_state)),
+                    ?_test(exia:call(Pid, test_call_return)),
+                    ?_assertEqual(#exia_example_state{id = test_call_return}, exia:call(Pid, get_state)),
+                    ?_test(exia:cast(Pid, test_cast_return)),
+                    ?_assertEqual(#exia_example_state{id = test_cast_return}, exia:call(Pid, get_state)),
+                    ?_test(Pid ! test_info_return),
+                    ?_assertEqual(#exia_example_state{id = test_info_return}, exia:call(Pid, get_state)),
+                    ?_test(exia:stop(Pid))
                 ]
             end
         }
