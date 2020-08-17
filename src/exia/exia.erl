@@ -40,12 +40,14 @@
     send_immediately/1, send_immediately/2, send_after_immediately/2, send_after_immediately/3, send_at_immediately/2, send_at_immediately/3, send_after_immediately/4,
     ecast/1, ecast/2, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
     cast_immediately/1, cast_immediately/2, cast_after_immediately/2, cast_after_immediately/3, cast_at_immediately/2, cast_at_immediately/3, cast_after_immediately/4,
-    hold/1, rollback/1, flush/0, flush_msg/0,
+    flush/1,
     get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
     eget/2, eset/2
 ]).
 
 %% System exports
+%% sys的返回不支持成功一半
+%% 所以不能使用flush函数!!!
 -export([system_continue/3,
     system_terminate/4,
     system_code_change/4,
@@ -970,16 +972,21 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTim
     Result = try_handle_call(Mod, Msg1, From, State),
     case Result of
         {ok, {reply, Reply, NState}} ->
+            after_msg(),
             reply(From, Reply),
             loop(Parent, Name, NState, Mod, infinity, HibernateAfterTimeout, []);
         {ok, {reply, Reply, NState, Time1}} ->
+            after_msg(),
             reply(From, Reply),
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, []);
         {ok, {noreply, NState}} ->
+            after_msg(),
             loop(Parent, Name, NState, Mod, infinity, HibernateAfterTimeout, []);
         {ok, {noreply, NState, Time1}} ->
+            after_msg(),
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, []);
         {ok, {stop, Reason, Reply, NState}} ->
+            flush(NState),
             try
                 terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, Rollback, [])
             after
@@ -997,20 +1004,25 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, HibernateAfterTim
     Result = try_handle_call(Mod, Msg1, From, State),
     case Result of
         {ok, {reply, Reply, NState}} ->
+            after_msg(),
             Debug1 = reply(Name, From, Reply, NState, Debug),
             loop(Parent, Name, NState, Mod, infinity, HibernateAfterTimeout, Debug1);
         {ok, {reply, Reply, NState, Time1}} ->
+            after_msg(),
             Debug1 = reply(Name, From, Reply, NState, Debug),
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
         {ok, {noreply, NState}} ->
+            after_msg(),
             Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                 {noreply, NState}),
             loop(Parent, Name, NState, Mod, infinity, HibernateAfterTimeout, Debug1);
         {ok, {noreply, NState, Time1}} ->
+            after_msg(),
             Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                 {noreply, NState}),
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
         {ok, {stop, Reason, Reply, NState}} ->
+            flush(NState),
             try
                 terminate(Reason, ?STACKTRACE(), Name, From, Msg1, Mod, NState, Rollback, Debug)
             after
@@ -1024,7 +1036,7 @@ handle_msg(Msg, Parent, Name, State, Mod, HibernateAfterTimeout, Debug) ->
     Reply = try_dispatch(Msg1, Mod, State),
     handle_common_reply(Reply, Parent, Name, undefined, Msg1, Mod, HibernateAfterTimeout, State, Debug, Rollback).
 
-handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, Rollback) ->
+handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, _State, Rollback) ->
     case Reply of
         {ok, {noreply, NState}} ->
             after_msg(),
@@ -1033,17 +1045,17 @@ handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, 
             after_msg(),
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, []);
         {ok, {stop, Reason, NState}} ->
-            after_msg(),
+            flush(NState),
             terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, Rollback, []);
         %% stop是唯一关闭进程的方法
         {'EXIT', Class, Reason, Stacktrace} ->
             ?LOG_ERROR("~p, ~p~n~p", [Class, Reason, Stacktrace]),
-            rollback(Rollback),
-            loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, []);
+            RollbackState = rollback(Rollback),
+            loop(Parent, Name, RollbackState, Mod, infinity, HibernateAfterTimeout, []);
         {ok, BadReply} ->
             ?LOG_ERROR("~p~n~p", [bad_return_value, BadReply]),
-            rollback(Rollback),
-            loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, [])
+            RollbackState = rollback(Rollback),
+            loop(Parent, Name, RollbackState, Mod, infinity, HibernateAfterTimeout, [])
     end.
 
 handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, State, Debug, Rollback) ->
@@ -1059,21 +1071,21 @@ handle_common_reply(Reply, Parent, Name, From, Msg, Mod, HibernateAfterTimeout, 
                 {noreply, NState}),
             loop(Parent, Name, NState, Mod, Time1, HibernateAfterTimeout, Debug1);
         {ok, {stop, Reason, NState}} ->
-            after_msg(),
+            flush(NState),
             terminate(Reason, ?STACKTRACE(), Name, From, Msg, Mod, NState, Rollback, Debug);
         %% stop是唯一关闭进程的方法
         {'EXIT', Class, Reason, Stacktrace} ->
             ?LOG_ERROR("~p, ~p~n~p", [Class, Reason, Stacktrace]),
             Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                 {noreply, State}),
-            rollback(Rollback),
-            loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug1);
+            RollbackState = rollback(Rollback),
+            loop(Parent, Name, RollbackState, Mod, infinity, HibernateAfterTimeout, Debug1);
         {ok, BadReply} ->
             ?LOG_ERROR("~p~n~p", [bad_return_value, BadReply]),
             Debug1 = sys:handle_debug(Debug, fun print_event/3, Name,
                 {noreply, State}),
-            rollback(Rollback),
-            loop(Parent, Name, State, Mod, infinity, HibernateAfterTimeout, Debug1)
+            RollbackState = rollback(Rollback),
+            loop(Parent, Name, RollbackState, Mod, infinity, HibernateAfterTimeout, Debug1)
     end.
 
 reply(Name, From, Reply, State, Debug) ->
@@ -1094,39 +1106,29 @@ before_msg(State) ->
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
     put(?PD_EXIA_EXPECT_TIME, Now),
-    #exia_rollback{
-        state = State,
-        dest = get(?PD_EXIA_DEST),
-        virture = virture_mysql:hold()
-    }.
+    hold(State).
 
 before_msg(#exia_msg{msg = Msg, expect_time = ExpectTime}, State) ->
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
     put(?PD_EXIA_EXPECT_TIME, ExpectTime),
-    {Msg, #exia_rollback{
-        state = State,
-        dest = get(?PD_EXIA_DEST),
-        virture = virture_mysql:hold()
-    }};
+    {Msg, hold(State)};
 before_msg(Msg, State) ->
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
     put(?PD_EXIA_EXPECT_TIME, Now),
-    {Msg, #exia_rollback{
-        state = State,
-        dest = get(?PD_EXIA_DEST),
-        virture = virture_mysql:hold()
-    }}.
+    {Msg, hold(State)}.
 
 after_msg() ->
     flush_msg(),
-    virture_mysql:check_flush().
+    virture_mysql:check_flush(),
+    put(?PD_EXIA_ROLLBACK, undefined).
 
 %% 刷新缓存
-flush() ->
+flush(State) ->
     flush_msg(),
-    virture_mysql:check_flush().
+    virture_mysql:check_flush(),
+    put(?PD_EXIA_ROLLBACK, hold(State)).
 
 %%-----------------------------------------------------------------
 %% 回滚相关
@@ -1136,13 +1138,21 @@ hold(State) ->
         state = State,
         dest = get(?PD_EXIA_DEST),
         send = get(?PD_EXIA_SEND),
-        virture = virture_mysql:hold()
+        virture = virture_mysql:hold(),
+        pd = get(?PD_EXIA_PD)
     }.
 
-rollback(#exia_rollback{state = State, dest = Dest, send = Send, virture = Virture}) ->
+rollback(Rollback) ->
+    case get(?PD_EXIA_ROLLBACK) of
+        undefined ->
+            #exia_rollback{state = State, dest = Dest, send = Send, virture = Virture, pd = PD} = Rollback;
+        #exia_rollback{state = State, dest = Dest, send = Send, virture = Virture, pd = PD} ->
+            put(?PD_EXIA_ROLLBACK, undefined)
+    end,
     put(?PD_EXIA_DEST, Dest),
     put(?PD_EXIA_SEND, Send),
     virture_mysql:rollback(Virture),
+    put(?PD_EXIA_PD, PD),
     State.
 
 after_terminate() ->
@@ -1163,13 +1173,11 @@ system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time, _HibernateAft
     terminate(Reason, ?STACKTRACE(), Name, undefined, [], Mod, State, Rollback, Debug).
 
 system_code_change([Name, State, Mod, Time, HibernateAfterTimeout], _Module, OldVsn, Extra) ->
-    Rollback = before_msg(State),
     case catch Mod:code_change(OldVsn, State, Extra) of
         {ok, NewState} ->
             after_msg(),
             {ok, [Name, NewState, Mod, Time, HibernateAfterTimeout]};
         Else ->
-            rollback(Rollback),
             Else
     end.
 
@@ -1178,6 +1186,7 @@ system_get_state([_Name, State, _Mod, _Time, _HibernateAfterTimeout]) ->
 
 system_replace_state(StateFun, [Name, State, Mod, Time, HibernateAfterTimeout]) ->
     NState = StateFun(State),
+    after_msg(),
     {ok, NState, [Name, NState, Mod, Time, HibernateAfterTimeout]}.
 
 %%-----------------------------------------------------------------
@@ -1230,8 +1239,8 @@ terminate(Class, Reason, Stacktrace, ReportReason, Name, From, Msg, Mod, State, 
     Reply = try_terminate(Mod, terminate_reason(Class, Reason, Stacktrace), State),
     case Reply of
         {'EXIT', C, R, S} ->
-            rollback(Rollback),
-            error_info({R, S}, Name, From, Msg, Mod, State, Debug),
+            RollbackState = rollback(Rollback),
+            error_info({R, S}, Name, From, Msg, Mod, RollbackState, Debug),
             erlang:raise(C, R, S);
         _ ->
             case {Class, Reason} of
@@ -1239,8 +1248,8 @@ terminate(Class, Reason, Stacktrace, ReportReason, Name, From, Msg, Mod, State, 
                 {exit, shutdown} -> ok;
                 {exit, {shutdown, _}} -> ok;
                 _ ->
-                    rollback(Rollback),
-                    error_info(ReportReason, Name, From, Msg, Mod, State, Debug)
+                    RollbackState = rollback(Rollback),
+                    error_info(ReportReason, Name, From, Msg, Mod, RollbackState, Debug)
             end
     end,
     after_terminate(),
