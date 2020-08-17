@@ -39,7 +39,10 @@ init([]) ->
     local_lock:init_ets(),
     
     %% 子进程
-    ChildSpecs = virture_config:get_sup_spec(mysql),
+    {ok, Port} = application:get_env(ptolemaios, port),
+    ListenerSpec = ranch:child_spec(gateway, ranch_tcp, #{socket_opts => [{port, Port}]}, gateway, []),
+    VirtureSpec = virture_config:get_sup_spec(mysql),
+    ChildSpecs = [ListenerSpec | VirtureSpec],
     
     {ok, {SupFlags, ChildSpecs}}.
 

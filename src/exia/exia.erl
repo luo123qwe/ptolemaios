@@ -575,6 +575,7 @@ enter_loop(Mod, Options, State, ServerName, Timeout) ->
     Parent = gen:get_parent(),
     Debug = gen:debug_options(Name, Options),
     HibernateAfterTimeout = gen:hibernate_after(Options),
+    init_pd(),
     loop(Parent, Name, State, Mod, Timeout, HibernateAfterTimeout, Debug).
 
 %%%========================================================================
