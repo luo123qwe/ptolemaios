@@ -20,7 +20,7 @@ init([]) ->
     Specs = make_mysql_specs(),
     
     %% 配置正常才开启
-    ?DO_IF(Specs =/= [], virture_mysql:init_system()),
+    ?DO_IF(Specs =/= [], virture_mysql:system_init()),
     
     {ok, {#{strategy => one_for_one,
         intensity => 1,
@@ -36,7 +36,7 @@ make_mysql_specs() ->
         PoolOptions = [{size, 50}, {max_overflow, 100}],
         MySqlOptions = [{user, User}, {password, Password}, {database, Database},
             {keep_alive, true},
-            {prepare, [{test, "SELECT * FROM player WHERE id=?"}]}],
+            {prepare, []}],%{test, "SELECT * FROM player WHERE id=?"}]}],
         [mysql_poolboy:child_spec(?VMYSQL_POOL, PoolOptions, MySqlOptions)]
     catch
         C:E ->

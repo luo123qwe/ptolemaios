@@ -54,16 +54,18 @@ make_proto(RebarConfig) ->
             Head =
                 "-module(proto_mapping).\n\n"
                 "-include(\"util.hrl\").\n\n"
-                "-export([load/0, encode/1, decode/2, route/2]).\n\n",
+                "-export([load/0, proto/1, encode/1, decode/2, route/2]).\n\n",
             LoadHead =
                 "-spec load() -> ok.\n"
                 "load() ->\n",
+            ProtoHead =
+                "-spec proto(tuple()) -> error|integer().\n",
             DecodeHead =
                 "-spec decode(integer(), tuple()) -> {error, term()} | tuple().\n",
             RouteHead =
                 "-spec route(tuple(), term()) -> term().\n",
-            {Load, Decode, Route} =
-                filelib:fold_files(ProtoSrc, ".*?_[0-9]+\.proto", true, fun(FileName, {L, D, R} = Acc) ->
+            {Load, ProtoBody, Decode, Route} =
+                filelib:fold_files(ProtoSrc, ".*?_[0-9]+\.proto", true, fun(FileName, {L, PB, D, R} = Acc) ->
                     {ok, B} = file:read_file(FileName),
                     %% 匹配所有, message name{// 12345
                     case re:run(B, "message\s*([A-z0-9_]*)\s*{//\s*([0-9]*)", [global, multiline, {capture, [1, 2], binary}]) of
@@ -75,7 +77,8 @@ make_proto(RebarConfig) ->
                                 true -> skip;
                                 false -> file:write_file(RouteFile, [
                                     "-module(", Route, ").\n\n"
-                                    "-include(\"util.hrl\").\n\n"
+                                    "-include(\"util.hrl\").\n"
+                                    "-include(\"" ++ Name ++ ".hrl\").\n\n"
                                     "-export([handle/2]).\n\n"
                                     "handle(Msg, Acc) ->\n"
                                     "  ?LOG_WARNING(\"unknow msg ~w\", [Msg]),\n"
@@ -83,20 +86,22 @@ make_proto(RebarConfig) ->
                                 ])
                             end,
                             L1 = ["  enif_protobuf:load_cache(", Name, ":get_msg_defs()),\n" | L],
-                            {D1, R1} =
-                                lists:foldr(fun([PName, Proto], {D_1, R_1}) ->
+                            {PB1, D1, R1} =
+                                lists:foldr(fun([PName, Proto], {PB_1, D_1, R_1}) ->
                                     {
+                                        ["proto(Msg) when element(1, Msg) == ", PName, "-> ", Proto, ";\n" | PB_1],
                                         ["decode(", Proto, ", Bin) ->\n  enif_protobuf:decode(Bin, ", PName, ");\n" | D_1],
                                         ["route(Msg, Acc) when element(1, Msg) == ", PName, "->\n  ", Route, ":handle(Msg, Acc);\n" | R_1]
                                     }
-                                            end, {D, R}, MatchList),
-                            {L1, D1, R1};
+                                            end, {PB, D, R}, MatchList),
+                            {L1, PB1, D1, R1};
                         _ ->
                             io:format("warning bad proto ~s", [FileName]),
                             Acc
                     end
-                                                                end, {[], [], []}),
+                                                                        end, {[], [], [], []}),
             LoadTail = "  ok.\n\n",
+            ProtoTail = "proto(_) -> error.\n\n",
             Encode =
                 "-spec encode(tuple()) -> {error, atom()} | binary().\n"
                 "encode(Msg) ->\n"
@@ -111,6 +116,7 @@ make_proto(RebarConfig) ->
             file:write_file(MappingFile, [
                 Head,
                 LoadHead, Load, LoadTail,
+                ProtoHead, ProtoBody, ProtoTail,
                 Encode,
                 DecodeHead, Decode, DecodeTail,
                 RouteHead, Route, RouteTail

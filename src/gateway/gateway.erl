@@ -12,9 +12,10 @@
 
 -include("util.hrl").
 -include("gateway.hrl").
+-include("player_1_pb.hrl").
 
 %% API
--export([start_link/3, init/1]).
+-export([start_link/3, init/1, pack/1]).
 
 start_link(Ref, ranch_tcp, _Opts) ->
     Pid = spawn_link(?MODULE, init, [Ref]),
@@ -37,7 +38,7 @@ loop(#gateway{socket = Socket, bin = OldBin} = State) ->
                                 close(State);
                             Msg ->
                                 State1 = State#gateway{bin = Remain},
-                                State2 = handle_msg(Msg, State1),
+                                State2 = player_1_handle:handle(Msg, State1),
                                 loop(State2)
                         end
                     catch
@@ -52,11 +53,17 @@ loop(#gateway{socket = Socket, bin = OldBin} = State) ->
             close(State)
     end.
 
-handle_msg(Msg, #gateway{player = Player} = State) when is_pid(Player) ->
-    exia:cast(Player, {gateway_msg, Msg}),
-    State.
-
 close(#gateway{socket = Socket, player = Player} = State) ->
     ok = ranch_tcp:close(Socket),
     ?DO_IF(is_pid(Player), exia:cast(Player, gateway_disconnect)),
     State.
+
+pack(Msg) ->
+    case proto_mapping:encode(Msg) of
+        Bin when is_binary(Bin) ->
+            Proto = proto_mapping:proto(Msg),
+            Len = byte_size(Bin),
+            <<Len:?GATEWAY_LEN, Proto:?GATEWAY_PROTO, Bin/binary>>;
+        Error ->
+            throw(Error)
+    end.

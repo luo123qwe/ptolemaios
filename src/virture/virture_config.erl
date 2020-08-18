@@ -52,6 +52,7 @@ all(mysql) ->
                 #vmysql_field{name = to_str, pos = #vmysql_test_goods.to_str, type = ?VIRTURE_TO_STRING},
                 #vmysql_field{name = to_bin, pos = #vmysql_test_goods.to_bin, type = ?VIRTURE_TO_BINARY}
             ],
+            index = [[goods_id]],
             record_size = record_info(size, vmysql_test_goods),
             sync_size = 1
         }

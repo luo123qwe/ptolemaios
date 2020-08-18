@@ -17,13 +17,13 @@
 -include("util.hrl").
 
 %% 基本操作
--export([init/2, init/3, lookup/2, dirty_lookup/2, insert/1, delete/2, fold_cache/3, make_ets_name/1]).
+-export([is_load/2, init/2, init/3, lookup/2, dirty_lookup/2, insert/1, delete/2, fold_cache/3, make_ets_name/1]).
 
 %% 手动回滚, 刷到数据库
 -export([flush/0, hold/0, rollback/1, clean/0, clean/1, all_table/0]).
 
 %% 算是private
--export([build_table/0, build_table/1, init_system/0, check_flush/0, flush_dets/0, fix_dets/3, check_dets/0, hotfix/2]).
+-export([build_table/0, build_table/1, system_init/0, check_flush/0, flush_dets/0, fix_dets/3, check_dets/0, hotfix/2]).
 
 -export([base_test/0]).
 
@@ -40,9 +40,10 @@ build_table(VirtureList) ->
     lists:map(fun(Virture) ->
         Fields = [[atom_to_list(Field), $ , convert_type(Type), " NOT NULL,"]
             || #vmysql_field{name = Field, type = Type} <- Virture#vmysql.all_fields],
+        Index = [[",index(", string:join([atom_to_list(Field) || Field <- IndexField], ","), ")"] || IndexField <- Virture#vmysql.index],
         PrivateKey = ["primary key(", string:join([atom_to_list(Field) || Field <- Virture#vmysql.private_key], ","), $)],
-        Sql = ["create table ", atom_to_list(Virture#vmysql.table), "(", Fields, PrivateKey, ")ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
-%%        io:format("~s~n", [Sql]),
+        Sql = ["create table ", atom_to_list(Virture#vmysql.table), "(", Fields, PrivateKey, Index, ")ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
+        io:format("~s~n", [Sql]),
         case mysql_poolboy:query(?VMYSQL_POOL, Sql) of
             {error, {1050, _, _}} ->% 表已经存在
                 {Virture#vmysql.table, exists};
@@ -79,8 +80,8 @@ convert_type(?VIRTURE_JSON_OBJ_LIST(_)) ->
     "json".
 
 %% @doc 初始化
--spec init_system() -> term().
-init_system() ->
+-spec system_init() -> term().
+system_init() ->
     case filelib:is_dir(?VMYSQL_DETS_PATH) of
         true -> check_dets();
         _ -> file:make_dir(?VMYSQL_DETS_PATH)
@@ -92,23 +93,22 @@ init_system() ->
         dets:insert(?VMYSQL_DETS, Virture)
                   end, virture_config:all(mysql)).
 
-%% @equiv init(Table, Key, undefined)
+is_load(Table, SelectKey) ->
+    ets:member(?ETS_VMYSQL_LOAD, {Table, SelectKey}).
+
+%% @equiv init(Table, Key, [])
 init(Table, SelectKey) ->
-    init(Table, SelectKey, undefined).
+    init(Table, SelectKey, []).
 
 %% @doc 在当前进程初始化一个表
-%% SelectKey为[]时搜索全部数据
-%% WhereSql为额外的where语句, 因为预设不满足大部分情况
--spec init(atom(), undefined|list(), undefined|iolist()) -> term().
+%% WhereSql为额外的where语句, 你需要清楚自己在做什么, 否则请加载到内存进行复杂查询
+%% WhereSql=/=[]时总是查询数据库再合本地数据比较
+-spec init(atom(), list(), iolist()) -> term().
 init(Virture = #vmysql{}, SelectKey, WhereSql) ->
     %% 初始化缓存
     Virture1 = init_virture(Virture),
     %% 初始化数据
-    Virture2 =
-        case SelectKey of
-            undefined -> Virture1;
-            _ -> init_data(SelectKey, WhereSql, Virture1)
-        end,
+    Virture2 = init_data(SelectKey, WhereSql, Virture1),
     %% 初始化进程字典
     init_pd(Virture2),
     %% 定时检查落地
@@ -158,71 +158,15 @@ lookup_from_change(Key, StatePos, Data) ->
     end.
 
 
-%% @doc 脏读, 先读ets, 再读数据库
-%% 不会读缓存中的数据
-%% 数据不会保存到进程字典缓存中
+%% @doc 脏读ets, 上层需要保证数据已经加载
 -spec dirty_lookup(atom(), list()) -> undefined|tuple().
 dirty_lookup(Table, Key) ->
     case ets:lookup(make_ets_name(Table), Key) of
         [Record] ->
             Record;
         _ ->
-            case get(?PD_VMYSQL) of
-                #{Table := Virture} ->
-                    dirty_lookup_db(Virture, Key);
-                _ ->
-                    Virture = init_virture(virture_config:get(mysql, Table)),
-                    dirty_lookup_db(Virture, Key)
-            end
+            undefined
     end.
-
-dirty_lookup_db(#vmysql{
-    table = Table,
-    private_key = PrivateKey, private_key_pos = PrivateKeyPos, state_pos = StatePos,
-    select_where_sql = WhereSql, select_sql = SelectSql, select_key = SelectKey,
-    init_fun = InitFun
-} = Virture, PKey) ->
-    Key = private_key_to_select_key(SelectKey, PrivateKey, PKey),
-    EtsName = make_ets_name(Table),
-    %% 从数据库拿
-    WhereSql1 =
-        case Key of
-            [] -> [];
-            _ -> join_where(WhereSql, SelectKey, Key)
-        end,
-    {ok, _ColumnNames, Rows} = mysql_poolboy:query(?VMYSQL_POOL, [SelectSql, WhereSql1]),
-    %% 构造record数据
-    {FindRecord, Data} =
-        lists:foldl(fun(Row, {FR, D}) ->
-            Record = init_record(InitFun, Row, Virture),
-            %% 构造key
-            K = make_private_key(PrivateKey, Record),
-            Record1 = setelement(PrivateKeyPos, Record, K),
-            %% 设置状态
-            Record2 = erlang:setelement(StatePos, Record1, ?VIRTURE_STATE_NOT_CHANGE),
-            case K == PKey of
-                true -> {Record2, [Record2 | D]};
-                _ -> {FR, [Record2 | D]}
-            end
-                    end, {undefined, []}, Rows),
-    %% 全部初始化成功再放到ets
-    lists:foreach(fun(Record) ->
-        %% 读进程可以很多个, 但是写进程只有一个
-        %% 保证初始化不会覆盖即可
-        ets:insert_new(EtsName, Record)
-                  end, Data),
-    FindRecord.
-
-%% 根据主键构造搜索键
-private_key_to_select_key([], _PrivateList, _ValueList) ->
-    [];
-private_key_to_select_key([#vmysql_field{pos = Pos} | ST], PrivateList, ValueList) ->
-    [private_key_to_select_key_1(Pos, PrivateList, ValueList) | private_key_to_select_key(ST, PrivateList, ValueList)].
-
-private_key_to_select_key_1(Pos, [#vmysql_field{pos = Pos} | _PT], [V | _VT]) ->
-    V;
-private_key_to_select_key_1(Pos, [_ | PT], [_ | VT]) ->
-    private_key_to_select_key_1(Pos, PT, VT).
 
 %% 插入一条数据
 -spec insert(tuple()) -> term().
@@ -517,7 +461,7 @@ fix_dets(Before, Fun, After) ->
 
 do_fix_dets(_Fun, Table, _Len, FixList, []) ->
     do_fix_dets_sync(Table, FixList);
-do_fix_dets(Fun, Table, Len, FixList, RemainList) when Len >= ?VMYSQL_FIX_LIMIT ->
+do_fix_dets(Fun, Table, Len, FixList, RemainList) when Len >= ?VMYSQL_SQL_LIMIT ->
     do_fix_dets_sync(Table, FixList),
     do_fix_dets(Fun, Table, 0, [], RemainList);
 do_fix_dets(Fun, Table, Len, FixList, [H | T]) ->
@@ -706,44 +650,22 @@ join_where([SqlH | SqlT], [#vmysql_field{type = Type} | FieldT], [Value | ValueT
     [SqlH, encode(Type, Value) | join_where(SqlT, FieldT, ValueT)].
 
 %% 初始化数据
-init_data(Key, ExtWhereSql, Virture) ->
+init_data(SelectValue, ExtWhereSql, Virture) ->
     #vmysql{
-        ets = EtsName,
+        table = Table, ets = EtsName,
         private_key_pos = PrivateKeyPos, state_pos = StatePos,
         private_key = PrivateKey, select_key = SelectKey,
         select_where_sql = WhereSql, select_sql = SelectSql,
         record_size = RecordSize,
         data = VData, init_fun = InitFun
     } = Virture,
-    %% 先从ets拿
-    EtsData =
-        if
-            ExtWhereSql =/= undefined ->
-                [];
-            Key == [] ->
-                %% 搜索全部
-                ets:tab2list(EtsName);
-            true ->
-                Spec = erlang:make_tuple(RecordSize, '_'),
-                KeySpec = make_ets_key_spec(PrivateKey, SelectKey, Key),
-                Spec1 = setelement(PrivateKeyPos, Spec, KeySpec),
-                ets:select(EtsName, [{Spec1, [], ['$_']}])
-        end,
-    case EtsData of
-        [] ->
+    case ExtWhereSql =/= [] orelse is_load(Table, SelectValue) == false of
+        true ->
             %% 从数据库拿
             WhereSql1 =
-                case Key of
-                    [] ->
-                        case ExtWhereSql of
-                            undefined -> [];
-                            _ -> [" WHERE ", ExtWhereSql]
-                        end;
-                    _ ->
-                        case ExtWhereSql of
-                            undefined -> join_where(WhereSql, SelectKey, Key);
-                            _ -> [join_where(WhereSql, SelectKey, Key), " AND ", ExtWhereSql]
-                        end
+                case ExtWhereSql of
+                    [] -> join_where(WhereSql, SelectKey, SelectValue);
+                    _ -> [join_where(WhereSql, SelectKey, SelectValue), " AND ", ExtWhereSql]
                 end,
             {ok, _ColumnNames, Rows} = mysql_poolboy:query(?VMYSQL_POOL, [SelectSql, WhereSql1]),
             %% 构造record数据
@@ -758,13 +680,27 @@ init_data(Key, ExtWhereSql, Virture) ->
                     Acc#{K => Record2}
                             end, VData, Rows),
             %% 全部初始化成功再放到ets
-            maps:fold(fun(_K, Value, _Acc) ->
-                %% 读进程可以很多个, 但是写进程只有一个
-                %% 保证初始化不会覆盖即可
-                ets:insert_new(EtsName, Value)
-                      end, [], Data),
-            Virture#vmysql{data = Data};
-        _EtsData ->
+            Data1 =
+                maps:fold(fun(K, Value, Acc) ->
+                    %% 读进程可以很多个, 但是写进程只有一个
+                    %% 保证初始化不会覆盖即可
+                    case ets:insert_new(EtsName, Value) of
+                        true -> Acc;
+                        false ->
+                            %% 缓存中已经有数据
+                            case ets:lookup(EtsName, K) of
+                                [Value1] -> Acc#{K => Value1};
+                                _ -> maps:remove(K, Acc)
+                            end
+                    end
+                          end, #{}, Data),
+            ets:insert(?ETS_VMYSQL_LOAD, {Table, SelectValue}),
+            Virture#vmysql{data = Data1};
+        _ ->
+            Spec = erlang:make_tuple(RecordSize, '_'),
+            KeySpec = make_ets_key_spec(PrivateKey, SelectKey, SelectValue),
+            Spec1 = setelement(PrivateKeyPos, Spec, KeySpec),
+            EtsData = ets:select(EtsName, [{Spec1, [], ['$_']}]),
             %% 构造本地缓存
             Data =
                 lists:foldl(fun(Record, Acc) ->
@@ -1008,9 +944,11 @@ base_test() ->
     %% dirty lookup
     ets:delete_all_objects(virture_mysql:make_ets_name(vmysql_test_goods)),
     erase(),
+    undefined = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
+    virture_mysql:init(vmysql_test_goods, [4]),
+    clean(),
     #vmysql_test_goods{} = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
     %% fold_cache
-    clean(),
     virture_mysql:init(vmysql_test_goods, [4]),
     2 = fold_cache(fun(_K, _V, Acc) ->
         Acc + 1

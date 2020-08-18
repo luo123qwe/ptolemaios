@@ -37,10 +37,11 @@
 -define(VMYSQL_POOL, vmysql_pool).
 -define(PD_VMYSQL, pd_vmysql).%% #{table => #vmysql{}}
 -define(PD_VMYSQL_FLUSH, pd_vmysql_flush).% 每条消息结束后检查, 需要同步的表[table]
+-define(ETS_VMYSQL_LOAD, ets_vmysql_load).% 已经加载的数据, {{table, key}, 1}
 % 数据保存到数据失败时保存到dets
 -define(VMYSQL_DETS, vmysql).% 配置保存表名
 -define(VMYSQL_DETS_PATH, "vmysql").% dets文件夹
--define(VMYSQL_FIX_LIMIT, 1000).% 单次操作拼sql的条数
+-define(VMYSQL_SQL_LIMIT, 1000).% 单次操作拼sql的条数
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% field
@@ -59,6 +60,7 @@
     select_key = error({require, select_key}) :: [],% 初始化数据库搜索全部数据用的key
     private_key = error({require, private_key}) :: [],% 数据的主键, 至少要有一个字段
     all_fields = error({require, all_fields}) :: [#vmysql_field{}],% 所有列的定义
+    index = [] :: [[Key :: atom()]],%  自动创建数据库的时候加索引
     record_size = error({require, record_size}) :: integer(),% record的定义, 因为record的字段不一定全都是数据库里面的
     init_fun :: undefined|{M :: atom(), F :: atom()},% fun((Record) -> Record1), 初始化缓存变量
     ets_opt = [public, named_table, {write_concurrency, true}] :: list(),% ets参数
@@ -68,8 +70,8 @@
     
     %% 不用管的
     ets :: atom(),
-    data = #{},
-    change = #{},
+    data = #{},% #{key => record}
+    change = #{},% #{key => delete|change}
     private_where_sql :: iolist(),
     select_where_sql :: iolist(),
     select_sql :: iolist(),
