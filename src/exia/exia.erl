@@ -64,9 +64,6 @@
 STACKTRACE(),
     element(2, erlang:process_info(self(), current_stacktrace))).
 
-%% 不做动态调用了
--define(VIRTURE_MODULE, virture_mysql).
-
 -type server_ref() ::
 pid()
 | (LocalName :: atom())
@@ -1107,7 +1104,8 @@ init_pd() ->
     put(?PD_EXIA_PD, #{}),
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
-    put(?PD_EXIA_EXPECT_TIME, Now).
+    put(?PD_EXIA_EXPECT_TIME, Now),
+    virture_mysql:process_init().
 
 %% 处理消息前后
 before_msg(State) ->
@@ -1129,13 +1127,13 @@ before_msg(Msg, State) ->
 
 after_msg() ->
     flush_msg(),
-    virture_mysql:check_flush(),
+    virture_mysql:flush(),
     put(?PD_EXIA_ROLLBACK, undefined).
 
 %% 刷新缓存
 flush(State) ->
     flush_msg(),
-    virture_mysql:check_flush(),
+    virture_mysql:flush(),
     put(?PD_EXIA_ROLLBACK, hold(State)).
 
 %% 返回
@@ -1169,8 +1167,7 @@ rollback(Rollback) ->
 
 after_terminate() ->
     flush_msg(),
-    virture_mysql:flush(),
-    virture_mysql:flush_dets().
+    virture_mysql:sync().
 
 %%-----------------------------------------------------------------
 %% Callback functions for system messages handling.

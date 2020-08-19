@@ -36,8 +36,7 @@ all(mysql) ->
                 #vmysql_field{name = to_bin, pos = #vmysql_test_player.to_bin, type = ?VIRTURE_TO_BINARY},
                 #vmysql_field{name = to_json, pos = #vmysql_test_player.to_json, type = ?VIRTURE_JSON_OBJ_LIST([<<"a">>, ?VIRTURE_JSON_OBJ(<<"b">>, [<<"c">>, <<"d">>])])}
             ],
-            record_size = record_info(size, vmysql_test_player),
-            sync_size = 1
+            record_size = record_info(size, vmysql_test_player)
         },
         #vmysql{
             table = vmysql_test_goods,
@@ -53,8 +52,7 @@ all(mysql) ->
                 #vmysql_field{name = to_bin, pos = #vmysql_test_goods.to_bin, type = ?VIRTURE_TO_BINARY}
             ],
             index = [[goods_id]],
-            record_size = record_info(size, vmysql_test_goods),
-            sync_size = 1
+            record_size = record_info(size, vmysql_test_goods)
         }
     ].
 

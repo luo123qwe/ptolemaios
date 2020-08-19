@@ -8,7 +8,7 @@
 -export([handle/2]).
 
 handle(#player_c_account_login{account = Account}, #gateway{socket = Socket} = Gateway) ->
-    virture_mysql:init(account, [Account]),
+    virture_mysql:load(account, [Account]),
     case virture_mysql:lookup(account, [Account]) of
         undefined ->% 新账号
             IdList = [],
@@ -19,7 +19,7 @@ handle(#player_c_account_login{account = Account}, #gateway{socket = Socket} = G
     
     %% 初始化
     lists:foreach(fun(Id) ->
-        virture_mysql:init(player, [Id])
+        virture_mysql:load(player, [Id])
                   end, IdList),
     RoleInfo =
         virture_mysql:fold_cache(fun(_K, #player{id = Id, name = Name}, Acc) ->

@@ -36,7 +36,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% virture mysql %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(VMYSQL_POOL, vmysql_pool).
 -define(PD_VMYSQL, pd_vmysql).%% #{table => #vmysql{}}
--define(PD_VMYSQL_FLUSH, pd_vmysql_flush).% 每条消息结束后检查, 需要同步的表[table]
+-define(PD_VMYSQL_NOT_FLUSH, pd_vmysql_not_flush).%% [table], 记录改变数据且未同步到ets的table, 避免每次遍历全部表
 -define(ETS_VMYSQL_LOAD, ets_vmysql_load).% 已经加载的数据, {{table, key}, 1}
 % 数据保存到数据失败时保存到dets
 -define(VMYSQL_DETS, vmysql).% 配置保存表名
@@ -64,8 +64,6 @@
     record_size = error({require, record_size}) :: integer(),% record的定义, 因为record的字段不一定全都是数据库里面的
     init_fun :: undefined|{M :: atom(), F :: atom()},% fun((Record) -> Record1), 初始化缓存变量
     ets_opt = [public, named_table, {write_concurrency, true}] :: list(),% ets参数
-    %% 同步策略, 可以同时存在, 互相独立
-    sync_time :: undefined|integer(),% 上次同步后N秒再次检查同步
     sync_size :: undefined|integer(),% 变化数据达到N条同步
     
     %% 不用管的
@@ -76,7 +74,8 @@
     select_where_sql :: iolist(),
     select_sql :: iolist(),
     replace_sql :: iolist(),
-    delete_sql :: iolist()
+    delete_sql :: iolist(),
+    has_change :: boolean()%% 是否有改变, 用于sync
 }).
 
 %% 测试普通主键
