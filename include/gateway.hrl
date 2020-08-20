@@ -4,5 +4,7 @@
 -record(gateway, {
     socket,
     bin = <<>>,
-    player
+    account,
+    player_id,
+    player_pid
 }).

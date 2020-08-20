@@ -8,26 +8,41 @@
 -export([handle/2]).
 
 handle(#player_c_account_login{account = Account}, #gateway{socket = Socket} = Gateway) ->
-    virture_mysql:load(account, [Account]),
-    case virture_mysql:lookup(account, [Account]) of
-        undefined ->% 新账号
-            IdList = [],
-            virture_mysql:insert(#account{account = Account, id_list = []});
-        #account{id_list = IdList} ->
-            ok
-    end,
+    %% 防止数据混淆
+    virture_mysql:clean_pd(),
+    virture_mysql:load(player, undefined, ["account=", $', Account, $']),
     
-    %% 初始化
-    lists:foreach(fun(Id) ->
-        virture_mysql:load(player, [Id])
-                  end, IdList),
     RoleInfo =
         virture_mysql:fold_cache(fun(_K, #player{id = Id, name = Name}, Acc) ->
-            [#player_p_role_info{role_id = Id, name = Name} | Acc]
-                                 end, [], account),
-    Bin = gateway:pack(#player_s_account_login{role_list = RoleInfo}),
+            [#player_p_role_info{id = Id, name = Name} | Acc]
+                                 end, [], player),
+    Bin = gateway_server:pack(#player_s_account_login{role_list = RoleInfo}),
+    ?LOG_DEBUG("~p", [Bin]),
+    ranch_tcp:send(Socket, Bin),
+    Gateway#gateway{account = Account};
+
+handle(#player_c_select_role{id = Id}, #gateway{socket = Socket} = Gateway) ->
+    case virture_mysql:lookup(player, [Id]) of
+        #player{} ->
+            %% todo 两个进程互相监督
+            {ok, Pid} = player_server:start(Id),
+            Bin = gateway_server:pack(#player_s_select_role{id = Id}),
+            ranch_tcp:send(Socket, Bin),
+            Gateway#gateway{player_id = Id, player_pid = Pid};
+        _ ->
+            Gateway
+    end;
+
+handle(#player_c_create_role{name = _Name}, #gateway{socket = Socket} = Gateway) ->
+    %% todo 晚点再做
+    RoleInfo =
+        virture_mysql:fold_cache(fun(_K, #player{id = Id, name = Name}, Acc) ->
+            [#player_p_role_info{id = Id, name = Name} | Acc]
+                                 end, [], player),
+    Bin = gateway_server:pack(#player_s_create_role{role_list = RoleInfo}),
     ranch_tcp:send(Socket, Bin),
     Gateway;
+
 handle(Msg, Acc) ->
     ?LOG_WARNING("unknow msg ~w", [Msg]),
     Acc.

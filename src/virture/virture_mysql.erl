@@ -17,10 +17,10 @@
 -include("util.hrl").
 
 %% 基本操作
--export([process_init/0, is_load/2, load/2, load/3, lookup/2, dirty_lookup/2, insert/1, delete/2, fold_cache/3, make_ets_name/1]).
+-export([process_init/0, is_load/2, ensure_load/2, load/2, load/3, lookup/2, dirty_lookup/2, insert/1, delete/2, fold_cache/3, make_ets_name/1]).
 
 %% 回滚, 刷到数据库
--export([flush/0, sync/0, hold/0, rollback/1, clean/0, clean/1, all_table/0, clean_ets/1]).
+-export([sync_to_ets/0, sync_to_db/0, hold/0, rollback/1, all_table/0, clean_pd/0, clean_pd/1, clean_ets/0, clean_ets/1]).
 
 %% 算是private
 -export([build_table/0, build_table/1, system_init/0, system_init/3, save_defined/0, fix_dets/3, check_dets/0, hotfix/2]).
@@ -43,7 +43,7 @@ build_table(VirtureList) ->
         Index = [[",index(", string:join([atom_to_list(Field) || Field <- IndexField], ","), ")"] || IndexField <- Virture#vmysql.index],
         PrivateKey = ["primary key(", string:join([atom_to_list(Field) || Field <- Virture#vmysql.private_key], ","), $)],
         Sql = ["create table ", atom_to_list(Virture#vmysql.table), "(", Fields, PrivateKey, Index, ")ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
-        io:format("~s~n", [Sql]),
+%%        io:format("~s~n", [Sql]),
         case mysql_poolboy:query(?VMYSQL_POOL, Sql) of
             {error, {1050, _, _}} ->% 表已经存在
                 {Virture#vmysql.table, exists};
@@ -86,6 +86,7 @@ system_init() ->
 %% @doc 如果没有数据需要修复Fun传undefined即可, 更多信息看 fix_dets/3
 -spec system_init(undefined|function(), undefined|fun((Record :: tuple())-> term()), undefined|function()) -> term().
 system_init(Before, Fun, After) ->
+    ?LOG_NOTICE("~p", [build_table()]),
     case filelib:is_dir(?VMYSQL_DETS_PATH) of
         true -> ok;
         _ -> file:make_dir(?VMYSQL_DETS_PATH)
@@ -124,14 +125,22 @@ process_init() ->
 is_load(Table, SelectKey) ->
     ets:member(?ETS_VMYSQL_LOAD, {Table, SelectKey}).
 
+%% @doc 没加载则加载
+ensure_load(Table, SelectKey) ->
+    case ets:member(?ETS_VMYSQL_LOAD, {Table, SelectKey}) of
+        true -> true;
+        _ -> load(Table, SelectKey)
+    end.
+
 %% @equiv load(Table, Key, [])
 load(Table, SelectKey) ->
     load(Table, SelectKey, []).
 
 %% @doc 在当前进程初始化一个表
+%% 当SelectKey或WhereSql为undefined时, 等效于没有这个where条件
 %% WhereSql为额外的where语句, 你需要清楚自己在做什么, 否则请加载到内存进行复杂查询
 %% WhereSql=/=[]时总是查询数据库再合本地数据比较
--spec load(atom(), list(), iolist()) -> term().
+-spec load(atom(), undefiend|list(), undefined|iolist()) -> term().
 load(Virture = #vmysql{}, SelectKey, WhereSql) ->
     %% 初始化缓存
     Virture1 = init_virture(Virture),
@@ -242,24 +251,24 @@ fold_cache(F, Acc, Table) ->
     maps:fold(WarpFun, Acc, Data).
 
 %% @doc flush所有改变的数据到ets
--spec flush() -> ok.
-flush() ->
+-spec sync_to_ets() -> ok.
+sync_to_ets() ->
     case get(?PD_VMYSQL_NOT_FLUSH) of
         [] -> ok;
         NotFlush ->
-            flush(NotFlush, get(?PD_VMYSQL)),
+            sync_to_ets(NotFlush, get(?PD_VMYSQL)),
             put(?PD_VMYSQL_NOT_FLUSH, [])
     end.
 
-flush([], VMysql) ->
+sync_to_ets([], VMysql) ->
     put(?PD_VMYSQL, VMysql);
-flush([H | T], VMysql) ->
+sync_to_ets([H | T], VMysql) ->
     Virture = maps:get(H, VMysql),
-    Virture1 = do_flush(Virture),
+    Virture1 = do_sync_to_ets(Virture),
     VMysql1 = VMysql#{H => Virture1},
-    flush(T, VMysql1).
+    sync_to_ets(T, VMysql1).
 
-do_flush(#vmysql{ets = Ets, data = Data, change = Change} = Virture) ->
+do_sync_to_ets(#vmysql{ets = Ets, data = Data, change = Change} = Virture) ->
     maps:fold(fun(K, S, _Acc) ->
         case S of
             ?VIRTURE_STATE_DELETE ->
@@ -271,13 +280,13 @@ do_flush(#vmysql{ets = Ets, data = Data, change = Change} = Virture) ->
               end, [], Change),
     Virture#vmysql{change = #{}}.
 
-
-sync() ->
+%% @doc 同步到数据库, 同时也会同步到ets
+sync_to_db() ->
     VMysql = get(?PD_VMYSQL),
     %% 遍历所有数据
     VMysql1 =
         maps:fold(fun(Table, #vmysql{has_change = true} = Virture, VM) ->
-            {HasBadData1, Virture1} = sync(Virture),
+            {HasBadData1, Virture1} = sync_to_db(Virture),
             case HasBadData1 of
                 true ->% 小概率事件再遍历一次数据, 不做优化了
                     sync_dets(Virture1);
@@ -290,7 +299,7 @@ sync() ->
                   end, VMysql, VMysql),
     put(?PD_VMYSQL, VMysql1).
 
-sync(#vmysql{
+sync_to_db(#vmysql{
     ets = Ets,
     state_pos = StatePos, data = Data, private_key = PrivateKey, all_fields = AllFields,
     private_where_sql = WhereSql, replace_sql = ReplaceSql, delete_sql = DeleteSql
@@ -306,13 +315,13 @@ sync(#vmysql{
                         D1 = D#{Key => Record1},
                         [[_, First] | Left] = [[$,, encode(Type, element(Pos, Record))] || #vmysql_field{type = Type, pos = Pos} <- AllFields],
                         RIO1 = [$,, $(, First, Left, $) | RIO],
-                        sync_check_sql_limit(ReplaceSql, RIO1, DIO, D1, N + 1, LD, HBD);
+                        sync_db_check_sql_limit(ReplaceSql, RIO1, DIO, D1, N + 1, LD, HBD);
                     ?VIRTURE_STATE_DELETE ->
                         ets:delete(Ets, Key),
                         D1 = maps:remove(Key, D),
                         WhereSql1 = join_where(WhereSql, PrivateKey, Key),
                         DIO1 = [DeleteSql, WhereSql1, $; | DIO],
-                        sync_check_sql_limit(ReplaceSql, RIO, DIO1, D1, N + 1, LD, HBD);
+                        sync_db_check_sql_limit(ReplaceSql, RIO, DIO1, D1, N + 1, LD, HBD);
                     ?VIRTURE_STATE_NOT_CHANGE ->
                         Acc
                 end
@@ -323,20 +332,20 @@ sync(#vmysql{
             end
                   end, {Data, [], [], 0, Data, false}, Data),
     Virture1 =
-        case do_sync_db(ReplaceSql, ReplaceIOList, DeleteIOList) of
+        case do_sync_to_db(ReplaceSql, ReplaceIOList, DeleteIOList) of
             {error, _Reason} ->% 同步失败该段数据整体回滚
                 HasBadData1 = true,
-                Virture#vmysql{has_change = true, data = LastData};
+                Virture#vmysql{has_change = true, data = LastData, change = #{}};
             _ ->
                 HasBadData1 = HasBadData,
-                Virture#vmysql{has_change = false, data = Data1}
+                Virture#vmysql{has_change = false, data = Data1, change = #{}}
         end,
     {HasBadData1, Virture1}.
 
 
 %% 防止sql过长
-sync_check_sql_limit(ReplaceSql, ReplaceIOList, DeleteIOList, Data, N, LastData, HasBadData) ->
-    case N >= ?VMYSQL_SQL_LIMIT andalso do_sync_db(ReplaceSql, ReplaceIOList, DeleteIOList) of
+sync_db_check_sql_limit(ReplaceSql, ReplaceIOList, DeleteIOList, Data, N, LastData, HasBadData) ->
+    case N >= ?VMYSQL_SQL_LIMIT andalso do_sync_to_db(ReplaceSql, ReplaceIOList, DeleteIOList) of
         false ->% 还没到限制长度
             {Data, ReplaceIOList, DeleteIOList, N, LastData, HasBadData};
         {error, _Reason} ->% 同步失败该段数据整体回滚
@@ -345,7 +354,7 @@ sync_check_sql_limit(ReplaceSql, ReplaceIOList, DeleteIOList, Data, N, LastData,
             {Data, [], [], 0, Data, HasBadData}
     end.
 
-do_sync_db(ReplaceSql, ReplaceIOList, DeleteIOList) ->
+do_sync_to_db(ReplaceSql, ReplaceIOList, DeleteIOList) ->
     case ReplaceIOList of
         [_ | ReplaceIOList1] -> ok;
         _ -> ReplaceIOList1 = []
@@ -442,7 +451,7 @@ fix_dets(Before, Fun, After) ->
                                     lists:foreach(WarpFun, AllRecord),
                                     %% 同步到数据库
                                     #{Table := Virture2} = get(?PD_VMYSQL),
-                                    case sync(Virture2) of
+                                    case sync_to_db(Virture2) of
                                         {true, _} ->% 还是有错误, 中断
                                             throw({vmysql, dets, db, fail});
                                         {_, Virture3} ->
@@ -485,13 +494,13 @@ rollback({NotFlush, VMysql}) ->
     put(?PD_VMYSQL, VMysql).
 
 %% @doc 清理缓存数据
-clean() ->
+clean_pd() ->
     put(?PD_VMYSQL, #{}),
     put(?PD_VMYSQL_NOT_FLUSH, []).
 
 %% @doc 清理缓存
--spec clean(list()) -> term().
-clean(TableList) ->
+-spec clean_pd(list()) -> term().
+clean_pd(TableList) ->
     clean(TableList, get(?PD_VMYSQL), get(?PD_VMYSQL_NOT_FLUSH)).
 
 clean([], VMysql, NotFlush) ->
@@ -500,6 +509,13 @@ clean([], VMysql, NotFlush) ->
     ok;
 clean([Table | T], VMysql, NotFlush) ->
     clean(T, maps:remove(Table, VMysql), lists:delete(Table, NotFlush)).
+
+clean_ets() ->
+    TableList = lists:usort(ets:select(?ETS_VMYSQL_LOAD, [{{{'$1', '_'}}, [], ['$1']}])),
+    lists:foreach(fun(Table) ->
+        ets:delete_all_objects(virture_mysql:make_ets_name(Table))
+                  end, TableList),
+    ets:delete_all_objects(?ETS_LOCAL_LOCK).
 
 clean_ets([]) ->
     [];
@@ -658,13 +674,21 @@ init_data(SelectValue, ExtWhereSql, Virture) ->
         record_size = RecordSize,
         data = VData, init_fun = InitFun
     } = Virture,
-    case ExtWhereSql =/= [] orelse is_load(Table, SelectValue) == false of
+    case ExtWhereSql =/= undefined orelse SelectValue == undefined orelse is_load(Table, SelectValue) == false of
         true ->
             %% 从数据库拿
             WhereSql1 =
-                case ExtWhereSql of
-                    [] -> join_where(WhereSql, SelectKey, SelectValue);
-                    _ -> [join_where(WhereSql, SelectKey, SelectValue), " AND ", ExtWhereSql]
+                case SelectValue of
+                    undefined ->
+                        case ExtWhereSql of
+                            [] -> [];
+                            _ -> [" WHERE ", ExtWhereSql]
+                        end;
+                    _ ->
+                        case ExtWhereSql of
+                            undefined -> join_where(WhereSql, SelectKey, SelectValue);
+                            _ -> [join_where(WhereSql, SelectKey, SelectValue), " AND ", ExtWhereSql]
+                        end
                 end,
             {ok, _ColumnNames, Rows} = mysql_poolboy:query(?VMYSQL_POOL, [SelectSql, WhereSql1]),
             %% 构造record数据
@@ -692,7 +716,7 @@ init_data(SelectValue, ExtWhereSql, Virture) ->
                                 _ -> maps:remove(K, Acc)
                             end
                     end
-                          end, #{}, Data),
+                          end, Data, Data),
             ets:insert(?ETS_VMYSQL_LOAD, {{Table, SelectValue}}),
             Virture#vmysql{data = Data1};
         _ ->
@@ -850,7 +874,7 @@ base_test() ->
     virture_mysql:insert(#vmysql_test_goods{player_id = 2, goods_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
     0 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     0 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    virture_mysql:sync(),
+    virture_mysql:sync_to_db(),
     2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     4 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
 %%    io:format("~p~n", [get()]),
@@ -869,7 +893,7 @@ base_test() ->
     undefined = virture_mysql:lookup(vmysql_test_goods, [1, 2]),
     #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
 %%    io:format("~p~n", [get()]),
-    virture_mysql:sync(),
+    virture_mysql:sync_to_db(),
     2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
     #vmysql_test_player{str = <<"11">>} = virture_mysql:lookup(vmysql_test_player, [1]),
@@ -894,7 +918,7 @@ base_test() ->
     undefined = virture_mysql:lookup(vmysql_test_goods, [4, 2]),
     %% all_table
     [] = virture_mysql:all_table()--[vmysql_test_player, vmysql_test_goods],
-    virture_mysql:clean(virture_mysql:all_table()),
+    virture_mysql:clean_pd(virture_mysql:all_table()),
     [] = virture_mysql:all_table(),
     %% sync
     virture_mysql:load(vmysql_test_player, [1]),
@@ -904,38 +928,36 @@ base_test() ->
     virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
     2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    sync(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
+    sync_to_db(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
     2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    sync(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
+    sync_to_db(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
     2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
     7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
     %% 初始化
     virture_mysql:clean_ets([vmysql_test_player]),
-    virture_mysql:clean(),
+    virture_mysql:clean_pd(),
     %% dets
     virture_mysql:load(vmysql_test_player, [4]),
     %% 没有json, sync会失败, 会有一个正常报错
     virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
-    sync(),
-    virture_mysql:clean(),
+    sync_to_db(),
+    virture_mysql:clean_pd(),
     virture_mysql:fix_dets(undefined, fun(R) ->
         R1 = R#vmysql_test_player{to_json = [{1, {2, 3}}, {11, {22, 33}}]},
         virture_mysql:insert(R1)
                                       end, undefined),
     [#vmysql_test_player{}] = ets:lookup(virture_mysql:make_ets_name(vmysql_test_player), [4]),
-    virture_mysql:clean([vmysql_test_player]),
+    virture_mysql:clean_pd([vmysql_test_player]),
     virture_mysql:clean_ets([vmysql_test_player]),
-    io:format("~p", [get()]),
     virture_mysql:load(vmysql_test_player, [4]),
-    io:format("~p", [get()]),
     #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, [4]),
     %% dirty lookup
     virture_mysql:clean_ets([vmysql_test_goods]),
-    virture_mysql:clean(),
+    virture_mysql:clean_pd(),
     undefined = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
     virture_mysql:load(vmysql_test_goods, [4]),
-    clean(),
+    clean_pd(),
     #vmysql_test_goods{} = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
     %% fold_cache
     virture_mysql:load(vmysql_test_goods, [4]),
@@ -950,9 +972,9 @@ base_test() ->
     %% vmysql_test_goods的to_str改成string类型
     %% os:cmd("rebar3 compile"), rr("include/*"), l(virture_mysql), l(virture_config).
     %% virture_mysql:hotfix(vmysql_test_goods, fun(R) -> virture_mysql:insert(R#vmysql_test_goods{to_str = <<"hotfix">>}) end).
-    %% [#vmysql_test_goods{str = <<"hotfix">>}] = ets:lookup(virture_mysql:make_ets_name(vmysql_test_goods), [4, 1]).
+    %% #vmysql_test_goods{to_str = <<"hotfix">>} = virture_mysql:lookup(vmysql_test_goods, [4, 1]).
     %% virture_mysql:sync().
     %% 看数据库
-    %% virture_mysql:clean(), virture_mysql:clean_ets([vmysql_test_goods]).
+    %% virture_mysql:clean(), virture_mysql:clean_ets().
     %% virture_mysql:load(vmysql_test_goods, [4]), virture_mysql:lookup(vmysql_test_goods, [4, 1]).
     {base_test, ok}.

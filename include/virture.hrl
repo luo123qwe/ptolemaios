@@ -46,9 +46,9 @@
 
 %% field
 -record(vmysql_field, {
-    name :: atom(),
-    type :: virture:field_type(),
-    pos :: integer()
+    name :: atom(),% 对应数据库字段名
+    type :: virture:field_type(),% 数据类型, 自动建表用
+    pos :: integer()% 对应record的下标
 }).
 
 %% table

@@ -4,7 +4,7 @@
 %%% @doc
 %%% @end
 %%%-------------------------------------------------------------------
--module(exia_example).
+-module(exia_test).
 
 -behaviour(exia).
 -include("exia.hrl").
@@ -77,7 +77,7 @@ code_change(_OldVsn, State = #exia_example_state{}, _Extra) ->
 base_test_() ->
     [
         {setup,
-            fun() -> {ok, Pid} = exia_example:start(), Pid end,
+            fun() -> {ok, Pid} = exia_test:start(), Pid end,
             fun(Pid) -> Pid end,
             fun(Pid) ->
                 [

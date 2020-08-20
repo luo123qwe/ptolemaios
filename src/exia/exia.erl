@@ -1127,13 +1127,13 @@ before_msg(Msg, State) ->
 
 after_msg() ->
     flush_msg(),
-    virture_mysql:flush(),
+    virture_mysql:sync_to_ets(),
     put(?PD_EXIA_ROLLBACK, undefined).
 
 %% 刷新缓存
 flush(State) ->
     flush_msg(),
-    virture_mysql:flush(),
+    virture_mysql:sync_to_ets(),
     put(?PD_EXIA_ROLLBACK, hold(State)).
 
 %% 返回
@@ -1167,7 +1167,7 @@ rollback(Rollback) ->
 
 after_terminate() ->
     flush_msg(),
-    virture_mysql:sync().
+    virture_mysql:sync_to_db().
 
 %%-----------------------------------------------------------------
 %% Callback functions for system messages handling.

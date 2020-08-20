@@ -8,7 +8,7 @@ message player_c_account_login {// 101
 }
 
 message player_p_role_info {
-    uint32 role_id = 1;
+    uint32 id = 1;
     string name = 2;
 }
 
@@ -18,11 +18,11 @@ message player_s_account_login {// 102
 
 // 选择角色
 message player_c_select_role {// 103
-    uint32 role_id = 1;
+    uint32 id = 1;
 }
 
 message player_s_select_role {// 104
-    uint32 role_id = 1;
+    uint32 id = 1;
 }
 
 // 创建角色

@@ -53,6 +53,19 @@ all(mysql) ->
             ],
             index = [[goods_id]],
             record_size = record_info(size, vmysql_test_goods)
+        },
+        #vmysql{
+            table = player,
+            private_key_pos = #player.vmysql_key,
+            state_pos = #player.vmysql_state,
+            select_key = [id],
+            private_key = [id],
+            all_fields = [
+                #vmysql_field{name = id, pos = #player.id, type = ?VIRTURE_UINT64},
+                #vmysql_field{name = account, pos = #player.account, type = ?VIRTURE_STRING},
+                #vmysql_field{name = name, pos = #player.name, type = ?VIRTURE_STRING}
+            ],
+            record_size = record_info(size, player)
         }
     ].
 
