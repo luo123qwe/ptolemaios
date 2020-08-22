@@ -18,7 +18,7 @@
 main(_) ->
     io:format("pre_hooks start~n"),
     %% 读取rebar.config
-    {ok, RebarConfig} = file:consult("rebar.config"),
+    {ok, RebarConfig} = file:script("rebar.config.script"),
     make_proto(RebarConfig),
     io:format("pre_hooks end~n").
 

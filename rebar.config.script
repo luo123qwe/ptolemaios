@@ -1,10 +1,11 @@
-
 %% https://github.com/erlang/rebar3/blob/master/rebar.config.sample
 %% 好像不生效
 %%{rebar_packages_cdn, "https://hexpm.upyun.com"}.
-{rebar_packages_cdn, "https://repo.hex.pm/installs/1.0.0/rebar3"}.
 
-{erl_opts, [debug_info, {i, "include/proto"}, {i, "./_build/default/plugins/gpb/include"}]}.
+[
+{rebar_packages_cdn, "https://repo.hex.pm/installs/1.0.0/rebar3"},
+
+{erl_opts, [debug_info, {i, "include/proto"}, {i, "./_build/default/plugins/gpb/include"}]},
 
 {deps, [
     {ranch, ".*", {git, "https://github.com/ninenines/ranch.git", {tag, "2.0.0"}}},
@@ -12,7 +13,7 @@
     {mysql_poolboy, ".*", {git, "https://github.com/mysql-otp/mysql-otp-poolboy", {tag, "0.2.0"}}},
     {mongodb, ".*", {git, "git://github.com/comtihon/mongodb-erlang", {tag, "v3.2.0"}}},
     {jsx, ".*", {git, "https://github.com/talentdeficit/jsx.git", {tag, "v3.0.0"}}}
-]}.
+]},
 
 {overrides, [
     {add, enif_protobuf, [
@@ -25,49 +26,49 @@
         %% 需要先设置编译环境
         %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
         {plugins, [{pc, "v1.11.0"}]}
-    
+
     ]},
     {override, enif_protobuf, [{deps, []}]},
-    
+
     %% git虽然说新版已经解决了cdn, 但是实际还是不行, 不知道为什么, 先把rebar_ct屏蔽了
     {override, mongodb, [{plugins, []}]}
-]}.
+]},
 
 {relx, [
     {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
-    
+
     {sys_config, "./config/sys.config"},
     {vm_args, "./config/vm.args"},
-    
+
     {dev_mode, true},
     {include_erts, false},
-    
+
     {extended_start_script, true}
-]}.
+]},
 
 %%  ESCRIPT_EMULATOR=werl ./rebar3 shell
 {shell, [
     {config, "config/sys.config"},
     {apps, [ptolemaios]}
-]}.
+]},
 
-{plugins, [{rebar3_gpb_plugin, "2.15.0"}, {pc, "v1.11.0"}]}.
+{plugins, [{rebar3_gpb_plugin, "2.15.0"}, {pc, "v1.11.0"}]},
 
 
 {pre_hooks, [
     {compile, "escript script/ptolemaios.escript"},
     {compile, "escript script/ptolemaios_pre.escript"}
-]}.
+]},
 
 {post_hooks, [
     {compile, "escript script/ptolemaios_post.escript"}
-]}.
+]},
 
 {profiles, [
     {prod,
-        [{relx, [{dev_mode, false}, {include_erts, true}]}]
+        [{relx, [{dev_mode, false}, {include_erts, false}]}]
     }
-]}.
+]},
 
 {provider_hooks, [
     {pre, [
@@ -76,7 +77,7 @@
         {compile, {pc, compile}},
         {clean, {pc, clean}}
     ]}
-]}.
+]},
 
 {gpb_opts, [
     {i, "proto"},
@@ -85,10 +86,11 @@
     {o_hrl, "include/proto"},
     {strings_as_binaries, true},
     type_specs
-]}.
+]},
 
 {port_specs, [
     {"priv/enif_example.so", [
         "c_src/enif_example.c"
     ]}
-]}.
+]}
+].
