@@ -17,23 +17,25 @@
 
 {overrides, [
     {add, enif_protobuf, [
+        %% 用pc编译
         {provider_hooks, [{pre, [{compile, {pc, compile}}, {clean, {pc, clean}}]}]},
-        %% 需要先设置编译环境
+        %% Windows需要先设置编译环境
         %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
         {plugins, [{pc, "v1.11.0"}]}
 
     ]},
+    %% 用我这边的配置
     {override, enif_protobuf, [{deps, []}]},
 
-    %% git虽然说新版已经解决了cdn, 但是实际还是不行, 不知道为什么, 先把rebar_ct屏蔽了
+    %% rebar_ct在hex上面都搜不到了, 先屏蔽掉
     {override, mongodb, [{plugins, []}]}
 ]},
 
 {relx, [
     {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
 
-    {sys_config, "./config/sys.config"},
-    {vm_args, "./config/vm.args"},
+    {sys_config_src, "./config/sys.config.src"},
+    {vm_args_src, "./config/vm.args.src"},
 
     {dev_mode, true},
     {include_erts, false},
@@ -42,15 +44,18 @@
 ]},
 
 %% set ESCRIPT_EMULATOR=werl&rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
-%% ESCRIPT_EMULATOR=werl ./rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
+%% ./rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
 {shell, [
-    {config, "config/sys.config"},
+    {config, "config/sys.config.src"},
     {apps, [ptolemaios]}
 ]},
 
-{plugins, [{rebar3_gpb_plugin, "2.15.0"}, {pc, ".*", {git, "https://github.com/DominicGame/port_compiler.git", {tag, "master"}}}]},
+{plugins, [
+    {rebar3_gpb_plugin, "2.15.0"},
+    {pc, ".*", {git, "https://github.com/DominicGame/port_compiler.git", {tag, "master"}}}
+]},
 
-
+%% 钩子escript
 {pre_hooks, [
     {compile, "escript script/ptolemaios.escript"},
     {compile, "escript script/ptolemaios_pre.escript"}
