@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+// 测试用, import
+message test_import{
+    uint32 ui32 = 1;
+}
