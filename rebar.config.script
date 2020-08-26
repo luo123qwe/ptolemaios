@@ -1,97 +1,107 @@
 %% https://github.com/erlang/rebar3/blob/master/rebar.config.sample
-%% 好像不生效
-%%{rebar_packages_cdn, "https://hexpm.upyun.com"}.
 
 [
-{rebar_packages_cdn, "https://repo.hex.pm/installs/1.0.0/rebar3"},
+    {rebar_packages_cdn, "https://hexpm.upyun.com"},
 
-{erl_opts, [debug_info, {i, "include/proto"}, {i, "./_build/default/plugins/gpb/include"}]},
-
-{deps, [
-    {ranch, ".*", {git, "https://github.com/ninenines/ranch.git", {tag, "2.0.0"}}},
-    {enif_protobuf, ".*", {git, "https://github.com/jg513/enif_protobuf.git", {tag, "master"}}},
-    {mysql_poolboy, ".*", {git, "https://github.com/mysql-otp/mysql-otp-poolboy", {tag, "0.2.0"}}},
-    {mongodb, ".*", {git, "git://github.com/comtihon/mongodb-erlang", {tag, "v3.2.0"}}},
-    {jsx, ".*", {git, "https://github.com/talentdeficit/jsx.git", {tag, "v3.0.0"}}}
-]},
-
-{overrides, [
-    {add, enif_protobuf, [
-        %% 用pc编译
-        {provider_hooks, [{pre, [{compile, {pc, compile}}, {clean, {pc, clean}}]}]},
-        %% Windows需要先设置编译环境
-        %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
-        {plugins, [{pc, "v1.11.0"}]}
-
+    {erl_opts, [
+        debug_info,
+        {i, "apps/ptolemaios/include"},
+        {i, "apps/ptolemaios/include/proto"},
+        {i, "./_build/default/plugins/gpb/include"}
     ]},
-    %% 用我这边的配置
-    {override, enif_protobuf, [{deps, []}]},
 
-    %% rebar_ct在hex上面都搜不到了, 先屏蔽掉
-    {override, mongodb, [{plugins, []}]}
-]},
+    {deps, [
+        {ranch, "2.0.0"},
+        {enif_protobuf, ".*", {git, "https://github.com/jg513/enif_protobuf.git", {tag, "master"}}},
+        {mongodb, ".*", {git, "git://github.com/comtihon/mongodb-erlang", {tag, "v3.2.0"}}},
+        {mysql_poolboy, ".*", {git, "https://github.com/mysql-otp/mysql-otp-poolboy", {tag, "0.2.0"}}},
+        {jsx, "3.0.0"}
+    ]},
 
-{relx, [
-    {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
+    {overrides, [
+        {add, enif_protobuf, [
+            %% 用pc编译
+            {provider_hooks, [{pre, [{compile, {pc, compile}}, {clean, {pc, clean}}]}]},
+            %% Windows需要先设置编译环境
+            %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
+            {plugins, [{pc, "v1.11.0"}]}
 
-    {sys_config_src, "./config/sys.config.src"},
-    {vm_args_src, "./config/vm.args.src"},
+        ]},
+        %% 换成hex下载
+        {override, mysql_poolboy, [{deps, [{mysql, "1.6.0"}, {poolboy, "1.5.2"}]}]},
 
-    {dev_mode, true},
-    {include_erts, false},
+        %% 用rebar3_gpb_plugin的版本
+        {override, enif_protobuf, [{deps, []}]},
 
-    {extended_start_script, true}
-]},
+        %% rebar_ct在hex上面都搜不到了, 先屏蔽掉
+        {override, mongodb, [{plugins, []}]},
 
-%% set ESCRIPT_EMULATOR=werl&rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
-%% ./rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
-{shell, [
-    {config, "config/sys.config.src"},
-    {apps, [ptolemaios]}
-]},
+        %% 全都换成这个源
+        {override, [{rebar_packages_cdn, "https://hexpm.upyun.com"}]}
+    ]},
 
-{plugins, [
-    {rebar3_gpb_plugin, "2.15.0"},
-    {pc, ".*", {git, "https://github.com/DominicGame/port_compiler.git", {tag, "master"}}}
-]},
+    {relx, [
+        {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
 
-%% 钩子escript
-{pre_hooks, [
-    {compile, "escript script/ptolemaios.escript"},
-    {compile, "escript script/ptolemaios_pre.escript"}
-]},
+        {sys_config_src, "./config/sys.config.src"},
+        {vm_args_src, "./config/vm.args.src"},
 
-{post_hooks, [
-    {compile, "escript script/ptolemaios_post.escript"}
-]},
+        {dev_mode, true},
+        {include_erts, false},
 
-{profiles, [
-    {prod,
-        [{relx, [{dev_mode, false}, {include_erts, false}]}]
-    }
-]},
+        {extended_start_script, true}
+    ]},
 
-{provider_hooks, [
-    {pre, [
-        {compile, {protobuf, compile}},
-        {clean, {protobuf, clean}},
-        {compile, {pc, compile}},
-        {clean, {pc, clean}}
+    %% set ESCRIPT_EMULATOR=werl&rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
+    %% ./rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
+    {shell, [
+        {config, "config/sys.config.src"},
+        {apps, [ptolemaios]}
+    ]},
+
+    {plugins, [
+        {rebar3_gpb_plugin, "2.15.0"},
+        {pc, ".*", {git, "https://github.com/DominicGame/port_compiler.git", {tag, "master"}}}
+    ]},
+
+    %% 钩子escript
+    {pre_hooks, [
+        {compile, "escript hooks_escript/ptolemaios.escript"},
+        {compile, "escript hooks_escript/ptolemaios_pre.escript"}
+    ]},
+
+    {post_hooks, [
+        {compile, "escript hooks_escript/ptolemaios_post.escript"}
+    ]},
+
+    {profiles, [
+        {prod,
+            [{relx, [{dev_mode, false}, {include_erts, false}]}]
+        }
+    ]},
+
+    {provider_hooks, [
+        {pre, [
+            {compile, {protobuf, compile}},
+            {clean, {protobuf, clean}},
+            {compile, {pc, compile}},
+            {clean, {pc, clean}}
+        ]}
+    ]},
+
+    {gpb_opts, [
+        %% 相对ptolemaios的路径
+        {i, "proto"},
+        {module_name_suffix, "_pb"},
+        {o_erl, "src/proto"},
+        {o_hrl, "include/proto"},
+        {strings_as_binaries, true},
+        type_specs
+    ]},
+
+    {port_specs, [
+        {"priv/enif_example.so", [
+            "c_src/enif_example.c"
+        ]}
     ]}
-]},
-
-{gpb_opts, [
-    {i, "proto"},
-    {module_name_suffix, "_pb"},
-    {o_erl, "src/proto"},
-    {o_hrl, "include/proto"},
-    {strings_as_binaries, true},
-    type_specs
-]},
-
-{port_specs, [
-    {"priv/enif_example.so", [
-        "c_src/enif_example.c"
-    ]}
-]}
 ].

@@ -4,11 +4,11 @@
 
 main(_) ->
     %% 创建pre和post的escript
-    PreEscript = "script/ptolemaios_pre.escript",
-    PreErl = "script/ptolemaios_pre_escript.erl",
+    PreEscript = "hooks_escript/ptolemaios_pre.escript",
+    PreErl = "hooks_escript/ptolemaios_pre_escript.erl",
     do_make_escript(PreErl, PreEscript),
-    PostEscript = "script/ptolemaios_post.escript",
-    PostErl = "script/ptolemaios_post_escript.erl",
+    PostEscript = "hooks_escript/ptolemaios_post.escript",
+    PostErl = "hooks_escript/ptolemaios_post_escript.erl",
     do_make_escript(PostErl, PostEscript).
 
 do_make_escript(Erl, Escript) ->
