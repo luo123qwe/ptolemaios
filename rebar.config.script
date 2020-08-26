@@ -18,11 +18,6 @@
 {overrides, [
     {add, enif_protobuf, [
         {provider_hooks, [{pre, [{compile, {pc, compile}}, {clean, {pc, clean}}]}]},
-        %% PC在windows有bug, 需要把pc_port_specs的
-        %% ObjectFiles = [pc_util:replace_extension(O, ".o") || O <- SourceFiles],
-        %% =>
-        %% ObjectFiles = [pc_util:replace_extension(O, object_file_ext()) || O <- SourceFiles],
-        %% 暂时没想到其他好的方法, 等作者修一下吧= =
         %% 需要先设置编译环境
         %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
         {plugins, [{pc, "v1.11.0"}]}
@@ -46,13 +41,14 @@
     {extended_start_script, true}
 ]},
 
-%%  ESCRIPT_EMULATOR=werl ./rebar3 shell
+%% set ESCRIPT_EMULATOR=werl&set ERL_AFLAGS=-args_file config/vm.args&rebar3 shell
+%% ESCRIPT_EMULATOR=werl ERL_AFLAGS=-args_file config/vm.args ./rebar3 shell
 {shell, [
     {config, "config/sys.config"},
     {apps, [ptolemaios]}
 ]},
 
-{plugins, [{rebar3_gpb_plugin, "2.15.0"}, {pc, "v1.11.0"}]},
+{plugins, [{rebar3_gpb_plugin, "2.15.0"}, {pc, ".*", {git, "https://github.com/DominicGame/port_compiler.git", {tag, "master"}}}]},
 
 
 {pre_hooks, [
