@@ -41,8 +41,8 @@
     {extended_start_script, true}
 ]},
 
-%% set ESCRIPT_EMULATOR=werl&set ERL_AFLAGS=-args_file config/vm.args&rebar3 shell
-%% ESCRIPT_EMULATOR=werl ERL_AFLAGS=-args_file config/vm.args ./rebar3 shell
+%% set ESCRIPT_EMULATOR=werl&rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
+%% ESCRIPT_EMULATOR=werl ./rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
 {shell, [
     {config, "config/sys.config"},
     {apps, [ptolemaios]}
