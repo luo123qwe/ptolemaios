@@ -30,6 +30,7 @@ make_proto(RebarConfig) ->
     ProtoSrc = proplists:get_value(i, GpbOpts, "proto"),
     Suffix = proplists:get_value(module_name_suffix, GpbOpts, "_pb"),
     OutErlPath = proplists:get_value(o_erl, GpbOpts, "src/proto"),
+    OutHandlePath = OutErlPath ++ "/handle",
     MappingFile = OutErlPath ++ "/proto_mapping.erl",
     %% 是否需要生成文件
     IsMake =
@@ -72,7 +73,7 @@ make_proto(RebarConfig) ->
                         {match, MatchList} ->
                             Name = filename:basename(FileName, ".proto") ++ Suffix,
                             Route = filename:basename(FileName, ".proto") ++ "_handle",
-                            RouteFile = OutErlPath ++ "/" ++ Route ++ ".erl",
+                            RouteFile = OutHandlePath ++ "/" ++ Route ++ ".erl",
                             case filelib:is_file(RouteFile) of
                                 true -> skip;
                                 false -> file:write_file(RouteFile, [

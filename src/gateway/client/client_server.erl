@@ -16,16 +16,16 @@
 %% API
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
--export([start/0, send_msg/2]).
+-export([start_link/0, send_msg/2]).
 
-start() ->
-    exia:start(?MODULE, [], []).
+start_link() ->
+    exia:start_link(?MODULE, [], []).
 
 send_msg(Pid, Msg) ->
     exia:cast(Pid, {msg, Msg}).
 
 init([]) ->
-    {ok, Port} = application:get_env(ptolemaios, port),
+    {ok, Port} = application:get_env(gateway, port),
     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{packet, raw}, binary, {active, true}]),
     {ok, #gateway{socket = Socket}}.
 

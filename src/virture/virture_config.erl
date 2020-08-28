@@ -8,16 +8,37 @@
 -module(virture_config).
 -author("dominic").
 
+-include("util.hrl").
 -include("virture.hrl").
 -include("player.hrl").
 
 %% API
--export([all/1, get/2, get_sup_spec/1]).
+-export([all/1, get/2, get_sup_spec/0]).
 
 %% @doc 获取sup范式
--spec get_sup_spec(mysql) -> [supervisor:child_spec()].
+-spec get_sup_spec() -> [supervisor:child_spec()].
+get_sup_spec() ->
+    {ok, VirtureType} = application:get_env(virture, type),
+    get_sup_spec(VirtureType).
+
 get_sup_spec(mysql) ->
-    [#{id => virture_mysql, start => {virture_mysql_sup, start_link, []}, type => supervisor}].
+    try
+        {ok, User} = application:get_env(virture, mysql_user),
+        {ok, Password} = application:get_env(virture, mysql_password),
+        {ok, Database} = application:get_env(virture, mysql_database),
+        PoolOptions = [{size, 50}, {max_overflow, 100}],
+        MySqlOptions = [{user, User}, {password, Password}, {database, Database},
+            {keep_alive, true},
+            {prepare, []}],%{test, "SELECT * FROM player WHERE id=?"}]}],
+        [
+            mysql_poolboy:child_spec(?VMYSQL_POOL, PoolOptions, MySqlOptions),
+            #{id => virture_mysql, start => {virture_mysql_sup, start_link, []}, type => supervisor}
+        ]
+    catch
+        C:E ->
+            ?LOG_WARNING("bad mysql config, ~p", [{C, E}]),
+            []
+    end.
 
 %% @doc 所有#virture写在这里
 -spec all(mysql) -> [#vmysql{}].
