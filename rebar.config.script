@@ -5,8 +5,8 @@
 
     {erl_opts, [
         debug_info,
-        {i, "apps/ptolemaios/include"},
-        {i, "apps/ptolemaios/include/proto"},
+        {i, "include"},
+        {i, "include/proto"},
         {i, "./_build/default/plugins/gpb/include"}
     ]},
 
