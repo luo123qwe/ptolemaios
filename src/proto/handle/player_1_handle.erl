@@ -25,7 +25,7 @@ handle(#player_c_select_role{id = Id}, #gateway{socket = Socket} = Gateway) ->
     case virture_mysql:lookup(player, [Id]) of
         #player{} ->
             %% todo 两个进程互相监督
-            {ok, Pid} = player_server:start(Id),
+            {ok, Pid} = player_sup:start_child(Id),
             Bin = gateway_server:pack(#player_s_select_role{id = Id}),
             ranch_tcp:send(Socket, Bin),
             Gateway#gateway{player_id = Id, player_pid = Pid};

@@ -16,10 +16,10 @@
 %% API
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
--export([start/1]).
+-export([start_link/1]).
 
-start(Id) ->
-    exia:start(name(Id), ?MODULE, [Id], []).
+start_link(Id) ->
+    exia:start_link(name(Id), ?MODULE, [Id], []).
 
 name(Id) ->
     atom_to_list("player_" ++ integer_to_list(Id)).

@@ -4,22 +4,22 @@
 %%% @doc
 %%% @end
 %%%-------------------------------------------------------------------
--module(client_sup).
+-module(player_sup).
 
 -behaviour(supervisor).
 
--export([start_link/0, init/1, start_child/0]).
+-export([start_link/0, init/1, start_child/1]).
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    AChild = #{id => client,
-        start => {client_server, start_link, []},
-        restart => temporary,
+    AChild = #{id => player,
+        start => {player_server, start_link, []},
+        restart => transient,
         shutdown => 2000,
         type => worker,
-        modules => [client_server]},
+        modules => [player_server]},
     
     {ok, {#{strategy => simple_one_for_one,
         intensity => 5,
@@ -27,5 +27,5 @@ init([]) ->
         [AChild]}
     }.
 
-start_child() ->
-    supervisor:start_child(client_sup, []).
+start_child(Id) ->
+    supervisor:start_child(player_sup, [Id]).

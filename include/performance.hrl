@@ -1,3 +1,5 @@
+%% 一般情况增删改, 总次数 = Size * XXXTimes
+
 -record(performance_fractal_tree, {
     size,
     record_size,
@@ -29,8 +31,15 @@
 }).
 
 -record(performance_element, {
-    size1,
+    size1,% 两个不同size跑同一份代码
     size2,
     lookup_times,
     store_times
+}).
+
+-record(performance_virture, {
+    size,
+    lookup_times,
+    store_times,
+    fold_times
 }).

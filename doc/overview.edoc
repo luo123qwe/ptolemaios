@@ -1,0 +1,64 @@
+			-*- html -*-
+
+@author dominic
+@copyright 2020-2020 dominic
+@version {@version}
+@title Ptolemaios Overview
+
+@doc Ptolemaios是一个游戏服务器框架, 目标是在windows平台使用rebar3和idea提高开发效率和优化代码管理
+
+== Contents ==
+
+<ol>
+  <li>{@section 规范}</li>
+  <li>{@section 工具(util)}</li>
+  <li>{@section 数据(virture)}</li>
+  <li>{@section 进程(exia)}</li>
+  <li>{@section 协议(proto)}</li>
+  <li>{@section 网关(gateway)}</li>
+  <li>{@section 热更(hotfix)}</li>
+  <li>{@section 例子(example)}</li>
+  <li>{@section 性能(performance)}</li>
+  <li>{@section 结构(struct)}</li>
+</ol>
+
+== 规范 ==
+
+=== 命名 ===
+
+基于idea的Find Usages功能, 标识, 消息, 动态调用(MFA), 尽量利用宏或者函数包起来, 可以提高代码修改和回顾时的效率(相比全局搜索)
+
+所以, 标识命名应该包含功能标识(下面用{MODULE}代替), 例如玩家功能使用player, 那么对应的宏和模块名应该使用?[内部标识_]player_{模块名或标识}, 例如, ?PD_PLAYER_NAME, ?PLAYER_ID, player_server, player_helper....
+
+所有功能标识定义在module_sname.txt中(人工维护), 面对功能标识很长的时候使用缩写(定义在module_sname.txt中), 例如virture_mysql => vmysql
+
+<dl>
+    <dt>进程字典</dt>
+    <dd>使用?PD_{MODULE}_{TAG}[参数个数]的宏包装, 例如
+    ```
+    -define(PD_PLAYER_NAME, pd_player_name).% 玩家名字
+
+    -define(PD_PLAYER_NAME1(Id), {pd_player_name, Id}).% 玩家名字
+    '''</dd>
+    <dt>进程消息</dt>
+    <dd>使用?MSG_{MODULE}_{TAG}[参数个数]的宏包装, 例如
+    ```
+    -define(MSG_GET_PLAYER_NAME, get_player_name).% 玩家名字
+
+    -define(MSG_GET_PLAYER_NAME1(Id), {get_player_names, Id}).% 玩家名字
+    '''</dd>
+    <dt>ets名字</dt>
+    <dd>使用?ETS_{MODULE}_{TAG}[参数个数]的宏包装, 例如
+    ```
+    -define(ETS_PLAYER_NAME, ets_player_name).% 玩家名字
+
+    -define(ETS_PLAYER_NAME1(ServerId), list_to_atom("ets_player_name_" ++ integer_to_list(ServerId))).% 某个服务器的玩家名字
+    '''</dd>
+    <dt>dets名字</dt>
+    <dd>使用?DETS_{MODULE}_{TAG}[参数个数]的宏包装, 例如
+    ```
+    -define(DETS_PLAYER_NAME, ets_player_name).% 玩家名字
+
+    -define(DETS_PLAYER_NAME1(ServerId), list_to_atom("ets_player_name_" ++ integer_to_list(ServerId))).% 某个服务器的玩家名字
+    '''</dd>
+</dl>

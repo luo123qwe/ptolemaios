@@ -5,7 +5,7 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(enif_example).
+-module(example_enif).
 -author("dominic").
 
 %% API

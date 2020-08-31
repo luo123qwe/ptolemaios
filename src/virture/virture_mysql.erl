@@ -25,8 +25,6 @@
 %% 算是private
 -export([build_table/0, build_table/1, system_init/0, system_init/3, save_defined/0, fix_dets/3, check_dets/0, hotfix/2]).
 
--export([base_test/0]).
-
 -type json_def() :: term().
 -type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary|json_def().
 -export_type([field_type/0]).
@@ -132,9 +130,9 @@ ensure_load(Table, SelectKey) ->
         _ -> load(Table, SelectKey)
     end.
 
-%% @equiv load(Table, Key, [])
+%% @equiv load(Table, Key, undefined)
 load(Table, SelectKey) ->
-    load(Table, SelectKey, []).
+    load(Table, SelectKey, undefined).
 
 %% @doc 在当前进程初始化一个表
 %% 当SelectKey或WhereSql为undefined时, 等效于没有这个where条件
@@ -237,18 +235,32 @@ save_not_flush(Table) ->
     end.
 
 
-%% @doc 遍历当前数据
+%% @doc 遍历当前数据, 支持break
 -spec fold_cache(fun((Key :: term(), Record :: term(), Acc :: term())-> Acc1 :: term()), term(), atom()) -> term().
-fold_cache(F, Acc, Table) ->
+fold_cache(Fun, Acc, Table) ->
     #{Table := #vmysql{state_pos = StatePos, data = Data}} = get(?PD_VMYSQL),
-    WarpFun =
-        fun(K, V, A) ->
+    fold_cache_1(Fun, Acc, StatePos, Data).
+
+%% 从maps复制
+fold_cache_1(Fun, Init, StatePos, Map) when is_function(Fun, 3), is_map(Map) ->
+    fold_cache_2(Fun, Init, StatePos, maps:iterator(Map)).
+
+fold_cache_2(Fun, Acc, StatePos, Iter) ->
+    case maps:next(Iter) of
+        {K, V, NextIter} ->
             case element(StatePos, V) of
-                ?VIRTURE_STATE_DELETE -> A;
-                _ -> F(K, V, A)
-            end
-        end,
-    maps:fold(WarpFun, Acc, Data).
+                ?VIRTURE_STATE_DELETE ->
+                    fold_cache_2(Fun, Acc, StatePos, NextIter);
+                _ ->
+                    case Fun(K, V, Acc) of
+                        ?UTIL_FOLD_BREAK -> Acc;
+                        ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+                        Acc1 -> fold_cache_2(Fun, Acc1, StatePos, NextIter)
+                    end
+            end;
+        none ->
+            Acc
+    end.
 
 %% @doc flush所有改变的数据到ets
 -spec sync_to_ets() -> ok.
@@ -681,7 +693,7 @@ init_data(SelectValue, ExtWhereSql, Virture) ->
                 case SelectValue of
                     undefined ->
                         case ExtWhereSql of
-                            [] -> [];
+                            undefined -> [];
                             _ -> [" WHERE ", ExtWhereSql]
                         end;
                     _ ->
@@ -852,129 +864,153 @@ init_record(InitFun, [], [], Record) ->
 init_record(InitFun, [Value | ValueT], [#vmysql_field{pos = Pos, type = Type} | FieldT], Record) ->
     init_record(InitFun, ValueT, FieldT, setelement(Pos, Record, decode(Type, Value))).
 
-%% 不想写_SUIT, 凑合用着先吧
-base_test() ->
-    %% 删除test数据表
-    mysql_poolboy:query(?VMYSQL_POOL, "drop table if exists vmysql_test_player;
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+base_test_() ->
+    {setup,
+        fun() ->
+            application:start(poolboy),
+            application:start(mysql),
+            application:start(mysql_poolboy),
+            PoolOptions = [{size, 50}, {max_overflow, 100}],
+            MySqlOptions = [{user, "root"}, {password, "123456"}, {database, "test"},
+                {keep_alive, true},
+                {prepare, []}],
+            mysql_poolboy:add_pool(?VMYSQL_POOL, PoolOptions, MySqlOptions),
+            %% 删除test数据表
+            mysql_poolboy:query(?VMYSQL_POOL, "drop table if exists vmysql_test_player;
     drop table if exists vmysql_test_goods;"),
-    %% build
-    io:format("~w~n", [virture_mysql:build_table([virture_config:get(mysql, vmysql_test_player), virture_config:get(mysql, vmysql_test_goods)])]),
-    %% 初始化
-    virture_mysql:process_init(),
-    virture_mysql:load(vmysql_test_player, [1]),
-    virture_mysql:load(vmysql_test_goods, [1]),
-    %% 插入数据
-    undefined = virture_mysql:lookup(vmysql_test_player, [1]),
-    undefined = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
-    virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
-    virture_mysql:insert(#vmysql_test_player{player_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 2, goods_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 2, goods_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
-    0 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
-    0 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    virture_mysql:sync_to_db(),
-    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
-    4 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-%%    io:format("~p~n", [get()]),
-    %% 插入+更新+删除
-    virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"11">>, to_str = <<"11">>, to_bin = <<"11">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
-    virture_mysql:delete(vmysql_test_player, [2]),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 1, str = <<"11">>, to_str = <<"11">>, to_bin = <<"11">>}),
-    virture_mysql:delete(vmysql_test_goods, [1, 2]),
-    virture_mysql:insert(#vmysql_test_player{player_id = 3, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 3, goods_id = 1, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 3, goods_id = 2, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>}),
-    #vmysql_test_player{str = <<"11">>} = virture_mysql:lookup(vmysql_test_player, [1]),
-    undefined = virture_mysql:lookup(vmysql_test_player, [2]),
-    #vmysql_test_player{str = <<"3">>} = virture_mysql:lookup(vmysql_test_player, [3]),
-    #vmysql_test_goods{str = <<"11">>} = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
-    undefined = virture_mysql:lookup(vmysql_test_goods, [1, 2]),
-    #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
-%%    io:format("~p~n", [get()]),
-    virture_mysql:sync_to_db(),
-    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
-    5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    #vmysql_test_player{str = <<"11">>} = virture_mysql:lookup(vmysql_test_player, [1]),
-    undefined = virture_mysql:lookup(vmysql_test_player, [2]),
-    #vmysql_test_player{str = <<"3">>} = virture_mysql:lookup(vmysql_test_player, [3]),
-    #vmysql_test_goods{str = <<"11">>} = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
-    undefined = virture_mysql:lookup(vmysql_test_goods, [1, 2]),
-    #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
-    %% hold
-    Hold = virture_mysql:hold(),
-    virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 1, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
-    #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, [4]),
-    #vmysql_test_goods{} = virture_mysql:lookup(vmysql_test_goods, [4, 1]),
-    #vmysql_test_goods{} = virture_mysql:lookup(vmysql_test_goods, [4, 2]),
-    virture_mysql:rollback(Hold),
-    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
-    5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    undefined = virture_mysql:lookup(vmysql_test_player, [4]),
-    undefined = virture_mysql:lookup(vmysql_test_goods, [4, 1]),
-    undefined = virture_mysql:lookup(vmysql_test_goods, [4, 2]),
-    %% all_table
-    [] = virture_mysql:all_table()--[vmysql_test_player, vmysql_test_goods],
-    virture_mysql:clean_pd(virture_mysql:all_table()),
-    [] = virture_mysql:all_table(),
-    %% sync
-    virture_mysql:load(vmysql_test_player, [1]),
-    virture_mysql:load(vmysql_test_goods, [1]),
-    virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 1, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
-    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
-    5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    sync_to_db(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
-    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
-    7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    sync_to_db(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
-    2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
-    7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
-    %% 初始化
-    virture_mysql:clean_ets([vmysql_test_player]),
-    virture_mysql:clean_pd(),
-    %% dets
-    virture_mysql:load(vmysql_test_player, [4]),
-    %% 没有json, sync会失败, 会有一个正常报错
-    virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
-    sync_to_db(),
-    virture_mysql:clean_pd(),
-    virture_mysql:fix_dets(undefined, fun(R) ->
-        R1 = R#vmysql_test_player{to_json = [{1, {2, 3}}, {11, {22, 33}}]},
-        virture_mysql:insert(R1)
-                                      end, undefined),
-    [#vmysql_test_player{}] = ets:lookup(virture_mysql:make_ets_name(vmysql_test_player), [4]),
-    virture_mysql:clean_pd([vmysql_test_player]),
-    virture_mysql:clean_ets([vmysql_test_player]),
-    virture_mysql:load(vmysql_test_player, [4]),
-    #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, [4]),
-    %% dirty lookup
-    virture_mysql:clean_ets([vmysql_test_goods]),
-    virture_mysql:clean_pd(),
-    undefined = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
-    virture_mysql:load(vmysql_test_goods, [4]),
-    clean_pd(),
-    #vmysql_test_goods{} = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
-    %% fold_cache
-    virture_mysql:load(vmysql_test_goods, [4]),
-    2 = fold_cache(fun(_K, _V, Acc) ->
-        Acc + 1
-                   end, 0, vmysql_test_goods),
-    virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 3, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
-    3 = fold_cache(fun(_K, _V, Acc) ->
-        Acc + 1
-                   end, 0, vmysql_test_goods),
-    %% 热更新定义, shell 执行
-    %% vmysql_test_goods的to_str改成string类型
-    %% os:cmd("rebar3 compile"), rr("include/*"), l(virture_mysql), l(virture_config).
-    %% virture_mysql:hotfix(vmysql_test_goods, fun(R) -> virture_mysql:insert(R#vmysql_test_goods{to_str = <<"hotfix">>}) end).
-    %% #vmysql_test_goods{to_str = <<"hotfix">>} = virture_mysql:lookup(vmysql_test_goods, [4, 1]).
-    %% virture_mysql:sync().
-    %% 看数据库
-    %% virture_mysql:clean(), virture_mysql:clean_ets().
-    %% virture_mysql:load(vmysql_test_goods, [4]), virture_mysql:lookup(vmysql_test_goods, [4, 1]).
-    {base_test, ok}.
+            %% build
+            virture_mysql:system_init()
+        end,
+        fun(_) ->
+            application:stop(mysql_poolboy),
+            application:stop(poolboy),
+            application:stop(mysql)
+        end,
+        fun(_) ->
+            %% 懒得写那么多宏了
+            %% 初始化
+            virture_mysql:process_init(),
+            virture_mysql:load(vmysql_test_player, [1]),
+            virture_mysql:load(vmysql_test_goods, [1]),
+            %% 插入数据
+            undefined = virture_mysql:lookup(vmysql_test_player, [1]),
+            undefined = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
+            virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
+            virture_mysql:insert(#vmysql_test_player{player_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 2, goods_id = 1, str = <<"1">>, to_str = <<"1">>, to_bin = <<"1">>}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 2, goods_id = 2, str = <<"2">>, to_str = <<"2">>, to_bin = <<"2">>}),
+            0 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+            0 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+            virture_mysql:sync_to_db(),
+            2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+            4 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+%%    ?debugFmt("~p~n", [get()]),
+            %% 插入+更新+删除
+            virture_mysql:insert(#vmysql_test_player{player_id = 1, str = <<"11">>, to_str = <<"11">>, to_bin = <<"11">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
+            virture_mysql:delete(vmysql_test_player, [2]),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 1, goods_id = 1, str = <<"11">>, to_str = <<"11">>, to_bin = <<"11">>}),
+            virture_mysql:delete(vmysql_test_goods, [1, 2]),
+            virture_mysql:insert(#vmysql_test_player{player_id = 3, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 3, goods_id = 1, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 3, goods_id = 2, str = <<"3">>, to_str = <<"3">>, to_bin = <<"3">>}),
+            #vmysql_test_player{str = <<"11">>} = virture_mysql:lookup(vmysql_test_player, [1]),
+            undefined = virture_mysql:lookup(vmysql_test_player, [2]),
+            #vmysql_test_player{str = <<"3">>} = virture_mysql:lookup(vmysql_test_player, [3]),
+            #vmysql_test_goods{str = <<"11">>} = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
+            undefined = virture_mysql:lookup(vmysql_test_goods, [1, 2]),
+            #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
+%%    ?debugFmt("~p~n", [get()]),
+            virture_mysql:sync_to_db(),
+            2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+            5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+            #vmysql_test_player{str = <<"11">>} = virture_mysql:lookup(vmysql_test_player, [1]),
+            undefined = virture_mysql:lookup(vmysql_test_player, [2]),
+            #vmysql_test_player{str = <<"3">>} = virture_mysql:lookup(vmysql_test_player, [3]),
+            #vmysql_test_goods{str = <<"11">>} = virture_mysql:lookup(vmysql_test_goods, [1, 1]),
+            undefined = virture_mysql:lookup(vmysql_test_goods, [1, 2]),
+            #vmysql_test_goods{str = <<"3">>} = virture_mysql:lookup(vmysql_test_goods, [3, 1]),
+            %% hold
+            Hold = virture_mysql:hold(),
+            virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 1, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+            #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, [4]),
+            #vmysql_test_goods{} = virture_mysql:lookup(vmysql_test_goods, [4, 1]),
+            #vmysql_test_goods{} = virture_mysql:lookup(vmysql_test_goods, [4, 2]),
+            virture_mysql:rollback(Hold),
+            2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+            5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+            undefined = virture_mysql:lookup(vmysql_test_player, [4]),
+            undefined = virture_mysql:lookup(vmysql_test_goods, [4, 1]),
+            undefined = virture_mysql:lookup(vmysql_test_goods, [4, 2]),
+            %% all_table
+            [] = virture_mysql:all_table()--[vmysql_test_player, vmysql_test_goods],
+            virture_mysql:clean_pd(virture_mysql:all_table()),
+            [] = virture_mysql:all_table(),
+            %% sync
+            virture_mysql:load(vmysql_test_player, [1]),
+            virture_mysql:load(vmysql_test_goods, [1]),
+            virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>, to_json = [{1, {2, 3}}, {11, {22, 33}}]}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 1, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 2, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+            2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+            5 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+            sync_to_db(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
+            2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+            7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+            sync_to_db(maps:get(vmysql_test_goods, get(?PD_VMYSQL))),
+            2 = ets:info(virture_mysql:make_ets_name(vmysql_test_player), size),
+            7 = ets:info(virture_mysql:make_ets_name(vmysql_test_goods), size),
+            %% 初始化
+            virture_mysql:clean_ets([vmysql_test_player]),
+            virture_mysql:clean_pd(),
+            %% dets
+            virture_mysql:load(vmysql_test_player, [4]),
+            %% 没有json, sync会失败, 会有一个正常报错
+            virture_mysql:insert(#vmysql_test_player{player_id = 4, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+            sync_to_db(),
+            virture_mysql:clean_pd(),
+            virture_mysql:fix_dets(undefined, fun(R) ->
+                R1 = R#vmysql_test_player{to_json = [{1, {2, 3}}, {11, {22, 33}}]},
+                virture_mysql:insert(R1)
+                                              end, undefined),
+            [#vmysql_test_player{}] = ets:lookup(virture_mysql:make_ets_name(vmysql_test_player), [4]),
+            virture_mysql:clean_pd([vmysql_test_player]),
+            virture_mysql:clean_ets([vmysql_test_player]),
+            virture_mysql:load(vmysql_test_player, [4]),
+            #vmysql_test_player{} = virture_mysql:lookup(vmysql_test_player, [4]),
+            %% dirty lookup
+            virture_mysql:clean_ets([vmysql_test_goods]),
+            virture_mysql:clean_pd(),
+            undefined = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
+            virture_mysql:load(vmysql_test_goods, [4]),
+            clean_pd(),
+            #vmysql_test_goods{} = virture_mysql:dirty_lookup(vmysql_test_goods, [4, 1]),
+            %% fold_cache
+            virture_mysql:load(vmysql_test_goods, [4]),
+            2 = fold_cache(fun(_K, _V, Acc) ->
+                Acc + 1
+                           end, 0, vmysql_test_goods),
+            virture_mysql:insert(#vmysql_test_goods{player_id = 4, goods_id = 3, str = <<"4">>, to_str = <<"4">>, to_bin = <<"4">>}),
+            3 = fold_cache(fun(_K, _V, Acc) ->
+                Acc + 1
+                           end, 0, vmysql_test_goods),
+            %% 热更新定义, shell 执行
+            %% vmysql_test_goods的to_str改成string类型
+            %% os:cmd("rebar3 compile"), rr("include/*"), l(virture_mysql), l(virture_config).
+            %% virture_mysql:hotfix(vmysql_test_goods, fun(R) -> virture_mysql:insert(R#vmysql_test_goods{to_str = <<"hotfix">>}) end).
+            %% #vmysql_test_goods{to_str = <<"hotfix">>} = virture_mysql:lookup(vmysql_test_goods, [4, 1]).
+            %% virture_mysql:sync().
+            %% 看数据库
+            %% virture_mysql:clean(), virture_mysql:clean_ets().
+            %% virture_mysql:load(vmysql_test_goods, [4]), virture_mysql:lookup(vmysql_test_goods, [4, 1]).
+            []
+        end}.
+
+-endif.

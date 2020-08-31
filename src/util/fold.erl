@@ -11,7 +11,7 @@
 -include("util.hrl").
 
 %% API
--export([list_l/3, list_r/3, dict/3, gb_trees_l/3, gb_trees_r/3, gb_trees_l/4, gb_trees_r/4]).
+-export([list_l/3, list_r/3, dict/3, maps/3, gb_trees_l/3, gb_trees_r/3, gb_trees_l/4, gb_trees_r/4]).
 
 %% @doc lists:foldl/3
 -spec list_l(Fun, Acc0, List) -> Acc1 when
@@ -107,6 +107,30 @@ fold_bucket(F, Acc, [?kv(Key, Val) | Bkt]) ->
         Acc1 -> fold_bucket(F, Acc1, Bkt)
     end;
 fold_bucket(F, Acc, []) when is_function(F, 3) -> Acc.
+
+%% 从maps.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
+%% @doc maps:fold
+-spec maps(Fun, Init, Map) -> Acc when
+    Fun :: fun((Key, Value, AccIn) -> AccOut),
+    Init :: term(),
+    Acc :: AccOut,
+    AccIn :: Init | AccOut,
+    Map :: #{Key => Value}.
+
+maps(Fun, Init, Map) when is_function(Fun, 3), is_map(Map) ->
+    maps_1(Fun, Init, maps:iterator(Map)).
+
+maps_1(Fun, Acc, Iter) ->
+    case maps:next(Iter) of
+        {K, V, NextIter} ->
+            case Fun(K, V, Acc) of
+                ?UTIL_FOLD_BREAK -> Acc;
+                ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+                Acc1 -> maps_1(Fun, Acc1, NextIter)
+            end;
+        none ->
+            Acc
+    end.
 
 %% 从gb_trees.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
 %% @doc 实际上似乎不太需要前后序遍历, 所以仅提供中序遍历</br>
@@ -255,6 +279,7 @@ gb_trees_r_1(_F, _Start, Acc, nil) -> Acc.
 base_test_() ->
     Seq = lists:seq(1, 1000),
     Dict = fold:list_l(fun(N, Acc) -> dict:store(N, N, Acc) end, dict:new(), Seq),
+    Map = fold:list_l(fun(N, Acc) -> Acc#{N => N} end, #{}, Seq),
     GBTree = fold:list_l(fun(N, Acc) -> gb_trees:insert(N, N, Acc) end, gb_trees:empty(), Seq),
     [
         %% list_l
@@ -291,6 +316,15 @@ base_test_() ->
                 true -> ?UTIL_FOLD_BREAK(N);
                 _ -> Acc
             end end, [], Dict)),
+        
+        %% maps
+        ?_assertEqual(Seq, lists:sort(fold:maps(fun(_, N, Acc) -> [N | Acc] end, [], Map))),
+        ?_assertEqual([], fold:maps(fun(_, _N, _Acc) -> ?UTIL_FOLD_BREAK end, [], Map)),
+        ?_assertEqual(500, fold:maps(fun(_, N, Acc) ->
+            case N == 500 of
+                true -> ?UTIL_FOLD_BREAK(N);
+                _ -> Acc
+            end end, [], Map)),
         
         %% gb_trees_l
         ?_assertEqual(lists:reverse(Seq), fold:gb_trees_l(fun(_, N, Acc) -> [N | Acc] end, [], GBTree)),
