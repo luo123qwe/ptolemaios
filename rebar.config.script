@@ -93,7 +93,7 @@
         %% 相对ptolemaios的路径
         {i, "proto"},
         {module_name_suffix, "_pb"},
-        {o_erl, "src/proto"},
+        {o_erl, "src/proto/pb"},
         {o_hrl, "include/proto"},
         {strings_as_binaries, true},
         type_specs
