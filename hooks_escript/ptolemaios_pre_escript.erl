@@ -23,14 +23,17 @@ main(_) ->
     io:format("pre_hooks end~n").
 
 make_proto(RebarConfig) ->
+    create_dir("./include/proto"),
     case lists:keyfind(gpb_opts, 1, RebarConfig) of
         {_, GpbOpts} -> ok;
         _ -> GpbOpts = []
     end,
     ProtoSrc = proplists:get_value(i, GpbOpts, "proto"),
     Suffix = proplists:get_value(module_name_suffix, GpbOpts, "_pb"),
-    OutErlPath = proplists:get_value(o_erl, GpbOpts, "src/proto"),
-    OutHandlePath = OutErlPath ++ "/handle",
+    OutErlPath = proplists:get_value(o_erl, GpbOpts, "src/proto/pb"),
+    create_dir(OutErlPath),
+    OutHandlePath = filename:dirname(OutErlPath) ++ "/handle",
+    create_dir(OutHandlePath),
     MappingFile = filename:dirname(OutErlPath) ++ "/proto_mapping.erl",
     %% 是否需要生成文件
     IsMake =
@@ -125,4 +128,9 @@ make_proto(RebarConfig) ->
         _ ->
             skip
     end.
-    
+
+create_dir(Dir) ->
+    case filelib:is_dir(Dir) of
+        true -> skip;
+        _ -> file:make_dir(Dir)
+    end.
