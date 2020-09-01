@@ -376,7 +376,7 @@ fold(F, Acc, #fto_root{children = #fto_child{high = 2, children = []}}) when is_
     Acc;
 fold(F, Acc, #fto_root{children = Child}) ->
     case fold_child(F, Acc, Child) of
-        ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+        ?FOLD_BREAK_1(Acc1) -> Acc1;
         Acc1 -> Acc1
     end.
 
@@ -384,12 +384,12 @@ fold_child(_F, Acc, []) ->
     Acc;
 fold_child(F, Acc, [#fto_child{high = 2, children = LeafList} | T]) ->
     case fold_leaf(F, Acc, LeafList) of
-        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        ?FOLD_BREAK_1(_Acc1) = Break -> Break;
         Acc1 -> fold_child(F, Acc1, T)
     end;
 fold_child(F, Acc, [#fto_child{children = Children} | T]) ->
     case fold_child(F, Acc, Children) of
-        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        ?FOLD_BREAK_1(_Acc1) = Break -> Break;
         Acc1 -> fold_child(F, Acc1, T)
     end.
 
@@ -401,7 +401,7 @@ fold(F, Acc, #fto_root{children = #fto_child{high = 2, children = []}}, _Max, _M
     Acc;
 fold(F, Acc, #fto_root{children = Child}, Max, Min) ->
     case fold_child_by_range(F, Acc, Child, Max, Min) of
-        ?UTIL_FOLD_BREAK(Acc1) -> Acc1;
+        ?FOLD_BREAK_1(Acc1) -> Acc1;
         Acc1 -> Acc1
     end.
 
@@ -413,7 +413,7 @@ fold_child_by_range(F, Acc, [#fto_child{max = ChildMax, high = 2, children = Lea
             fold_child_by_range(F, Acc, T, Max, Min);
         false ->
             case fold_leaf_by_range(F, Acc, ?FTO_FOLD_RANGE_KEY, LeafList, Max, Min) of
-                ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+                ?FOLD_BREAK_1(_Acc1) = Break -> Break;
                 Acc1 -> fold_child_by_range1(F, Acc1, T, Max, Min)
             end
     end;
@@ -423,7 +423,7 @@ fold_child_by_range(F, Acc, [#fto_child{max = ChildMax, children = Children} | T
             fold_child_by_range(F, Acc, T, Max, Min);
         false ->
             case fold_child_by_range(F, Acc, Children, Max, Min) of
-                ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+                ?FOLD_BREAK_1(_Acc1) = Break -> Break;
                 Acc1 -> fold_child_by_range1(F, Acc1, T, Max, Min)
             end
     end.
@@ -434,20 +434,20 @@ fold_child_by_range1(_F, Acc, [], _Max, _Min) ->
 fold_child_by_range1(F, Acc, [#fto_child{min = ChildMin, high = 2, children = LeafList} | T], Max, Min) ->
     case is_bigger(ChildMin, Max) of
         true ->
-            ?UTIL_FOLD_BREAK(Acc);
+            ?FOLD_BREAK_1(Acc);
         false ->
             case fold_leaf_by_range(F, Acc, ?FTO_FOLD_RANGE_KEY, LeafList, Max, Min) of
-                ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+                ?FOLD_BREAK_1(_Acc1) = Break -> Break;
                 Acc1 -> fold_child_by_range1(F, Acc1, T, Max, Min)
             end
     end;
 fold_child_by_range1(F, Acc, [#fto_child{min = ChildMin, children = Children} | T], Max, Min) ->
     case is_bigger(ChildMin, Max) of
         true ->
-            ?UTIL_FOLD_BREAK(Acc);
+            ?FOLD_BREAK_1(Acc);
         false ->
             case fold_child_by_range1(F, Acc, Children, Max, Min) of
-                ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+                ?FOLD_BREAK_1(_Acc1) = Break -> Break;
                 Acc1 -> fold_child_by_range1(F, Acc1, T, Max, Min)
             end
     end.
@@ -455,8 +455,8 @@ fold_child_by_range1(F, Acc, [#fto_child{min = ChildMin, children = Children} | 
 
 fold_leaf(F, Acc, [Leaf | T]) ->
     case F(Leaf#fto_leaf.data, Acc) of
-        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
-        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        ?FOLD_BREAK -> ?FOLD_BREAK_1(Acc);
+        ?FOLD_BREAK_1(_Acc1) = Break -> Break;
         Acc1 -> fold_leaf(F, Acc1, T)
     end;
 fold_leaf(_F, Acc, []) -> Acc.
@@ -466,8 +466,8 @@ fold_leaf_by_range(_F, Acc, _LastKey, [], _Max, _Min) ->
     Acc;
 fold_leaf_by_range(F, Acc, Key, [#fto_leaf{key = Key} = Leaf | T], Max, Min) ->
     case F(Leaf#fto_leaf.data, Acc) of
-        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
-        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+        ?FOLD_BREAK -> ?FOLD_BREAK_1(Acc);
+        ?FOLD_BREAK_1(_Acc1) = Break -> Break;
         Acc1 -> fold_leaf_by_range(F, Acc1, Key, T, Max, Min)
     end;
 fold_leaf_by_range(F, Acc, LastKey, [#fto_leaf{key = Key} = Leaf | T], Max, Min) ->
@@ -477,11 +477,11 @@ fold_leaf_by_range(F, Acc, LastKey, [#fto_leaf{key = Key} = Leaf | T], Max, Min)
         false ->
             case is_bigger(Key, Max) of
                 true ->
-                    ?UTIL_FOLD_BREAK(Acc);
+                    ?FOLD_BREAK_1(Acc);
                 false ->
                     case F(Leaf#fto_leaf.data, Acc) of
-                        ?UTIL_FOLD_BREAK -> ?UTIL_FOLD_BREAK(Acc);
-                        ?UTIL_FOLD_BREAK(_Acc1) = Break -> Break;
+                        ?FOLD_BREAK -> ?FOLD_BREAK_1(Acc);
+                        ?FOLD_BREAK_1(_Acc1) = Break -> Break;
                         Acc1 -> fold_leaf_by_range(F, Acc1, Key, T, Max, Min)
                     end
             end

@@ -2,7 +2,7 @@
 %%% File    : example_SUITE.erl
 %%% Author  :
 %%% Description :
-%%%
+%%% @hidden
 %%% Created :
 %%%-------------------------------------------------------------------
 -module(example_SUITE).

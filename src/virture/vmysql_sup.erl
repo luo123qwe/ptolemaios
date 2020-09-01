@@ -4,7 +4,7 @@
 %%% @doc
 %%% @end
 %%%-------------------------------------------------------------------
--module(virture_mysql_sup).
+-module(vmysql_sup).
 
 -behaviour(supervisor).
 
@@ -18,7 +18,7 @@ start_link() ->
 
 init([]) ->
     %% 这里可能有修复
-    virture_mysql:system_init(),
+    vmysql:system_init(),
     
     {ok, {#{strategy => one_for_one,
         intensity => 1,

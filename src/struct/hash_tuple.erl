@@ -107,9 +107,9 @@ fold(Fun, Acc, N, Tuple) ->
     case erlang:element(N, Tuple) of
         ?KV(K, V) ->
             case Fun(K, V, Acc) of
-                ?UTIL_FOLD_BREAK ->
+                ?FOLD_BREAK ->
                     Acc;
-                ?UTIL_FOLD_BREAK(Acc1) ->
+                ?FOLD_BREAK_1(Acc1) ->
                     Acc1;
                 Acc1 ->
                     fold(Fun, Acc1, N - 1, Tuple)

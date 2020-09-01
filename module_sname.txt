@@ -1,10 +1,24 @@
 full name                           |short name         |中文注释
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 框架核心 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 ptolemaios                          |                   |这个app
-util                                |                   |工具
+util                                |                   |杂乱的工具
+kv_op                               |                   |kv数据结构操作
 local_lock                          |                   |本地锁
+log                                 |                   |日志
+fold                                |                   |支持break的遍历操作
 virture                             |                   |数据操作
 virture_mysql                       |vmysql             |mysql数据操作
+exia                                |                   |gen_server的修改版
 proto                               |                   |协议
+gateway                             |                   |网关
+client                              |                   |模拟客户端
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 框架补充 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+performance                         |                   |性能测试用文件
+example                             |                   |例子文件
+fractal_tree                        |                   |分型树
+hash_tuple                          |                   |哈希tuple(数组)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 业务功能 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+player                              |                   |玩家
 
 
 

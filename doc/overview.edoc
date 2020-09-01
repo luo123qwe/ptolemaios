@@ -30,7 +30,7 @@
 
 所以, 标识命名应该包含功能标识(下面用{MODULE}代替), 例如玩家功能使用player, 那么对应的宏和模块名应该使用?[内部标识_]player_{模块名或标识}, 例如, ?PD_PLAYER_NAME, ?PLAYER_ID, player_server, player_helper....
 
-所有功能标识定义在module_sname.txt中(人工维护), 面对功能标识很长的时候使用缩写(定义在module_sname.txt中), 例如virture_mysql => vmysql
+所有功能标识定义在module_sname.txt中(人工维护), 功能标识很长的时候使用缩写, module_sname.txt中所有名字都是唯一, 例如: virture_mysql => vmysql, abcdef_ghijklmn_opq => ago
 
 <dl>
     <dt>进程字典</dt>
@@ -62,3 +62,86 @@
     -define(DETS_PLAYER_NAME1(ServerId), list_to_atom("ets_player_name_" ++ integer_to_list(ServerId))).% 某个服务器的玩家名字
     '''</dd>
 </dl>
+
+== 工具(util) ==
+
+util文件夹下均为工具类模块, 每个模块等效于一个功能.
+
+<dl>
+    <dt>util.hrl</dt>
+    <dd>?[DO_]IF[_NOT], 如果 xxx do_something
+
+    ?[DO_][NOT_]MATCH, 匹配 xxx do_something</dd>
+    <dt>{@link fold}</dt>
+    <dd>支持break的遍历</dd>
+    <dt>{@link kv_op}</dt>
+    <dd>键值型数据结构操作</dd>
+    <dt>{@link local_lock}</dt>
+    <dd>单节点的锁</dd>
+    <dt>{@link log}</dt>
+    <dd>日志系统</dd>
+    <dt>{@link util}</dt>
+    <dd>工具杂项</dd>
+</dl>
+
+== 数据(virture) ==
+
+基于一份数据同时只能由一个进程修改的思想, 设定一个进程可以拥有一个或多个数据表的数据集, 数据更改需要由对应进程执行, 例如: 玩家进程可以拥有物品表(goods)中 player_id = xxx 的数据和玩家表(player)中 player_id = xxx 的数据, 其中 player_id = xxx 划分了不同的数据集; 当然也存在整个数据表作为数据集的情况, 例如: XXX活动数据; 所以, 设计上每个进程都只管理自己的数据集, 包括数据的增删改和同步到数据库.
+
+这部分已整合到{@section 进程(exia)}.
+
+=== 流程概述 ===
+<dl>
+    <dt>load</dt>
+    <dd>从db中查询数据集, 转换成record并保存到ets和进程</dd>
+    <dt>lookup</dt>
+    <dd>从进程缓存中读取数据</dd>
+    <dt>insert</dt>
+    <dd>数据打上标识并插入(更新)到进程缓存中</dd>
+    <dt>delete</dt>
+    <dd>和insert同理, 仅标识不一样</dd>
+    <dt>sync_to_ets</dt>
+    <dd>同步所有改变的数据到ets</dd>
+    <dt>sync_to_db</dt>
+    <dd>同步所有改变的数据到数据库</dd>
+    <dt>sync_to_dets</dt>
+    <dd>同步所有同步数据库失败的数据到dets中</dd>
+</dl>
+
+=== vmysql ===
+
+使用mysql作为数据库, 详情查看{@link vmysql}.
+
+== 进程(exia) ==
+
+基于gen_server实现的一个behaviour, 进程启动成功后, 进程内部除了返回{stop,...}外无法结束进程; 进程在遇到错误时自动回滚到以前状态, 其中回滚包括: 进程状态, 异步消息, virture数据....; 回滚的设计保证当不存在跨进程同步操作(call)时, 进程处理消息时数据的一致性.
+
+eixa使用expect_time和msg_time的时间设定, 其中expect_time代表该条消息期望的到达时间, msg_time代表该条消息收到时的时间; 使用期望时间可以减少erlang内部定时器导致的时间误差; 潜在的消耗是每条消息都会至少调用一次erlang:system_time(millisecond), 当大部分消息不需要使用时间时可以优化成第一次获取时间时才调用, 目前认为大部分消息会用到时间.
+
+内部消息详情查看{@link exia}.
+
+== 协议(proto) ==
+
+协议使用rebar3的gpb插件, 按照{@link proto}的规范编写的.proto文件(消息带有一个协议号), 在生成协议的同时框架会生成proto_mapping.erl, 匹配协议号或协议; xxx_handle, 协议消息处理模板.
+
+详情查看{@link proto}.
+
+== 网关(gateway) ==
+
+网关部分使用ranch监听客户端连接, 转发或处理客户端消息, 详情查看{@link gateway}.
+
+client实现和gateway的协议通讯, 用于模拟客户端, 详情查看{@link client}.
+
+== 热更(hotfix) ==
+
+== 例子(example) ==
+
+各式各样的例子, 这些文件都是作为参考用, 实际生产中并不使用, 文件不会生产文档, 详情查看src/example/*.erl.
+
+== 性能(performance) ==
+
+各式各样的性能测试, 这些文件仅用于测试性能, 实际生产中并不使用, 文件不会生产文档, 详情查看src/performance/*.erl.
+
+== 结构(struct) ==
+
+各式各样的数据结构, 部分结构并不能在实际生产中使用, 仅用于测试对比, 详情查看src/struct/*.erl.

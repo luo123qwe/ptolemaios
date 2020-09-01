@@ -500,6 +500,9 @@ base_test_() ->
                 ets:insert(?MODULE, {ets, ok})
             end,
             fun(_) ->
+                ets:delete(?MODULE)
+            end,
+            fun(_) ->
                 %% list, tuple_list, tuple, map, dict, ets
                 [
                     ?_assertEqual({ok, {ets, ok}},
@@ -519,60 +522,60 @@ base_test_() ->
                             {lookup, {lookup, default}}
                         ], {lookup, ok}, [])),
                     ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup)),
-                    ?_assertEqual([{1, 1}], kv_op:store(1, 1, []))
+                    ?_assertEqual([{1, 1}], kv_op:store(1, 1, [])),
+                    
+                    ?_test(ets:delete_all_objects(?MODULE)),
+                    ?_test(ets:insert(?MODULE, [{1, 1}, {2, 1}, {3, 1}])),
+                    ?_assertError(badarith, kv_op:plus([[], #{1 => a}])),
+                    ?_assertEqual([{1, 3}, {2, 2}, {3, 1}], kv_op:plus([
+                        [], #{1 => 1},
+                        dict:store(1, 1, dict:store(2, 1, dict:new())), ?MODULE])),
+                    ?_assertEqual([{1, 0}, {2, 0}, {3, 0}], kv_op:subtract([
+                        [{1, 3}, {2, 2}, {3, 1}], #{1 => 1},
+                        dict:store(1, 1, dict:store(2, 1, dict:new())), ?MODULE])),
+                    ?_assertEqual([{1, 1}, {2, 4}, {3, 3}], kv_op:multiply([
+                        [{1, 1}, {2, 2}, {3, 3}], #{1 => 1},
+                        dict:store(1, 1, dict:store(2, 2, dict:new())), ?MODULE])),
+                    ?_assertEqual([{1, 1.0}, {2, 1.0}, {3, 3.0}], kv_op:divide([
+                        [{1, 1}, {2, 2}, {3, 3}], #{1 => 1},
+                        dict:store(1, 1, dict:store(2, 2, dict:new())), ?MODULE])),
+                    
+                    ?_test(ets:delete_all_objects(?MODULE)),
+                    ?_test(ets:insert(?MODULE, {ets, ok})),
+                    ?_assertEqual(Struct,
+                        kv_op:apply_if_exist(fun(_, _) ->
+                            undefined
+                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
+                    ?_assert(ets:insert_new(?MODULE, {ets, ok})),
+                    ?_assertEqual(Struct,
+                        kv_op:apply_if_exist(fun(_, _) ->
+                            {ets, replace}
+                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
+                    ?_assertEqual([{ets, replace}], ets:lookup(?MODULE, ets)),
+                    ?_assertEqual(error,
+                        kv_op:apply_if_exist(fun(_, _) ->
+                            undefined
+                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, error], Struct, undefined)),
+                    ?_assertError(badarg,
+                        kv_op:apply_if_exist(fun(_, _) ->
+                            undefined
+                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct, undefined)),
+                    ?_assertEqual(Struct,
+                        kv_op:apply(fun(lookup, {lookup, default}) ->
+                            {lookup, ok}
+                                    end,
+                            [
+                                {list, []},
+                                {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
+                                {3, '_'},
+                                {2, '_'},
+                                {map, ?KV_OP_DEF(dict, new)},
+                                {dict, ?MODULE},
+                                {lookup, {lookup, default}}
+                            ], [], undefined)),
+                    ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup))
                 ]
-            end},
-        
-        ?_test(ets:delete_all_objects(?MODULE)),
-        ?_test(ets:insert(?MODULE, [{1, 1}, {2, 1}, {3, 1}])),
-        ?_assertError(badarith, kv_op:plus([[], #{1 => a}])),
-        ?_assertEqual([{1, 3}, {2, 2}, {3, 1}], kv_op:plus([
-            [], #{1 => 1},
-            dict:store(1, 1, dict:store(2, 1, dict:new())), ?MODULE])),
-        ?_assertEqual([{1, 0}, {2, 0}, {3, 0}], kv_op:subtract([
-            [{1, 3}, {2, 2}, {3, 1}], #{1 => 1},
-            dict:store(1, 1, dict:store(2, 1, dict:new())), ?MODULE])),
-        ?_assertEqual([{1, 1}, {2, 4}, {3, 3}], kv_op:multiply([
-            [{1, 1}, {2, 2}, {3, 3}], #{1 => 1},
-            dict:store(1, 1, dict:store(2, 2, dict:new())), ?MODULE])),
-        ?_assertEqual([{1, 1.0}, {2, 1.0}, {3, 3.0}], kv_op:divide([
-            [{1, 1}, {2, 2}, {3, 3}], #{1 => 1},
-            dict:store(1, 1, dict:store(2, 2, dict:new())), ?MODULE])),
-        
-        ?_test(ets:delete_all_objects(?MODULE)),
-        ?_test(ets:insert(?MODULE, {ets, ok})),
-        ?_assertEqual(Struct,
-            kv_op:apply_if_exist(fun(_, _) ->
-                undefined
-                                 end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
-        ?_assert(ets:insert_new(?MODULE, {ets, ok})),
-        ?_assertEqual(Struct,
-            kv_op:apply_if_exist(fun(_, _) ->
-                {ets, replace}
-                                 end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
-        ?_assertEqual([{ets, replace}], ets:lookup(?MODULE, ets)),
-        ?_assertEqual(error,
-            kv_op:apply_if_exist(fun(_, _) ->
-                undefined
-                                 end, [list, {tuple_list, 2}, 3, 2, map, dict, error], Struct, undefined)),
-        ?_assertError(badarg,
-            kv_op:apply_if_exist(fun(_, _) ->
-                undefined
-                                 end, [list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct, undefined)),
-        ?_assertEqual(Struct,
-            kv_op:apply(fun(lookup, {lookup, default}) ->
-                {lookup, ok}
-                        end,
-                [
-                    {list, []},
-                    {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
-                    {3, '_'},
-                    {2, '_'},
-                    {map, ?KV_OP_DEF(dict, new)},
-                    {dict, ?MODULE},
-                    {lookup, {lookup, default}}
-                ], [], undefined)),
-        ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup))
+            end}
     ].
 
 -endif.

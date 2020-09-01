@@ -5,7 +5,7 @@
 %%
 %% @author Richard Carlsson <carlsson.richard@gmail.com>
 %% @copyright 2005 Richard Carlsson
-%% @private
+%% @hidden
 
 -module(example_eunit).
 

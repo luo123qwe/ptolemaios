@@ -74,12 +74,12 @@ run_virture(#performance_virture{
     store_times = StoreTimes,
     fold_times = FoldTimes
 }) ->
-    virture_mysql:process_init(),
-    virture_mysql:clean_pd(),
-    virture_mysql:load(vmysql_test_player, undefined),
+    vmysql:process_init(),
+    vmysql:clean_pd(),
+    vmysql:load(vmysql_test_player, undefined),
     RecordList = [#vmysql_test_player{player_id = N} || N <- lists:seq(1, Size)],
     lists:foreach(fun(N) ->
-        virture_mysql:insert(#vmysql_test_player{player_id = N})
+        vmysql:insert(#vmysql_test_player{player_id = N})
                   end, lists:seq(1, Size)),
     {
         virture,
@@ -94,7 +94,7 @@ virture_lookup(0, _, _) ->
 virture_lookup(LookupTimes, 0, Size) ->
     virture_lookup(LookupTimes - 1, Size, Size);
 virture_lookup(LookupTimes, N, Size) ->
-    _ = virture_mysql:lookup(vmysql_test_player, [N]),
+    _ = vmysql:lookup(vmysql_test_player, [N]),
     virture_lookup(LookupTimes, N - 1, Size).
 
 virture_store(0, _, _) ->
@@ -102,12 +102,12 @@ virture_store(0, _, _) ->
 virture_store(StoreTimes, [], RecordList) ->
     virture_store(StoreTimes - 1, RecordList, RecordList);
 virture_store(StoreTimes, [Record | T], RecordList) ->
-    virture_mysql:insert(Record),
+    vmysql:insert(Record),
     virture_store(StoreTimes, T, RecordList).
 
 virture_fold(0) ->
     ok;
 virture_fold(N) ->
-    _ = virture_mysql:fold_cache(fun(K, V, Acc) -> [{K, V} | Acc] end, [], vmysql_test_player),
+    _ = vmysql:fold_cache(fun(K, V, Acc) -> [{K, V} | Acc] end, [], vmysql_test_player),
     virture_fold(N - 1).
 

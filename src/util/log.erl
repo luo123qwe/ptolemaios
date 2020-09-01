@@ -25,11 +25,7 @@ init() ->
 set_level(Level) ->
     logger:set_primary_config(#{level => Level}).
 
-%% @doc 当前日志索引, 只能开启节点的时候看, escript写了感觉不好维护
+%% @doc 当前日志索引
 index() ->
-    case disk_log:info(ptolemaios) of
-        {error, _} ->
-            disk_log_down;
-        Info ->
-            element(2, lists:keyfind(current_file, 1, Info))
-    end.
+    {CurFileNo, _CurFileSz, _TotSz, _NoFiles} = disk_log_1:read_index_file("log/log"),
+    CurFileNo.

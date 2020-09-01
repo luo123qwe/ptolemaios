@@ -1,18 +1,38 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
-%%% 复制gen_server修改的behaviour
-%%% 去掉throw返回的设定, 主要是文档也没说, 看了代码才发现可以这样
-%%% 增加默认的消息接收进程, 使用进程字典
-%%% 增加消息时间和期望时间设定
-%%% 增加回滚设定
-%%% 增加模拟进程字典
+%%% @version {@version}
+%%% @doc 基于gen_server修改的behaviour.
+%%% <dl>
+%%% <dt>去掉throw返回的设定</dt>
+%%% <dd>```
+%%% 用return/1代替, 文档也没说, 看了代码才发现可以这样'''</dd>
+%%% <dt>默认消息地址</dt>
+%%% <dd>```
+%%% 异步消息未指定接收者时, 默认会发到该进程, 需要自行设置
+%%% 顺便一提, 消息发送类似cast, 失败也不会返回错误'''</dd>
+%%% <dt>消息时间和期望时间</dt>
+%%% <dd>```
+%%% 消息时间: 消息收到的时间; 期望时间: 消息期望送达时间
+%%% 避免erlang内部定时器误差导致的计算错误
+%%% 每条信息都会调用一次erlang:system_time(millisecond)
+%%% 如果时间使用频率十分低, 可以优化成第一次获取时间时再调用'''</dd>
+%%% <dt>模拟进程字典</dt>
+%%% <dd>```
+%%% 用于回滚, 使用一个map实现'''</dd>
+%%% <dt>回滚机制</dt>
+%%% <dd>```
+%%% 实际业务中, 并不希望进程因为崩溃而退出(重启)
+%%% 比起崩溃更加希望它像什么事情都没发生过, 不改变任何数据, 不发送任何消息
+%%% 回滚机制有效范围: State, virture数据集, 默认消息地址, 模拟进程字典, 异步消息
+%%% 用户可以也可以在一段逻辑成功后flush/1, 类似continue的机制, 分段执行, 失败可以回滚'''</dd>
+%%% </dl>
 %%% @end
 %%%-------------------------------------------------------------------
 -module(exia).
 -author("dominic").
 
+-include("util.hrl").
 -include("exia.hrl").
 
 %% 原本的API
@@ -45,9 +65,6 @@
     eget/2, eset/2
 ]).
 
-%% System exports
-%% sys的返回不支持成功一半
-%% 所以不能使用flush函数!!!
 -export([system_continue/3,
     system_terminate/4,
     system_code_change/4,
@@ -57,8 +74,6 @@
 
 %% Internal exports
 -export([init_it/6]).
-
--include("util.hrl").
 
 -define(
 STACKTRACE(),
@@ -70,6 +85,12 @@ pid()
 | {Name :: atom(), Node :: atom()}
 | {'global', GlobalName :: term()}
 | {'via', RegMod :: module(), ViaName :: term()}.
+
+-type execute() ::
+F :: function()
+|{M :: atom(), F :: atom(), A :: list()}
+|{M :: atom(), F :: atom()}
+|{F :: function(), A :: list()}.
 
 -type request_id() :: term().
 
@@ -133,21 +154,27 @@ term()),
 %%%          {error, {already_started, Pid}} |
 %%%          {error, Reason}
 %%% -----------------------------------------------------------------
+%% @equiv gen_server:start/3
 start(Mod, Args, Options) ->
     gen:start(?MODULE, nolink, Mod, Args, Options).
 
+%% @equiv gen_server:start/4
 start(Name, Mod, Args, Options) ->
     gen:start(?MODULE, nolink, Name, Mod, Args, Options).
 
+%% @equiv gen_server:start_link/3
 start_link(Mod, Args, Options) ->
     gen:start(?MODULE, link, Mod, Args, Options).
 
+%% @equiv gen_server:start_link/4
 start_link(Name, Mod, Args, Options) ->
     gen:start(?MODULE, link, Name, Mod, Args, Options).
 
+%% @equiv gen_server:start_monitor/4
 start_monitor(Mod, Args, Options) ->
     gen:start(?MODULE, monitor, Mod, Args, Options).
 
+%% @equiv gen_server:start_monitor/4
 start_monitor(Name, Mod, Args, Options) ->
     gen:start(?MODULE, monitor, Name, Mod, Args, Options).
 
@@ -157,34 +184,48 @@ start_monitor(Name, Mod, Args, Options) ->
 %% If the server is located at another node, that node will
 %% be monitored.
 %% -----------------------------------------------------------------
+%% @equiv gen_server:stop/1
 stop(Name) ->
     gen:stop(Name).
 
+%% @equiv gen_server:stop/3
 stop(Name, Reason, Timeout) ->
     gen:stop(Name, Reason, Timeout).
 
 %% -----------------------------------------------------------------
-%% 默认的消息接收进程
+%% 默认消息地址
 %% -----------------------------------------------------------------
+%% @doc 设置默认消息地址
+-spec set_dest(server_ref()) -> OldDest :: undefined|server_ref().
 set_dest(Dest) ->
     put(?PD_EXIA_DEST, Dest).
 
+%% @doc 设置进程默认消息地址
+-spec set_dest(server_ref(), server_ref()) -> OldDest :: undefined|server_ref().
 set_dest(Dest, SetDest) ->
     call(Dest, {exia_private, set_dest, SetDest}).
 
+%% @doc 获取默认消息地址
+-spec get_dest() -> undefined|server_ref().
 get_dest() ->
     get(?PD_EXIA_DEST).
 
+
+%% @doc 获取进程默认消息地址
+-spec get_dest(server_ref()) -> undefined|server_ref().
 get_dest(Dest) ->
     call(Dest, {exia_private, get_dest}).
 
 %% -----------------------------------------------------------------
 %% 执行一个函数
 %% -----------------------------------------------------------------
-%% Execute = {M,F,A}|{M,F}|{F,A}|F
+%% @doc 执行一个函数, 函数返回的值与handle_call一样
+-spec call_execute(server_ref(), execute()) -> term().
 call_execute(Dest, Execute) ->
     call(Dest, {exia_private, execute, Execute}).
 
+%% @doc 执行一个函数, 函数返回的值与handle_cast一样
+-spec cast_execute(server_ref(), execute()) -> ok.
 cast_execute(Dest, Execute) ->
     cast(Dest, {exia_private, execute, Execute}).
 
@@ -524,7 +565,7 @@ get_expect_millisecond() ->
 
 %% 期望秒
 get_expect_second() ->
-    get_expect_millisecond() div 1000.
+    get(?PD_EXIA_EXPECT_TIME) div 1000.
 
 %% 消息到达时毫秒
 get_msg_millisecond() ->
@@ -586,6 +627,7 @@ enter_loop(Mod, Options, State, ServerName, Timeout) ->
 %%% Finally an acknowledge is sent to Parent and the main
 %%% loop is entered.
 %%% ---------------------------------------------------
+%% @private
 init_it(Starter, self, Name, Mod, Args, Options) ->
     init_it(Starter, self(), Name, Mod, Args, Options);
 init_it(Starter, Parent, Name0, Mod, Args, Options) ->
@@ -1105,7 +1147,7 @@ init_pd() ->
     Now = erlang:system_time(millisecond),
     put(?PD_EXIA_MSG_TIME, Now),
     put(?PD_EXIA_EXPECT_TIME, Now),
-    virture_mysql:process_init().
+    vmysql:process_init().
 
 %% 处理消息前后
 before_msg(State) ->
@@ -1127,13 +1169,13 @@ before_msg(Msg, State) ->
 
 after_msg() ->
     flush_msg(),
-    virture_mysql:sync_to_ets(),
+    vmysql:sync_to_ets(),
     put(?PD_EXIA_ROLLBACK, undefined).
 
 %% 刷新缓存
 flush(State) ->
     flush_msg(),
-    virture_mysql:sync_to_ets(),
+    vmysql:sync_to_ets(),
     put(?PD_EXIA_ROLLBACK, hold(State)).
 
 %% 返回
@@ -1148,7 +1190,7 @@ hold(State) ->
         state = State,
         dest = get(?PD_EXIA_DEST),
         send = get(?PD_EXIA_SEND),
-        virture = virture_mysql:hold(),
+        virture = vmysql:hold(),
         pd = get(?PD_EXIA_PD)
     }.
 
@@ -1161,13 +1203,13 @@ rollback(Rollback) ->
     end,
     put(?PD_EXIA_DEST, Dest),
     put(?PD_EXIA_SEND, Send),
-    virture_mysql:rollback(Virture),
+    vmysql:rollback(Virture),
     put(?PD_EXIA_PD, PD),
     State.
 
 after_terminate() ->
     flush_msg(),
-    virture_mysql:sync_to_db().
+    vmysql:sync_to_db().
 
 %%-----------------------------------------------------------------
 %% Callback functions for system messages handling.
@@ -1182,11 +1224,17 @@ system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time, _HibernateAft
     terminate(Reason, ?STACKTRACE(), Name, undefined, [], Mod, State, Rollback, Debug).
 
 system_code_change([Name, State, Mod, Time, HibernateAfterTimeout], _Module, OldVsn, Extra) ->
+    Rollback = before_msg(State),
     case catch Mod:code_change(OldVsn, State, Extra) of
         {ok, NewState} ->
             after_msg(),
             {ok, [Name, NewState, Mod, Time, HibernateAfterTimeout]};
+        {exia_private, return, NewState} ->
+            after_msg(),
+            {ok, [Name, NewState, Mod, Time, HibernateAfterTimeout]};
         Else ->
+            %% 进程字典回滚
+            rollback(Rollback),
             Else
     end.
 
@@ -1194,9 +1242,19 @@ system_get_state([_Name, State, _Mod, _Time, _HibernateAfterTimeout]) ->
     {ok, State}.
 
 system_replace_state(StateFun, [Name, State, Mod, Time, HibernateAfterTimeout]) ->
-    NState = StateFun(State),
-    after_msg(),
-    {ok, NState, [Name, NState, Mod, Time, HibernateAfterTimeout]}.
+    Rollback = before_msg(State),
+    try
+        NewState = StateFun(State),
+        after_msg(),
+        {ok, NewState, [Name, NewState, Mod, Time, HibernateAfterTimeout]}
+    catch
+        throw:{exia_private, return, NState} ->
+            after_msg(),
+            {ok, NState, [Name, NState, Mod, Time, HibernateAfterTimeout]};
+        Class:Reason:Stacktrace ->
+            rollback(Rollback),
+            erlang:raise(Class, Reason, Stacktrace)
+    end.
 
 %%-----------------------------------------------------------------
 %% Format debug messages.  Print them as the call-back module sees

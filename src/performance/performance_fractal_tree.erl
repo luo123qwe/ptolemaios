@@ -210,7 +210,7 @@ fractal_tree_sub(Times, Start, Len, Tree) ->
     _ = fractal_tree:fold(fun(R, {S, L, Acc}) ->
         if
             S > 1 -> {S - 1, L, Acc};
-            L =< 1 -> ?UTIL_FOLD_BREAK([R | Acc]);
+            L =< 1 -> ?FOLD_BREAK_1([R | Acc]);
             true -> {S, L - 1, [R | Acc]}
         end
                                  end, {Start, Len, []}, Tree),

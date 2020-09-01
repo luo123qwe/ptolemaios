@@ -32,7 +32,7 @@ get_sup_spec(mysql) ->
             {prepare, []}],%{test, "SELECT * FROM player WHERE id=?"}]}],
         [
             mysql_poolboy:child_spec(?VMYSQL_POOL, PoolOptions, MySqlOptions),
-            #{id => virture_mysql, start => {virture_mysql_sup, start_link, []}, type => supervisor}
+            #{id => vmysql, start => {vmysql_sup, start_link, []}, type => supervisor}
         ]
     catch
         C:E ->
