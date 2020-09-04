@@ -1,16 +1,21 @@
 {application, ptolemaios,
- [{description, "An OTP application"},
-  {vsn, "0.1.0"},
-  {registered, []},
-  {mod, {ptolemaios_app, []}},
-  {applications,
-   [kernel,
-    stdlib,
-    ranch
-   ]},
-  {env,[]},
-  {modules, []},
-
-  {licenses, ["Apache 2.0"]},
-  {links, []}
- ]}.
+    [{description, "An OTP application"},
+        {vsn, "0.1.0"},
+        {registered, []},
+        {mod, {ptolemaios_app, []}},
+        {applications,
+            [
+                kernel,
+                stdlib,
+                ranch,
+                enif_protobuf,
+                mongodb,
+                mysql_poolboy,
+                jsx
+            ]},
+        {env, []},
+        {modules, []},
+        
+        {licenses, ["Apache 2.0"]},
+        {links, []}
+    ]}.

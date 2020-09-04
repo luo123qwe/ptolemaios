@@ -8,6 +8,7 @@
 -module(example_SUITE).
 
 %% Note: This directive should only be used in test suites.
+-compile(nowarn_export_all).
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").

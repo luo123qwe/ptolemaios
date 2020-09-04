@@ -16,7 +16,7 @@
   <li>{@section 进程(exia)}</li>
   <li>{@section 协议(proto)}</li>
   <li>{@section 网关(gateway)}</li>
-  <li>{@section 热更(hotfix)}</li>
+  <li>{@section 修复(fix)}</li>
   <li>{@section 例子(example)}</li>
   <li>{@section 性能(performance)}</li>
   <li>{@section 结构(struct)}</li>
@@ -132,7 +132,9 @@ eixa使用expect_time和msg_time的时间设定, 其中expect_time代表该条�
 
 client实现和gateway的协议通讯, 用于模拟客户端, 详情查看{@link client}.
 
-== 热更(hotfix) ==
+== 修复(fix) ==
+
+代码, 数据的修复
 
 == 例子(example) ==
 

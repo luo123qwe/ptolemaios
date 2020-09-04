@@ -86,7 +86,7 @@
 
     {profiles, [
         {prod,
-            [{relx, [{dev_mode, false}, {include_erts, false}]}]
+            [{relx, [{dev_mode, false}, {include_erts, true}]}]
         }
     ]},
 
