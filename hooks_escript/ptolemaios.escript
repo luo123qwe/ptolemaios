@@ -3,6 +3,9 @@
 -include_lib("kernel/include/file.hrl").
 
 main(_) ->
+  make_escript().
+
+make_escript() ->
     %% 创建pre和post的escript
     PreEscript = "hooks_escript/ptolemaios_pre.escript",
     PreErl = "hooks_escript/ptolemaios_pre_escript.erl",

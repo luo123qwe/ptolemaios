@@ -1,11 +1,11 @@
 %% https://github.com/richcarl/eunit/blob/master/examples/eunit_examples.erl
 %% 有很多测试会'失败', 所以注释
+%% @private
 %% -------------------------------------------------------------------
 %% File: test.erl
 %%
 %% @author Richard Carlsson <carlsson.richard@gmail.com>
 %% @copyright 2005 Richard Carlsson
-%% @hidden
 
 -module(example_eunit).
 

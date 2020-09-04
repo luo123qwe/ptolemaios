@@ -63,10 +63,10 @@ list_r_1(F, Acc, [H | T]) ->
             end
     end.
 
-%% 从dict.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
 -record(dict, {size, n, maxn, bso, exp_size, con_size, empty, segs}).
 -define(kv(K, V), [K | V]).            % Key-Value pair format
-%% @doc dict:fold/3
+%% @doc dict:fold/3, 
+%% 从dict.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
 -spec dict(Fun, Acc0, Dict) -> Acc1 when
     Fun :: fun((K :: T, V :: T, AccIn) -> AccOut),
     Acc0 :: term(),
@@ -108,8 +108,8 @@ fold_bucket(F, Acc, [?kv(Key, Val) | Bkt]) ->
     end;
 fold_bucket(F, Acc, []) when is_function(F, 3) -> Acc.
 
+%% @doc maps:fold, 
 %% 从maps.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
-%% @doc maps:fold
 -spec maps(Fun, Init, Map) -> Acc when
     Fun :: fun((Key, Value, AccIn) -> AccOut),
     Init :: term(),
@@ -132,9 +132,10 @@ maps_1(Fun, Acc, Iter) ->
             Acc
     end.
 
+
+%% @doc 实际上似乎不太需要前后序遍历, 所以仅提供中序遍历, 
+%% gb_trees, 左中右, 从小到大, 
 %% 从gb_trees.erl复制来的, erl版本变化可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
-%% @doc 实际上似乎不太需要前后序遍历, 所以仅提供中序遍历</br>
-%% gb_trees, 左中右, 从小到大
 -spec gb_trees_l(Fun, Acc0, Tree) -> Acc1 when
     Fun :: fun((K :: T, V :: T, AccIn) -> AccOut),
     Acc0 :: term(),
@@ -237,7 +238,7 @@ gb_trees_r_1(F, Acc, {Key, Value, Small, Big}) ->
 gb_trees_r_1(_F, Acc, nil) -> Acc.
 
 
-%% @doc gb_trees, 右中左, 从大到小, 从Key =< Start开始遍历
+%% @doc gb_trees, 右中左, 从大到小, 从Key `=<' Start开始遍历
 -spec gb_trees_r(Fun, Start, Acc0, Tree) -> Acc1 when
     Fun :: fun((K :: T, V :: T, AccIn) -> AccOut),
     Start :: term(),

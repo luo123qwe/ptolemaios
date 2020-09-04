@@ -15,14 +15,42 @@
 
 -include_lib("kernel/include/file.hrl").
 
-main(_) ->
-    io:format("pre_hooks start~n"),
+main(["clean"]) ->
+    case is_clean() of
+        true -> clean();
+        _ -> ok
+    end;
+main(["compile"]) ->
+    compile().
+
+%% rebar3 clean 命令会执行两次
+is_clean() ->
+    {ok, hooks_escript} = dets:open_file(hooks_escript, [{file, "hooks_escript/hooks_escript.dets"}]),
+    case dets:lookup(hooks_escript, ptolemaios_pre_escript) of
+        [{ptolemaios_pre_escript, OldCount}] ->
+            Count = OldCount + 1;
+        _ ->
+            Count = 1
+    end,
+    dets:insert(hooks_escript, {ptolemaios_pre_escript, Count}),
+    dets:close(hooks_escript),
+    (Count rem 2) == 0.
+
+clean() ->
+    io:format("pre_hooks clean start~n"),
     %% 读取rebar.config
     {ok, RebarConfig} = file:script("rebar.config.script"),
-    make_proto(RebarConfig),
-    io:format("pre_hooks end~n").
+    clean_proto(RebarConfig),
+    io:format("pre_hooks clean end~n").
 
-make_proto(RebarConfig) ->
+compile() ->
+    io:format("pre_hooks compile start~n"),
+    %% 读取rebar.config
+    {ok, RebarConfig} = file:script("rebar.config.script"),
+    compile_proto(RebarConfig),
+    io:format("pre_hooks compile end~n").
+
+compile_proto(RebarConfig) ->
     create_dir("./include/proto"),
     case lists:keyfind(gpb_opts, 1, RebarConfig) of
         {_, GpbOpts} -> ok;
@@ -80,6 +108,7 @@ make_proto(RebarConfig) ->
                             case filelib:is_file(RouteFile) of
                                 true -> skip;
                                 false -> file:write_file(RouteFile, [
+                                    "%% @private\n"
                                     "-module(", Route, ").\n\n"
                                     "-include(\"util.hrl\").\n"
                                     "-include(\"" ++ Name ++ ".hrl\").\n\n"
@@ -127,6 +156,18 @@ make_proto(RebarConfig) ->
             ]);
         _ ->
             skip
+    end.
+
+clean_proto(RebarConfig) ->
+    case lists:keyfind(gpb_opts, 1, RebarConfig) of
+        {_, GpbOpts} -> ok;
+        _ -> GpbOpts = []
+    end,
+    OutErlPath = proplists:get_value(o_erl, GpbOpts, "src/proto/pb"),
+    MappingFile = filename:dirname(OutErlPath) ++ "/proto_mapping.erl",
+    case filelib:is_file(MappingFile) of
+        true -> file:delete(MappingFile);
+        _ -> skip
     end.
 
 create_dir(Dir) ->

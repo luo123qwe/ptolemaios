@@ -45,7 +45,7 @@ is_lock(Key, Owner) ->
 lock(Key) ->
     lock(Key, self()).
 
-%% @doc 获取锁, 成功时返回lock</br>
+%% @doc 获取锁, 成功时返回lock, 
 %% 已获取锁时依然返回fail
 -spec lock(term(), term()) -> fail|lock.
 lock(Key, Owner) ->
@@ -61,7 +61,7 @@ lock(Key, Owner) ->
 lock(Key, Interval, Times) ->
     lock(Key, self(), Interval, Times).
 
-%% @doc 尝试N次间隔M毫秒获取锁, 成功时返回lock</br>
+%% @doc 尝试N次间隔M毫秒获取锁, 成功时返回lock, 
 %%%% 已获取锁时依然返回fail
 -spec lock(term(), term(), non_neg_integer(), non_neg_integer()) -> fail|lock.
 lock(_Key, _Owner, _Interval, Times) when Times =< 0 ->
@@ -95,7 +95,7 @@ release(Key, Owner) ->
 force_lock(Key) ->
     force_lock(Key, self()).
 
-%% @doc 强制获取锁, 成功时返回lock或force_lock</br>
+%% @doc 强制获取锁, 成功时返回lock或force_lock, 
 %%%% 已获取锁时会重新获取锁
 -spec force_lock(term(), term()) -> lock|force_lock|fail.
 force_lock(Key, Owner) ->

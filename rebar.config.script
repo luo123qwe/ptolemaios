@@ -68,13 +68,20 @@
     ]},
 
     %% 钩子escript
+    %% clean分两步Verifying dependencies和Cleaning out ptolemaios, 所以每个脚本都会触发两次
+    %% 按照顺序 (ptolemaios -> ptolemaios_pre) -> (ptolemaios -> ptolemaios_pre) -> (ptolemaios_post) -> (ptolemaios_post)
+    %% 所以, clean使用dets记录执行次数, (count rem 2) == 0, 保证ptolemaios_pre和ptolemaios_post只执行一次
+    %% 在clean/0和compile/0方法添加代码即可
     {pre_hooks, [
-        {compile, "escript hooks_escript/ptolemaios.escript"},
-        {compile, "escript hooks_escript/ptolemaios_pre.escript"}
+        {compile, "escript hooks_escript/ptolemaios.escript compile"},
+        {clean, "escript hooks_escript/ptolemaios.escript clean"},
+        {compile, "escript hooks_escript/ptolemaios_pre.escript compile"},
+        {clean, "escript hooks_escript/ptolemaios_pre.escript clean"}
     ]},
 
     {post_hooks, [
-        {compile, "escript hooks_escript/ptolemaios_post.escript"}
+        {compile, "escript hooks_escript/ptolemaios_post.escript compile"},
+        {clean, "escript hooks_escript/ptolemaios_post.escript clean"}
     ]},
 
     {profiles, [
@@ -92,6 +99,7 @@
         ]}
     ]},
 
+    %% 同时生成, {o_erl}/../proto_mapping.erl和{o_erl}/../handle/*_handle.erl
     {gpb_opts, [
         %% 相对ptolemaios的路径
         {i, "proto"},
