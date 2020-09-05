@@ -1,5 +1,8 @@
 %% https://github.com/erlang/rebar3/blob/master/rebar.config.sample
 
+{{Y, M, D}, {H, Min, S}} = erlang:localtime(),
+DateStr = io_lib:format("~w_~w_~w_~w_~w_~w", [Y, M, D, H, Min, S]),
+
 [
     {rebar_packages_cdn, "https://hexpm.upyun.com"},
 
@@ -44,7 +47,7 @@
     ]},
 
     {relx, [
-        {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
+        {release, {ptolemaios, DateStr}, [ptolemaios, sasl]},
 
         {sys_config_src, "./config/sys.config.src"},
         {vm_args_src, "./config/vm.args.src"},
