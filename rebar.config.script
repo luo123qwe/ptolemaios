@@ -1,8 +1,5 @@
 %% https://github.com/erlang/rebar3/blob/master/rebar.config.sample
 
-{{Y, M, D}, {H, Min, S}} = erlang:localtime(),
-DateStr = io_lib:format("~w_~w_~w_~w_~w_~w", [Y, M, D, H, Min, S]),
-
 [
     {rebar_packages_cdn, "https://hexpm.upyun.com"},
 
@@ -47,10 +44,10 @@ DateStr = io_lib:format("~w_~w_~w_~w_~w_~w", [Y, M, D, H, Min, S]),
     ]},
 
     {relx, [
-        {release, {ptolemaios, DateStr}, [ptolemaios, sasl]},
+        {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
 
-        {sys_config_src, "./config/sys.config.src"},
-        {vm_args_src, "./config/vm.args.src"},
+        {sys_config, "./config/sys.config"},
+        {vm_args, "./config/vm.args"},
 
         {dev_mode, true},
         {include_erts, false},
@@ -61,7 +58,7 @@ DateStr = io_lib:format("~w_~w_~w_~w_~w_~w", [Y, M, D, H, Min, S]),
     %% set ESCRIPT_EMULATOR=werl&rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
     %% ./rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
     {shell, [
-        {config, "config/sys.config.src"},
+        {config, "config/sys.config"},
         {apps, [ptolemaios]}
     ]},
 

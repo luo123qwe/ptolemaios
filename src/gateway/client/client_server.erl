@@ -25,7 +25,8 @@ send_msg(Pid, Msg) ->
     exia:cast(Pid, {msg, Msg}).
 
 init([]) ->
-    {ok, Port} = application:get_env(gateway, port),
+    {ok, Config} = application:get_env(ptolemaios, gateway),
+    Port = proplists:get_value(port, Config),
     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{packet, raw}, binary, {active, true}]),
     {ok, #gateway{socket = Socket}}.
 

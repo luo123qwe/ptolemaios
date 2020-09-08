@@ -14,7 +14,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    {ok, Port} = application:get_env(gateway, port),
+    {ok, Config} = application:get_env(ptolemaios, gateway),
+    Port = proplists:get_value(port, Config),
     ListenerSpec = ranch:child_spec(gateway, ranch_tcp, #{socket_opts => [{port, Port}]}, gateway_server, []),
     
     {ok, {#{strategy => one_for_one,

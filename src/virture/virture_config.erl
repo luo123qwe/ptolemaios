@@ -18,14 +18,21 @@
 %% @doc 获取sup范式
 -spec get_sup_spec() -> [supervisor:child_spec()].
 get_sup_spec() ->
-    {ok, VirtureType} = application:get_env(virture, type),
-    get_sup_spec(VirtureType).
+    {ok, Config} = application:get_env(ptolemaios, virture),
+    case lists:keyfind(type, 1, Config) of
+        {_, VirtureType} ->
+            get_sup_spec(VirtureType);
+        _ ->
+            ?LOG_WARNING("no virture type"),
+            []
+    end.
 
 get_sup_spec(mysql) ->
     try
-        {ok, User} = application:get_env(virture, mysql_user),
-        {ok, Password} = application:get_env(virture, mysql_password),
-        {ok, Database} = application:get_env(virture, mysql_database),
+        {ok, Config} = application:get_env(ptolemaios, virture),
+        {_, User} = lists:keyfind(mysql_user, 1, Config),
+        {_, Password} = lists:keyfind(mysql_password, 1, Config),
+        {_, Database} = lists:keyfind(mysql_database, 1, Config),
         PoolOptions = [{size, 50}, {max_overflow, 100}],
         MySqlOptions = [{user, User}, {password, Password}, {database, Database},
             {keep_alive, true},

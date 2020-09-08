@@ -1,0 +1,6 @@
+[
+    {"-name", "ptolemaios@127.0.0.1"},
+    {"-setcookie", "ptolemaios_cookie"},
+    {"+K", "true"},
+    "+A30"
+].

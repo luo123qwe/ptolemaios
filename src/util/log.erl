@@ -9,18 +9,21 @@
 -author("dominic").
 
 %% API
--export([init/0, index/0, set_level/1]).
+-export([start/0, stop/0, index/0, set_level/1]).
 
 %% 初始化循环日志, 自定义格式
-init() ->
+start() ->
     ok = logger:add_handler(ptolemaios, logger_disk_log_h, #{config => #{file => "./log/log",
         type => wrap,
         max_no_files => 10,
         max_no_bytes => 30000},
         level => info,
         filesync_repeat_interval => 5000}),
-    logger:update_formatter_config(?MODULE, #{template => [level, " ", time, " ", pid, " ", mfa, ":", line, "\n", msg, "\n"]}),
+    logger:update_formatter_config(ptolemaios, #{template => [level, " ", time, " ", pid, " ", mfa, ":", line, "\n", msg, "\n"]}),
     logger:update_formatter_config(default, #{template => [level, " ", time, " ", pid, " ", mfa, ":", line, "\n", msg, "\n"]}).
+
+stop() ->
+    logger:remove_handler(ptolemaios).
 
 set_level(Level) ->
     logger:set_primary_config(#{level => Level}).

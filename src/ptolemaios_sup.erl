@@ -17,8 +17,6 @@
 -define(SERVER, ?MODULE).
 
 start_link() ->
-    log:init(),% 日志
-    
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %% sup_flags() = #{strategy => strategy(),         % optional
@@ -42,10 +40,11 @@ init([]) ->
     proto_mapping:load(),
     
     %% 子进程
-    ChildSpecs = [
-        #{id => gateway_sup, start => {gateway_sup, start_link, []}, type => supervisor},
-        #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor}
-        | virture_config:get_sup_spec()],
+    ChildSpecs = virture_config:get_sup_spec() ++
+        [
+            #{id => gateway_sup, start => {gateway_sup, start_link, []}, type => supervisor},
+            #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor}
+        ],
     
     {ok, {SupFlags, ChildSpecs}}.
 

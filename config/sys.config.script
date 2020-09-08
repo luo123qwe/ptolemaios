@@ -1,0 +1,13 @@
+[
+    {ptolemaios, [
+        {gateway, [
+            {port, 8080}
+        ]},
+        {virture, [
+            {type, mysql},
+            {mysql_user, "root"},
+            {mysql_password, "123456"},
+            {mysql_database, "test"}
+        ]}
+    ]}
+].
