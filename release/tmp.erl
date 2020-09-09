@@ -13,7 +13,7 @@
 
 -define(RELEASE_TAG, "prod").
 -define(BACKUP, "backup").
--define(STOP_MFA, {ptolemaios, async_stop, [500]}).
+-define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {fix_hot, fix, []}).
 
 %% 打包机用
@@ -47,7 +47,7 @@ tar(Opt) ->
     {AppName, Version} = get_name_version(Tag),
     io:format("tar ~s-~s~n", [AppName, Version]),
     %% 先打包
-    os:cmd("cd .. && rebar3 as " ++ Tag ++ " tar"),
+    os:cmd("cd .. && \"./rebar3\" as " ++ Tag ++ " tar"),
     io:format("tar success~n"),
     %% 复制到这里
     TarName = AppName ++ "-" ++ Version ++ ".tar.gz",
@@ -65,7 +65,7 @@ tar_ebin(Opt) ->
     {AppName, Version} = get_name_version(Tag),
     io:format("tar ~s-~s~n", [AppName, Version]),
     %% 先编译
-    os:cmd("cd .. && rebar3 as " ++ Tag ++ " compile"),
+    os:cmd("cd .. && \"./rebar3\" as " ++ Tag ++ " compile"),
     %% 打压缩包
     EBinPath = "../_build/" ++ Tag ++ "/lib/" ++ AppName ++ "/ebin",
     case filelib:is_dir(EBinPath) of

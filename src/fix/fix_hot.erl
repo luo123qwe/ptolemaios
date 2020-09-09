@@ -8,8 +8,13 @@
 -module(fix_hot).
 -author("dominic").
 
+-include("util.hrl").
+
 %% API
--export([]).
+-export([fix/0]).
+
+fix() ->
+    ?LOG_ERROR  .
 
 %% @doc 重新加载变更的代码
 %%reload() ->

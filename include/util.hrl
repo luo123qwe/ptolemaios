@@ -33,18 +33,25 @@
 }).
 
 %% 日志
+-define(LOG_ALERT, logger:alert([], [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_ALERT(Format), logger:alert(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_ALERT(Format, Args), logger:alert(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
+-define(LOG_CRITICAL, logger:critical([], [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_CRITICAL(Format), logger:critical(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_CRITICAL(Format, Args), logger:critical(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
+-define(LOG_ERROR, logger:error([], [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_ERROR(Format), logger:error(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_ERROR(Format, Args), logger:error(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
+-define(LOG_WARNING, logger:warning([], [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_WARNING(Format), logger:warning(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_WARNING(Format, Args), logger:warning(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
+-define(LOG_NOTICE, logger:notice([], [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_NOTICE(Format), logger:notice(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_NOTICE(Format, Args), logger:notice(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
+-define(LOG_INFO, logger:info([], [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_INFO(Format), logger:info(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_INFO(Format, Args), logger:info(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
+-define(LOG_DEBUG, logger:debug([], [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_DEBUG(Format), logger:debug(Format, [], #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 -define(LOG_DEBUG(Format, Args), logger:debug(Format, Args, #{mfa => {?MODULE, ?FUNCTION_NAME, ?FUNCTION_ARITY}, line => ?LINE})).
 
