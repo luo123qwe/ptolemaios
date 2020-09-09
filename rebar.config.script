@@ -95,7 +95,7 @@
         %% 实际中单个游戏本身也不会出现依赖多版本erl的情况
         %% 所以生产环境不打包erts, 使用系统内的erl
         {prod,
-            [{relx, [{dev_mode, false}, {include_erts, true}]}]
+            [{relx, [{dev_mode, false}, {include_erts, false}]}]
         }
     ]},
 
