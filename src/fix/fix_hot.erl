@@ -14,9 +14,8 @@
 -export([fix/0]).
 
 fix() ->
-    ?LOG_ERROR  .
+    ?LOG_ERROR.
 
-%% @doc 重新加载变更的代码
 %%reload() ->
 %%    SearchPathList =
 %%        lists:foldl(fun(CodePath, Acc) ->

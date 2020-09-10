@@ -20,6 +20,7 @@
   <li>{@section 例子(example)}</li>
   <li>{@section 性能(performance)}</li>
   <li>{@section 结构(struct)}</li>
+  <li>{@section 发布(release)}</li>
 </ol>
 
 == 规范 ==
@@ -134,7 +135,9 @@ client实现和gateway的协议通讯, 用于模拟客户端, 详情查看{@link
 
 == 修复(fix) ==
 
-代码, 数据的修复
+热更新{@link fix_hot}, {@section 发布(release)}
+
+节点重启更新{@link fix_restart}
 
 == 例子(example) ==
 
@@ -147,3 +150,40 @@ client实现和gateway的协议通讯, 用于模拟客户端, 详情查看{@link
 == 结构(struct) ==
 
 各式各样的数据结构, 部分结构并不能在实际生产中使用, 仅用于测试对比, 详情查看src/struct/*.erl.
+
+== 发布(release) ==
+
+发布使用release/release.escript
+
+=== 设计思路 ===
+
+一个版本 = 一个tar + n个ebin更新
+
+其中 tar 和 ebin的关系通过打包时间来判定, 例如
+
+时间a -> 时间a1         -> 时间a2        -> 时间b -> 时间b1 ...
+
+tar_a -> tar_ebin_a1    -> tar_ebin_a2  -> tar_b -> tar_ebin_b2
+
+那么, 版本a = tar_a + (tar_ebin_a1 + tar_ebin_a2), 版本b = tar_b + (tar_ebin_b2)
+
+=== 流程和脚本命令 ===
+
+<dl>
+    <dt>tar</dt>
+    <dd>打包app, 生成app_name.tar.gz, 其中app信息使用rebar.config.script中的{relx, [{release, ReleaseName(AppName), Version}]}, <b>ReleaseName和AppName必须相同</b>, 不同release用Version表达就好</dd>
+    <dt>tar_date</dt>
+    <dd>打包app和ebin, 生成app_name.tar.gz, 使用backup中的文件</dd>
+    <dt>replace_tar</dt>
+    <dd>初始化app -> 启动节点 -> 更新ebin 或 关闭节点 -> 替换app包 -> 启动节点 -> 更新ebin</dd>
+    <dt>stop</dt>
+    <dd>关闭节点</dd>
+    <dt>restart</dt>
+    <dd>关闭节点 -> 启动节点</dd>
+    <dt>tar_ebin</dt>
+    <dd>打包app的ebin, 和tar一样从rebar.config.script中获取信息</dd>
+    <dt>update_ebin</dt>
+    <dd>替换app的ebin, 如果节点启动, 则使用rpc call调用更新函数</dd>
+    <dt>backup_tree</dt>
+    <dd>如果tar和tar_ebin都会备份到一个文件夹, 那么根据备份文件中的时间戳会生成类似 [{tar1, [ebin11, ebin12..]}, {tar2, [ebin21, ebin22..]}] 的顺序结构, 反映某个tar下的所有ebin更新</dd>
+</dl>

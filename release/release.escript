@@ -1,13 +1,15 @@
 #!/usr/bin/env escript
 
 -define(RELEASE_TAG, "prod").
--define(BACKUP, "backup").
 -define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {fix_hot, fix, []}).
+-define(SAVE_DIR, ["log"]).
 
 %% 打包机用
 main(["tar" | Opt]) ->
     tar(make_opt(Opt));
+main(["tar_date" | Opt]) ->
+    tar_date(make_opt(Opt));
 main(["tar_ebin" | Opt]) ->
     tar_ebin(make_opt(Opt));
 main(["backup_tree" | Opt]) ->
@@ -48,6 +50,15 @@ tar(Opt) ->
     io:format("create tar ~s~n", [ReleaseName]),
     %% 备份
     backup(ReleaseName, Opt).
+
+tar_date(Opt) ->
+    {_, Backup} = lists:keyfind("-backup", 1, Opt),
+    {_, Tar} = lists:keyfind("-tar", 1, Opt),
+    [AppName, _Date] = string:split(Tar, "_"),
+    Tree = make_backup_tree(Backup),
+    {_, EBinTarList} = lists:keyfind(Tar, 1, Tree),
+    ReleaseName = AppName ++ ".tar.gz",
+    erl_tar:create(ReleaseName, [{EBinTar, Backup ++ "/" ++ EBinTar} || EBinTar <- EBinTarList] ++ [{Tar, Backup ++ "/" ++ Tar}, "release.escript"]).
 
 tar_ebin(Opt) ->
     Tag = proplists:get_value("-profile", Opt, ?RELEASE_TAG),
@@ -91,18 +102,34 @@ to_str(List) when is_list(List) ->
     List.
 
 backup(File, Opt) ->
-    Path = proplists:get_value("-backup", Opt, ?BACKUP),
-    case filelib:is_dir(Path) of
-        true -> ok;
-        _ -> file:make_dir(Path)
-    end,
-    Root = filename:rootname(File, ".tar.gz"),
-    Backup = Path ++ "/" ++ Root ++ "_" ++ date_str() ++ ".tar.gz",
-    file:copy(File, Path ++ "/" ++ Root ++ "_" ++ date_str() ++ ".tar.gz"),
-    io:format("backup ~s to ~s~n", [File, Backup]).
+    case proplists:get_value("-backup", Opt, undefined) of
+        undefined ->
+            skip;
+        Path ->
+            case filelib:is_dir(Path) of
+                true -> ok;
+                _ -> file:make_dir(Path)
+            end,
+            Root = filename:rootname(File, ".tar.gz"),
+            Backup = Path ++ "/" ++ Root ++ "_" ++ date_str() ++ ".tar.gz",
+            file:copy(File, Path ++ "/" ++ Root ++ "_" ++ date_str() ++ ".tar.gz"),
+            io:format("backup ~s to ~s~n", [File, Backup])
+    end.
 
 backup_tree(Opt) ->
-    Backup = proplists:get_value("-backup", Opt, ?BACKUP),
+    case proplists:get_value("-backup", Opt, undefined) of
+        undefined ->
+            io:format("no -backup args~n");
+        Backup ->
+            Tree = make_backup_tree(Backup),
+            PrettyTree =
+                lists:map(fun({MainName, EbinNameList}) ->
+                    [$\n, MainName, $\n, [[$ , $ , $-, $-, EbinName, $\n] || EbinName <- EbinNameList]]
+                          end, Tree),
+            io:format("~s~n", [PrettyTree])
+    end.
+
+make_backup_tree(Backup) ->
     TimeList =
         lists:map(fun(FileName) ->
             case FileName of
@@ -114,25 +141,21 @@ backup_tree(Opt) ->
             end
                   end, element(2, file:list_dir(Backup))),
     TimeList1 = lists:keysort(1, TimeList),
-    Tree = backup_tree(TimeList1, undefined, [], []),
-    PrettyTree =
-        lists:map(fun({MainName, EbinNameList}) ->
-            [$\n, MainName, $\n, [[$ , $ , $-, $-, EbinName, $\n] || EbinName <- EbinNameList]]
-                  end, Tree),
-    io:format("~s~n", [PrettyTree]).
+    make_backup_tree(TimeList1, undefined, [], []).
 
-backup_tree([], undefined, _, Tree) ->
+
+make_backup_tree([], undefined, _, Tree) ->
     Tree;
-backup_tree([], MainName, EBinList, Tree) ->
+make_backup_tree([], MainName, EBinList, Tree) ->
     [{MainName, EBinList} | Tree];
-backup_tree([{_, FileName} | T], MainName, EBinList, Tree) ->
+make_backup_tree([{_, FileName} | T], MainName, EBinList, Tree) ->
     case FileName of
         "ebin_" ++ _ ->
-            backup_tree(T, MainName, [FileName | EBinList], Tree);
+            make_backup_tree(T, MainName, [FileName | EBinList], Tree);
         _ ->
             case MainName of
-                undefined -> backup_tree(T, FileName, [], Tree);
-                _ -> backup_tree(T, FileName, [], [{MainName, EBinList} | Tree])
+                undefined -> make_backup_tree(T, FileName, [], Tree);
+                _ -> make_backup_tree(T, FileName, [], [{MainName, EBinList} | Tree])
             end
     end.
 
@@ -146,7 +169,7 @@ date_str_add_zero(Int) ->
     [$0, integer_to_list(Int)].
 
 init_node() ->
-    [Dir] = element(2, file:list_dir(".")) -- ["release.escript"],
+    Dir = get_dir(),
     ReleaseDir = Dir ++ "/releases",
     %% 在vm.args中找到节点信息
     {NodeStr, CookieStr} =
@@ -163,14 +186,19 @@ init_node() ->
             end
                     end, undefined, element(2, file:list_dir(ReleaseDir))),
     Node = list_to_atom(NodeStr),
-    Cookie = list_to_atom(CookieStr),
-    % 开启本节点
-    net_kernel:start([list_to_atom("release_" ++ integer_to_list(erlang:system_time(second)) ++ "@127.0.0.1")]),
-    erlang:set_cookie(Node, Cookie),
-    Node.
+    case node() of
+        'nonode@nohost' ->
+            Cookie = list_to_atom(CookieStr),
+            % 开启本节点
+            net_kernel:start([list_to_atom("release_" ++ integer_to_list(erlang:system_time(second)) ++ "@127.0.0.1")]),
+            erlang:set_cookie(Node, Cookie),
+            Node;
+        _Node ->
+            Node
+    end.
 
 start() ->
-    [Dir] = element(2, file:list_dir(".")) -- ["release.escript"],
+    Dir = get_dir(),
     [Name, _Version] = string:split(Dir, "-"),
     case os:type() of
         {unix, _} ->
@@ -178,7 +206,18 @@ start() ->
         {win32, _} ->
             spawn(fun() -> os:cmd("cd " ++ Dir ++ " && call ./bin/" ++ Name ++ " console") end)
     end,
-    io:format("start console").
+    Node = init_node(),
+    case lists:any(fun(_) ->
+        timer:sleep(500),
+        case net_kernel:connect_node(Node) of
+            true -> true;
+            _ -> false
+        end end, lists:seq(1, 10)) of
+        true ->
+            io:format("start console~n");
+        _ ->
+            throw(start_fail)
+    end.
 
 stop(Opt) ->
     {M, F, A} = get_mfa(Opt, ?STOP_MFA),
@@ -189,37 +228,107 @@ stop(Opt) ->
         Error -> throw({stop, Error})
     end.
 
-replace_tar(_Opt) ->
+replace_tar(Opt) ->
     {ok, ListDir} = file:list_dir("."),
-    {Tar, Dir} =
-        lists:foldl(fun(FN, {T, D}) ->
+    %% 一, escript+N个tar
+    %% 二, escript+Dir+1一个tar
+    {Dir, Tar} =
+        lists:foldl(fun(FN, {D, T} = Acc) ->
             case filelib:is_dir(FN) of
-                false -> {FN, D};
-                _ -> {T, FN}
-            end end, {undefined, undefined}, ListDir -- ["release.escript"]),
-    case length(ListDir) of
-        2 -> skip;
-        3 -> file:del_dir_r(Dir)
+                true ->
+                    {FN, T};
+                _ ->
+                    case filename:extension(FN) of
+                        ".gz" -> {D, FN};
+                        _ -> Acc
+                    end
+            end end, {undefined, undefined}, ListDir),
+    case Dir of
+        undefined ->
+            init_tar(Opt);
+        _ ->
+            stop(Opt),
+            %% 复制要保存的文件夹
+            case filelib:is_dir("replace_tar_tmp") of
+                true -> file:del_dir_r("replace_tar_tmp");
+                _ -> skip
+            end,
+            file:make_dir("replace_tar_tmp"),
+            lists:foreach(fun(FN) ->
+                case filelib:is_dir(Dir ++ "/" ++ FN) of
+                    true -> copy_dir(Dir ++ "/" ++ FN, "replace_tar_tmp/" ++ FN);
+                    _ -> skip
+                end
+                          end, ?SAVE_DIR),
+            file:del_dir_r(Dir),
+            {ok, TarListDir} = erl_tar:table(Tar, [compressed]),
+            OverwriteList = TarListDir -- ["release.escript"],
+            ok = erl_tar:extract(Tar, [{cwd, "."}, {files, OverwriteList}, compressed]),
+            file:delete(Tar),
+            init_tar(Opt)
+    end.
+
+init_tar(Opt) ->
+    %% 找到app tar 和 ebin tar
+    {AppTar, EBinTarList} =
+        lists:foldl(fun(FN, {A, EL} = Acc) ->
+            case filename:extension(FN) of
+                ".gz" ->
+                    case FN of
+                        "ebin" ++ _ -> {A, [FN | EL]};
+                        _ -> {FN, EL}
+                    end;
+                _ -> Acc
+            end end, {undefined, []}, element(2, file:list_dir("."))),
+    %% 解压启动app
+    case lists:member($-, AppTar) of
+        true ->% {app_name}-{version}
+            App = filename:rootname(AppTar, ".tar.gz"),
+            ok = erl_tar:extract(AppTar, [{cwd, App}, compressed]);
+        _ ->% {app_name}_{date}
+            [AppTar1] = element(2, erl_tar:table(AppTar)) -- ["release.escript"],
+            ok = erl_tar:extract(AppTar, [{cwd, "."}, {files, [AppTar1]}, compressed]),
+            App = filename:rootname(AppTar1, ".tar.gz"),
+            ok = erl_tar:extract(AppTar1, [{cwd, App}, compressed]),
+            file:delete(AppTar1)
     end,
-    ok = erl_tar:extract(Tar, [{cwd, filename:rootname(filename:rootname(Tar))}, compressed]),
-    file:delete(Tar),
-    start().
+    %% 复制保存的文件夹
+    case filelib:is_dir("replace_tar_tmp") of
+        true ->
+            lists:foreach(fun(FN) ->
+                case filelib:is_dir("replace_tar_tmp/" ++ FN) of
+                    true -> copy_dir("replace_tar_tmp/" ++ FN, App ++ "/" ++ FN);
+                    _ -> skip
+                end
+                          end, ?SAVE_DIR),
+            file:del_dir_r("replace_tar_tmp");
+        _ ->
+            skip
+    end,
+    start(),
+    Wait = proplists:get_value("-wait", Opt, 1000),
+    io:format("wait ~w~n", [Wait]),
+    timer:sleep(Wait),
+    %% 更新 ebin tar
+    EBinTarList1 = lists:sort(EBinTarList),
+    lists:foreach(fun(FN) ->
+        update_ebin(FN, Opt)
+                  end, EBinTarList1),
+    %% 清理文件
+    lists:foreach(fun(FN) ->
+        file:delete(FN)
+                  end, [AppTar | EBinTarList]).
 
 update_ebin(Opt) ->
+    update_ebin("ebin.tar.gz", Opt).
+
+update_ebin(Tar, Opt) ->
     {M, F, A} = get_mfa(Opt, ?UPDATE_MFA),
     %% 找到app name
-    [Dir] = element(2, file:list_dir(".")) -- ["release.escript"],
-    Name =
-        lists:foldl(fun(FN, Acc) ->
-            case filename:extension(FN) of
-                ".rel" ->
-                    filename:rootname(FN);
-                _ ->
-                    Acc
-            end
-                    end, undefined, Dir ++ "/releases"),
+    Dir = get_dir(),
+    [Name, _] = string:split(Dir, "-"),
     %% 解压
-    ok = erl_tar:extract("ebin.tar.gz", [{cwd, "ebin"}]),
+    ok = erl_tar:extract(Tar, [{cwd, "ebin"}]),
     %% 移动ebin到app的lib
     lists:any(fun(Lib) ->
         case Lib -- Name of
@@ -227,7 +336,7 @@ update_ebin(Opt) ->
                 LibEBin = Dir ++ "/lib/" ++ Lib ++ "/ebin",
                 file:del_dir_r(LibEBin),
                 file:make_dir(LibEBin),
-                copy_file("ebin", LibEBin),
+                copy_dir("ebin", LibEBin),
                 true;
             _ ->
                 false
@@ -235,14 +344,14 @@ update_ebin(Opt) ->
               end, element(2, file:list_dir(Dir ++ "/lib"))),
     %% 删除更新相关的文件
     file:del_dir_r("ebin"),
-    file:delete("ebin.tar.gz"),
+    file:delete(Tar),
     Node = init_node(),
     %% 游戏节点更新或者开启
     case net_kernel:connect_node(Node) of
         true ->
             io:format("~w~n", [rpc:call(Node, M, F, A)]);
         _ ->
-            start()
+            io:format("node not start~n")
     end.
 
 get_mfa(Opt, Default) ->
@@ -256,10 +365,14 @@ get_mfa(Opt, Default) ->
             Default
     end.
 
-copy_file(From, To) ->
+copy_dir(From, To) ->
     copy_file(From, To, element(2, file:list_dir(From))).
 
 copy_file(From, To, CopyList) ->
+    case filelib:is_dir(To) of
+        true -> skip;
+        _ -> file:make_dir(To)
+    end,
     lists:foldl(fun(N, {F, T} = Acc) ->
         FromFilePath = F ++ "/" ++ N,
         CopyFilePath = T ++ "/" ++ N,
@@ -267,12 +380,20 @@ copy_file(From, To, CopyList) ->
             true ->
                 file:del_dir_r(CopyFilePath),
                 file:make_dir(CopyFilePath),
-                copy_file(FromFilePath, CopyFilePath),
+                copy_dir(FromFilePath, CopyFilePath),
                 Acc;
             _ ->
                 file:copy(FromFilePath, CopyFilePath),
                 Acc
         end end, {From, To}, CopyList).
+
+get_dir() ->
+    {ok, FileList} = file:list_dir("."),
+    lists:foldl(fun(FN, Acc) ->
+        case filelib:is_dir(FN) of
+            true -> FN;
+            _ -> Acc
+        end end, undefined, FileList).
 
 usage() ->
     io:format("
@@ -284,25 +405,32 @@ cmd:
 tar:    create a {app_name}.tar.gz
         read app name and version from rebar3.config.script => {release, {Name, Version}, _}
     -profile [tag], tag define in rebar3.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
-    -backup [dir], backup tar to dir like {app_name}-{tag}_yyyymmddhhmmss.tar.gz, default" ++ ?BACKUP ++ "
+    -backup [dir], backup tar to dir like {app_name}-{tag}_yyyymmddhhmmss.tar.gz
+
+tar_date:   create a {app_name}.tar.gz
+        read app and ebin from backup dir and pack a 'date version' like backup tree show
+    -backup [dir], backup tar to dir like {app_name}-{tag}_yyyymmddhhmmss.tar.gz
+    -tar [app_tar], {app_name}-{tag}_yyyymmddhhmmss.tar.gz
 
 tar_ebin:   tar ebin for update release
             read app name and version from rebar3.config.script => {release, {Name, Version}, _}
     -profile [tag], tag define in rebar3.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
-    -backup [dir], backup tar to dir like ebin_yyyymmddhhmmss.tar.gz, default " ++ ?BACKUP ++ "
+    -backup [dir], backup tar to dir like ebin_yyyymmddhhmmss.tar.gz
 
 backup_tree:    show 'app tar' and 'ebin tar' time relation
-    -backup [dir], backup dir, default " ++ ?BACKUP ++ "
+    -backup [dir], backup dir
 
 replace_tar:    update 'app tar', stop -> update/install -> start
-                install if dir only include \"app_name-version.tar.gz\" and \"release.escript\"
-                update if dir only include \"app_name-version\" and \"app_name-maybe_diff_version.tar.gz\" and \"release.escript\"
-
+                install if no dir(meaning exist an app) in the path
+                orelse, update
+    -mfa [{M, F, A}], if need stop, default " ++ io_lib:format("~w", [?STOP_MFA]) ++ "
+    -wait [time], if tar_date, start -> wait X ms -> update ebin
+    
 restart:    restart, stop -> start
 
 stop:   stop, rpc call mfa to stop the node
     -mfa [{M, F, A}], default " ++ io_lib:format("~w", [?STOP_MFA]) ++ "
-
+    
 update_ebin:    update 'app's ebin' only and rpc call mfa to stop the node or start node
     -mfa [{M, F, A}], default " ++ io_lib:format("~w", [?STOP_MFA]) ++ "
 ").
