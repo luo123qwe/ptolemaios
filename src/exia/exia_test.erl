@@ -15,7 +15,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(exia_example_state, {id}).
+-record(exia_test_state, {id}).
 
 %%%===================================================================
 %%% Spawning and gen_server implementation
@@ -25,47 +25,24 @@ start() ->
     exia:start(?MODULE, [], []).
 
 init([]) ->
-    exia:return({ok, #exia_example_state{}}).
+    exia:return({ok, #exia_test_state{}}).
 
 
-handle_call(test_msg_time, _From, State = #exia_example_state{}) ->
-    timer:sleep(1000),
-    {reply, exia:get_msg_second(), State};
-handle_call(test_expect_time, _From, State = #exia_example_state{}) ->
-    {reply, exia:get_expect_second(), State};
-handle_call(test_auto_send, _From, State = #exia_example_state{}) ->
-    exia:send(test_auto_send),
-    {reply, ok, State};
-handle_call(test_auto_rollback, _From, State = #exia_example_state{}) ->
-    exia:send(test_auto_rollback),
-    throw(test),
-    {reply, ok, State#exia_example_state{id = test_auto_rollback}};
-handle_call(test_flush, _From, State = #exia_example_state{}) ->
-    exia:send(test_flush),
-    exia:flush(State#exia_example_state{id = test_flush}),
-    throw(test),
-    {reply, ok, State};
-handle_call(test_call_return, _From, State = #exia_example_state{}) ->
-    exia:return({reply, ok, State#exia_example_state{id = test_call_return}});
-handle_call(get_state, _From, State = #exia_example_state{}) ->
-    {reply, State, State};
-handle_call(_Request, _From, State = #exia_example_state{}) ->
+handle_call(_Request, _From, State = #exia_test_state{}) ->
     {reply, ok, State}.
 
-handle_cast(test_cast_return, State = #exia_example_state{}) ->
-    exia:return({noreply, State#exia_example_state{id = test_cast_return}});
-handle_cast(_Request, State = #exia_example_state{}) ->
+handle_cast(return, State = #exia_test_state{}) ->
+    exia:return({noreply, State#exia_test_state{id = return}});
+handle_cast(_Request, State = #exia_test_state{}) ->
     {noreply, State}.
 
-handle_info(test_info_return, State = #exia_example_state{}) ->
-    exia:return({noreply, State#exia_example_state{id = test_info_return}});
-handle_info(_Info, State = #exia_example_state{}) ->
+handle_info(_Info, State = #exia_test_state{}) ->
     {noreply, State}.
 
-terminate(_Reason, _State = #exia_example_state{}) ->
+terminate(_Reason, _State = #exia_test_state{}) ->
     exia:return(ok).
 
-code_change(_OldVsn, State = #exia_example_state{}, _Extra) ->
+code_change(_OldVsn, State = #exia_test_state{}, _Extra) ->
     {ok, State}.
 
 %%%===================================================================
@@ -82,33 +59,61 @@ base_test_() ->
             fun(Pid) -> Pid end,
             fun(Pid) ->
                 [
-                    ?_assertEqual(undefined, exia:set_dest(Pid, self())),
-                    ?_assertEqual(erlang:system_time(second), exia:warp_call(Pid, test_msg_time)),
-                    ?_assertEqual(123, exia:warp_call(Pid, 123123, test_expect_time)),
-                    ?_assertEqual(ok, exia:warp_call(Pid, test_auto_send)),
-                    ?_test(receive
-                               #exia_msg{msg = test_auto_send} -> ok;
-                               Other -> throw({test_auto_send, Other})
-                           after 0 -> throw(test_auto_send) end),
-                    %% 时间太长会默认cancel, 超时得手动设一个短的
-                    ?_assertExit({timeout, {exia, call, [Pid, test_auto_rollback, 1000]}}, exia:warp_call(Pid, erlang:system_time(millisecond), test_auto_rollback, 1000)),
-                    ?_test(receive
-                               #exia_msg{msg = test_auto_rollback} -> throw(test_auto_rollback);
-                               Other -> throw({test_auto_rollback, Other})
-                           after 0 -> ok end),
-                    ?_assertEqual(#exia_example_state{id = undefined}, exia:call(Pid, get_state)),
-                    ?_assertExit({timeout, {exia, call, [Pid, test_flush, 1000]}}, exia:warp_call(Pid, erlang:system_time(millisecond), test_flush, 1000)),
-                    ?_test(receive
-                               #exia_msg{msg = test_flush} -> ok;
-                               Other -> throw({test_flush, Other})
-                           after 0 -> throw(test_flush) end),
-                    ?_assertEqual(#exia_example_state{id = test_flush}, exia:call(Pid, get_state)),
-                    ?_test(exia:call(Pid, test_call_return)),
-                    ?_assertEqual(#exia_example_state{id = test_call_return}, exia:call(Pid, get_state)),
-                    ?_test(exia:cast(Pid, test_cast_return)),
-                    ?_assertEqual(#exia_example_state{id = test_cast_return}, exia:call(Pid, get_state)),
-                    ?_test(Pid ! test_info_return),
-                    ?_assertEqual(#exia_example_state{id = test_info_return}, exia:call(Pid, get_state)),
+                    ?_assertEqual(#exia_test_state{}, exia:call_execute(Pid, fun(S) -> {reply, S, S} end)),
+                    
+                    ?_test(exia:cast_execute(Pid, fun(S) -> {noreply, S#exia_test_state{id = cast_execute}} end)),
+                    ?_assertEqual(#exia_test_state{id = cast_execute},
+                        exia:call_execute(Pid, fun(S) -> {reply, S, S} end)),
+                    
+                    ?_test(exia:cast(Pid, return)),
+                    ?_assertEqual(#exia_test_state{id = return},
+                        exia:call_execute(Pid, fun(S) -> {reply, S, S} end)),
+                    
+                    ?_test(begin
+                               Self = self(),
+                               exia:cast_execute(Pid, fun(S) ->
+                                   exia:cast_after(1000, Self, cast_after),
+                                   {noreply, S#exia_test_state{id = cast_after}} end),
+                               receive {'$gen_cast', cast_after} -> ok after 1100 -> throw(timeout) end
+                           end),
+                    ?_assertEqual(#exia_test_state{id = cast_after},
+                        exia:call_execute(Pid, fun(S) -> {reply, S, S} end)),
+                    
+                    ?_assert(exia:call_execute(Pid, fun(S) ->
+                        {reply, exia:get_millisecond() == exia:get_millisecond(), S}
+                                                    end)),
+                    
+                    ?_test(begin
+                               Self = self(),
+                               exia:cast_execute(Pid, fun(S) ->
+                                   exia:cast_at(exia:get_millisecond() + 1000, Self, cast_at),
+                                   {noreply, S#exia_test_state{id = cast_at}} end),
+                               receive {'$gen_cast', cast_at} -> ok after 1100 -> throw(timeout) end
+                           end),
+                    ?_assertEqual(#exia_test_state{id = cast_at},
+                        exia:call_execute(Pid, fun(S) -> {reply, S, S} end)),
+                    
+                    ?_test(begin
+                               Self = self(),
+                               exia:cast_execute(Pid, fun(S) ->
+                                   exia:cast_at_immediately(exia:get_millisecond() + 1000, Self, cast_at_immediately),
+                                   timer:sleep(2000),
+                                   {noreply, S#exia_test_state{id = cast_at_immediately}} end),
+                               receive {'$gen_cast', cast_at_immediately} -> ok after 1100 -> throw(timeout) end
+                           end),
+                    ?_assertEqual(#exia_test_state{id = cast_at_immediately},
+                        exia:call_execute(Pid, fun(S) -> {reply, S, S} end)),
+                    
+                    ?_test(exia:cast_execute(Pid, fun(S) -> exia:eset(exia, exia), throw(test), {noreply, S} end)),
+                    ?_assertEqual(undefined, exia:call_execute(Pid, fun(S) -> {reply, exia:eget(exia, undefined), S} end)),
+                    ?_test(exia:cast_execute(Pid, fun(S) ->
+                        exia:eset(exia, exia),
+                        exia:flush(S),
+                        throw(test),
+                        {noreply, S}
+                                                  end)),
+                    ?_assertEqual(exia, exia:call_execute(Pid, fun(S) -> {reply, exia:eget(exia, undefined), S} end)),
+                    
                     ?_test(exia:stop(Pid))
                 ]
             end

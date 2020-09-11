@@ -117,9 +117,7 @@ util文件夹下均为工具类模块, 每个模块等效于一个功能.
 
 基于gen_server实现的一个behaviour, 进程启动成功后, 进程内部除了返回{stop,...}外无法结束进程; 进程在遇到错误时自动回滚到以前状态, 其中回滚包括: 进程状态, 异步消息, virture数据....; 回滚的设计保证当不存在跨进程同步操作(call)时, 进程处理消息时数据的一致性.
 
-eixa使用expect_time和msg_time的时间设定, 其中expect_time代表该条消息期望的到达时间, msg_time代表该条消息收到时的时间; 使用期望时间可以减少erlang内部定时器导致的时间误差; 潜在的消耗是每条消息都会至少调用一次erlang:system_time(millisecond), 当大部分消息不需要使用时间时可以优化成第一次获取时间时才调用, 目前认为大部分消息会用到时间.
-
-内部消息详情查看{@link exia}.
+详情查看{@link exia}.
 
 == 协议(proto) ==
 
@@ -172,8 +170,8 @@ tar_a -> tar_ebin_a1    -> tar_ebin_a2  -> tar_b -> tar_ebin_b2
 <dl>
     <dt>tar</dt>
     <dd>打包app, 生成app_name.tar.gz, 其中app信息使用rebar.config.script中的{relx, [{release, ReleaseName(AppName), Version}]}, <b>ReleaseName和AppName必须相同</b>, 不同release用Version表达就好</dd>
-    <dt>tar_date</dt>
-    <dd>打包app和ebin, 生成app_name.tar.gz, 使用backup中的文件</dd>
+    <dt>tar_backup</dt>
+    <dd>打包'一个版本'的app和ebin, 生成app_name.tar.gz, 使用backup中的文件</dd>
     <dt>replace_tar</dt>
     <dd>初始化app -> 启动节点 -> 更新ebin 或 关闭节点 -> 替换app包 -> 启动节点 -> 更新ebin</dd>
     <dt>stop</dt>

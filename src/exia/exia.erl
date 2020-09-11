@@ -7,16 +7,6 @@
 %%% <dt>去掉throw返回的设定</dt>
 %%% <dd>```
 %%% 用return/1代替, 文档也没说, 看了代码才发现可以这样'''</dd>
-%%% <dt>默认消息地址</dt>
-%%% <dd>```
-%%% 异步消息未指定接收者时, 默认会发到该进程, 需要自行设置
-%%% 顺便一提, 消息发送类似cast, 失败也不会返回错误'''</dd>
-%%% <dt>消息时间和期望时间</dt>
-%%% <dd>```
-%%% 消息时间: 消息收到的时间; 期望时间: 消息期望送达时间
-%%% 避免erlang内部定时器误差导致的计算错误
-%%% 每条信息都会调用一次erlang:system_time(millisecond)
-%%% 如果时间使用频率十分低, 可以优化成第一次获取时间时再调用'''</dd>
 %%% <dt>模拟进程字典</dt>
 %%% <dd>```
 %%% 用于回滚, 使用一个map实现'''</dd>
@@ -28,10 +18,18 @@
 %%% 用户可以也可以在一段逻辑成功后flush/1, 类似continue的机制, 分段执行, 失败可以回滚'''</dd>
 %%% <dt>exia消息</dt>
 %%% <dd>```
-%%% #exia_msg{}, 包含期望时间和消息内容
 %%% {exia_private, ...}消息为exia内部消息, 用于支持exia进程的功能
 %%% 其他消息按照gen_server原有设定解码'''</dd>
 %%% </dl>
+%%% <dt>Module:exia_before_msg/1</dt>
+%%% <dd>```
+%%% 收到消息, 执行前的回调'''</dd>
+%%% <dt>Module:exia_flush/1</dt>
+%%% <dd>```
+%%% exia:flush/1, flush前的回调'''</dd>
+%%% <dt>Module:exia_after_msg/1</dt>
+%%% <dd>```
+%%% 收到消息, 执行后, flush前的回调'''</dd>
 %%% @end
 %%%-------------------------------------------------------------------
 -module(exia).
@@ -55,18 +53,14 @@
 
 %% exia的
 -export([
-    set_dest/2, get_dest/1,
     call_execute/2, cast_execute/2,
-    warp_call/2, warp_call/3, warp_call/4, warp_cast/2, warp_cast/3,
-    spawn_call/4, spawn_call/5, spawn_warp_call/4, spawn_warp_call/5, spawn_warp_call/6,
     %% 仅可进程内使用
-    set_dest/1, get_dest/0,
-    send/1, send/2, send_after/2, send_after/3, send_at/2, send_at/3, send_after/4,
-    send_immediately/1, send_immediately/2, send_after_immediately/2, send_after_immediately/3, send_at_immediately/2, send_at_immediately/3, send_after_immediately/4,
-    ecast/1, cast_after/2, cast_after/3, cast_at/2, cast_at/3, cast_after/4,
-    cast_immediately/1, cast_immediately/2, cast_after_immediately/2, cast_after_immediately/3, cast_at_immediately/2, cast_at_immediately/3, cast_after_immediately/4,
+    send/2, send_after/3, send_at/3,
+    send_immediately/2, send_after_immediately/3, send_at_immediately/3,
+    cast_after/3, cast_at/3,
+    cast_immediately/2, cast_after_immediately/3, cast_at_immediately/3,
     flush/1, return/1, get_return/1,
-    get_expect_millisecond/0, get_expect_second/0, get_msg_millisecond/0, get_msg_second/0,
+    get_millisecond/0, set_millisecond/1, get_second/0, set_second/1,
     eget/2, eset/2
 ]).
 
@@ -122,6 +116,9 @@ F :: function()
     {noreply, NewState :: term()} |
     {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
     {stop, Reason :: term(), NewState :: term()}.
+-callback exia_before_msg(State :: term()) -> {exia_return, State1 :: term()}.
+-callback exia_flush(State :: term()) -> {exia_return, State1 :: term()}.
+-callback exia_after_msg(State :: term()) -> {exia_return, State1 :: term()}.
 -callback handle_continue(Info :: term(), State :: term()) ->
     {noreply, NewState :: term()} |
     {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
@@ -141,7 +138,7 @@ term()),
     Status :: term().
 
 -optional_callbacks(
-[handle_continue/2, terminate/2, code_change/3, format_status/2]).
+[exia_before_msg/1, exia_flush/1, exia_after_msg/1, handle_continue/2, terminate/2, code_change/3, format_status/2]).
 
 %%%  -----------------------------------------------------------------
 %%% Starts a generic server.
@@ -198,30 +195,6 @@ stop(Name, Reason, Timeout) ->
     gen:stop(Name, Reason, Timeout).
 
 %% -----------------------------------------------------------------
-%% 默认消息地址
-%% -----------------------------------------------------------------
-%% @doc 设置默认消息地址, 进程内使用
--spec set_dest(server_ref()) -> OldDest :: undefined|server_ref().
-set_dest(Dest) ->
-    put(?PD_EXIA_DEST, Dest).
-
-%% @doc 设置进程默认消息地址
--spec set_dest(server_ref(), server_ref()) -> OldDest :: undefined|server_ref().
-set_dest(Dest, SetDest) ->
-    call(Dest, {exia_private, set_dest, SetDest}).
-
-%% @doc 获取默认消息地址, 进程内使用
--spec get_dest() -> undefined|server_ref().
-get_dest() ->
-    get(?PD_EXIA_DEST).
-
-
-%% @doc 获取进程默认消息地址
--spec get_dest(server_ref()) -> undefined|server_ref().
-get_dest(Dest) ->
-    call(Dest, {exia_private, get_dest}).
-
-%% -----------------------------------------------------------------
 %% 执行一个函数
 %% -----------------------------------------------------------------
 %% @doc 执行一个函数, 函数返回的值与handle_call一样
@@ -259,124 +232,6 @@ call(Name, Request, Timeout) ->
             exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
-%% -----------------------------------------------------------------
-%% 包装成一个exia消息
-%% -----------------------------------------------------------------
-%% @equiv warp_call(Dest, erlang:system_time(millisecond), Request)
-warp_call(Dest, Request) ->
-    warp_call(Dest, erlang:system_time(millisecond), Request).
-
-%% @doc 包装成一条exia消息再call
--spec warp_call(server_ref(), integer(), term()) -> term().
-warp_call(Dest, ExpectTime, Request) ->
-    case catch gen:call(Dest, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}) of
-        {ok, Res} ->
-            Res;
-        {'EXIT', Reason} ->
-            exit({Reason, {?MODULE, call, [Dest, Request]}})
-    end.
-
-%% @doc 包装成一条exia消息再call
--spec warp_call(server_ref(), integer(), term(), non_neg_integer()) -> term().
-warp_call(Dest, ExpectTime, Request, Timeout) ->
-    case catch gen:call(Dest, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}, Timeout) of
-        {ok, Res} ->
-            Res;
-        {'EXIT', Reason} ->
-            exit({Reason, {?MODULE, call, [Dest, Request, Timeout]}})
-    end.
-
-%% @equiv warp_cast(Dest, erlang:system_time(millisecond), Request)
-warp_cast(Dest, Request) ->
-    warp_cast(Dest, erlang:system_time(millisecond), Request).
-
-%% @doc 包装成一条exia消息再cast
--spec warp_cast(server_ref(), non_neg_integer(), term()) -> term().
-warp_cast(Dest, ExpectTime, Request) ->
-    do_send(Dest, #exia_msg{expect_time = ExpectTime, msg = cast_msg(Request)}).
-
-%% -----------------------------------------------------------------
-%% spawn一个进程执行call操作
-%% -----------------------------------------------------------------
-%% @doc spawn一个进程进行call, 成功或失败时执行对应的函数
--spec spawn_call(server_ref(), term(), undefined|function(), undefined|function()) -> pid().
-spawn_call(Dest, Request, SuccessFun, FailFun) ->
-    spawn(fun() ->
-        case catch gen:call(Dest, '$gen_call', Request) of
-            {ok, Res} ->
-                case SuccessFun of
-                    undefined -> skip;
-                    _ -> SuccessFun(Res)
-                end;
-            {'EXIT', Reason} ->
-                case FailFun of
-                    undefined -> skip;
-                    _ -> FailFun(Reason)
-                end
-        end
-          end).
-
-%% @doc spawn一个进程进行call, 成功或失败时执行对应的函数
--spec spawn_call(server_ref(), term(), non_neg_integer(), undefined|function(), undefined|function()) -> pid().
-spawn_call(Dest, Request, Timeout, SuccessFun, FailFun) ->
-    spawn(fun() ->
-        case catch gen:call(Dest, '$gen_call', Request, Timeout) of
-            {ok, Res} ->
-                case SuccessFun of
-                    undefined -> skip;
-                    _ -> SuccessFun(Res)
-                end;
-            {'EXIT', Reason} ->
-                case FailFun of
-                    undefined -> skip;
-                    _ -> FailFun(Reason)
-                end
-        end
-          end).
-
-%% @equiv spawn_warp_call(Dest, erlang:system_time(millisecond), Request, SuccessFun, FailFun)
-spawn_warp_call(Dest, Request, SuccessFun, FailFun) ->
-    spawn_warp_call(Dest, erlang:system_time(millisecond), Request, SuccessFun, FailFun).
-
-%% @doc spawn一个进程进行warp_call, 成功或失败时执行对应的函数
-%% @see warp_call/3
--spec spawn_warp_call(server_ref(), non_neg_integer(), term(), undefined|function(), undefined|function()) -> pid().
-spawn_warp_call(Dest, ExpectTime, Request, SuccessFun, FailFun) ->
-    spawn(fun() ->
-        case catch gen:call(Dest, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}) of
-            {ok, Res} ->
-                case SuccessFun of
-                    undefined -> skip;
-                    _ -> SuccessFun(Res)
-                end;
-            {'EXIT', Reason} ->
-                case FailFun of
-                    undefined -> skip;
-                    _ -> FailFun(Reason)
-                end
-        end
-          end).
-
-
-%% @doc spawn一个进程进行warp_call, 成功或失败时执行对应的函数
-%% @see warp_call/3
--spec spawn_warp_call(server_ref(), non_neg_integer(), term(), non_neg_integer(), undefined|function(), undefined|function()) -> pid().
-spawn_warp_call(Dest, ExpectTime, Request, Timeout, SuccessFun, FailFun) ->
-    spawn(fun() ->
-        case catch gen:call(Dest, '$gen_call', #exia_msg{expect_time = ExpectTime, msg = Request}, Timeout) of
-            {ok, Res} ->
-                case SuccessFun of
-                    undefined -> skip;
-                    _ -> SuccessFun(Res)
-                end;
-            {'EXIT', Reason} ->
-                case FailFun of
-                    undefined -> skip;
-                    _ -> FailFun(Reason)
-                end
-        end
-          end).
-
 
 %% -----------------------------------------------------------------
 %% Send a request to a generic server and return a Key which should be
@@ -407,176 +262,86 @@ check_response(Msg, RequestId) ->
 cast(Dest, Request) ->
     do_send(Dest, cast_msg(Request)).
 
-%% @doc 向默认接收地址发送一条cast消息, 名字和原有的重复了所以改成ecast, 进程内使用
--spec ecast(term()) -> ok.
-ecast(Request) ->
-    send(cast_msg(Request)).
-
-%% @doc 向默认接收地址发送一条延时N毫秒的cast消息, 进程内使用
--spec cast_after(non_neg_integer(), term()) -> ok.
-cast_after(After, Request) ->
-    send_after(After, cast_msg(Request)).
-
 %% @doc 发送一条延时N毫秒的cast消息, 进程内使用
 -spec cast_after(non_neg_integer(), server_ref(), term()) -> ok.
 cast_after(After, Dest, Request) ->
     send_after(After, Dest, cast_msg(Request)).
 
-%% @doc 相当于在X毫秒时间戳(毫秒)向默认接收地址发送一条cast消息, 进程内使用
--spec cast_at(non_neg_integer(), term()) -> ok.
-cast_at(ExceptTime, Request) ->
-    send_at(ExceptTime, cast_msg(Request)).
-
 %% @doc 相当于在X毫秒时间戳(毫秒)发送一条cast消息, 进程内使用
 -spec cast_at(non_neg_integer(), server_ref(), term()) -> ok.
-cast_at(ExceptTime, Dest, Request) ->
-    send_at(ExceptTime, Dest, cast_msg(Request)).
-
-%% @doc 发送一条cast消息同时指定期望时间, 进程内使用
--spec cast_after(non_neg_integer(), server_ref(), non_neg_integer(), term()) -> ok.
-cast_after(After, Dest, ExceptTime, Request) ->
-    send_after(After, Dest, ExceptTime, cast_msg(Request)).
-
-%% @doc 马上向默认接收地址发送一条cast消息, 不可回滚, 进程内使用
--spec cast_immediately(term()) -> ok.
-cast_immediately(Request) ->
-    send_immediately(cast_msg(Request)).
+cast_at(MilliSecond, Dest, Request) ->
+    send_at(MilliSecond, Dest, cast_msg(Request)).
 
 %% @doc 马上发送一条cast消息, 不可回滚, 进程内使用
 -spec cast_immediately(server_ref(), term()) -> ok.
 cast_immediately(Dest, Request) ->
     send_immediately(Dest, cast_msg(Request)).
 
-%% @doc 马上向默认接收地址发送一条延时N毫秒的cast消息, 不可回滚, 进程内使用
--spec cast_after_immediately(non_neg_integer(), term()) -> ok.
-cast_after_immediately(After, Request) ->
-    send_after_immediately(After, cast_msg(Request)).
-
 %% @doc 马上发送一条延时N毫秒的cast消息, 不可回滚, 进程内使用
 -spec cast_after_immediately(non_neg_integer(), server_ref(), term()) -> ok.
 cast_after_immediately(After, Dest, Request) ->
     send_after_immediately(After, Dest, cast_msg(Request)).
 
-%% @doc 相当于在X毫秒时间戳向默认接收地址发送一条cast消息, 不可回滚, 进程内使用
--spec cast_at_immediately(non_neg_integer(), term()) -> ok.
-cast_at_immediately(ExceptTime, Request) ->
-    send_at_immediately(ExceptTime, cast_msg(Request)).
-
 %% @doc 相当于在X毫秒时间戳发送一条cast消息, 不可回滚, 进程内使用
 -spec cast_at_immediately(non_neg_integer(), server_ref(), term()) -> ok.
-cast_at_immediately(ExceptTime, Dest, Request) ->
-    send_at_immediately(ExceptTime, Dest, cast_msg(Request)).
-
-%% @doc 马上发送一条延时N毫秒的cast消息同时指定期望时间, 不可回滚, 进程内使用
--spec cast_after_immediately(non_neg_integer(), server_ref(), non_neg_integer(), term()) -> ok.
-cast_after_immediately(After, Dest, ExceptTime, Request) ->
-    send_after_immediately(After, Dest, ExceptTime, Request).
+cast_at_immediately(MilliSecond, Dest, Request) ->
+    send_at_immediately(MilliSecond, Dest, cast_msg(Request)).
 
 cast_msg(Request) -> {'$gen_cast', Request}.
 
 %% -----------------------------------------------------------------
 %% Send a msg.
 %% -----------------------------------------------------------------
-%% @doc 向默认接收地址发送一条消息, 进程内使用
--spec send(term()) -> ok.
-send(Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), undefined, (Request)) | get(?PD_EXIA_SEND)]),
-    ok.
 
 %% @doc 发送一条消息, 进程内使用
 -spec send(non_neg_integer(), term()) -> ok.
 send(Dest, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(Dest, undefined, (Request)) | get(?PD_EXIA_SEND)]),
-    ok.
-
-%% @doc 向默认接收地址发送一条延时N毫秒的消息, 进程内使用
--spec send_after(non_neg_integer(), term()) -> ok.
-send_after(After, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), get_expect_millisecond() + After, (Request)) | get(?PD_EXIA_SEND)]),
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(0, Dest, (Request)) | get(?PD_EXIA_SEND)]),
     ok.
 
 %% @doc 发送一条延时N毫秒的消息, 进程内使用
 -spec send_after(non_neg_integer(), server_ref(), term()) -> ok.
-send_after(After, Dest, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(Dest, get_expect_millisecond() + After, (Request)) | get(?PD_EXIA_SEND)]),
-    ok.
-
-%% @doc 相当于在X毫秒时间戳(毫秒)向默认接收地址发送一条消息, 进程内使用
--spec send_at(non_neg_integer(), term()) -> ok.
-send_at(ExceptTime, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), ExceptTime, (Request)) | get(?PD_EXIA_SEND)]),
+send_after(After, Dest, Request) when After =< ((1 bsl 32) - 1) ->
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(After, Dest, (Request)) | get(?PD_EXIA_SEND)]),
     ok.
 
 %% @doc 相当于在X毫秒时间戳(毫秒)发送一条消息, 进程内使用
 -spec send_at(non_neg_integer(), server_ref(), term()) -> ok.
-send_at(ExceptTime, Dest, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(Dest, ExceptTime, (Request)) | get(?PD_EXIA_SEND)]),
+send_at(MilliSecond, Dest, Request) when MilliSecond > ((1 bsl 32) - 1) ->
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(MilliSecond, Dest, (Request)) | get(?PD_EXIA_SEND)]),
     ok.
-
-%% @doc 发送一条消息同时指定期望时间, 进程内使用
--spec send_after(non_neg_integer(), server_ref(), non_neg_integer(), term()) -> ok.
-send_after(After, Dest, ExceptTime, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(After, Dest, ExceptTime, (Request)) | get(?PD_EXIA_SEND)]),
-    ok.
-
-%% @doc 马上向默认接收地址发送一条消息, 不可回滚, 进程内使用
--spec send_immediately(term()) -> ok.
-send_immediately(Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), undefined, (Request))], get_msg_millisecond()).
 
 %% @doc 马上发送一条消息, 不可回滚, 进程内使用
 -spec send_immediately(server_ref(), term()) -> ok.
 send_immediately(Dest, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(Dest, undefined, (Request))], get_msg_millisecond()).
-
-%% @doc 马上向默认接收地址发送一条延时N毫秒的消息, 不可回滚, 进程内使用
--spec send_after_immediately(non_neg_integer(), term()) -> ok.
-send_after_immediately(After, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), get_expect_millisecond() + After, (Request))], get_msg_millisecond()).
+    flush_msg([?EXIA_PREPARE_MSG(0, Dest, (Request))]).
 
 %% @doc 马上发送一条延时N毫秒的消息, 不可回滚, 进程内使用
 -spec send_after_immediately(non_neg_integer(), server_ref(), term()) -> ok.
-send_after_immediately(After, Dest, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(Dest, get_expect_millisecond() + After, (Request))], get_msg_millisecond()).
-
-%% @doc 相当于在X毫秒时间戳向默认接收地址发送一条消息, 不可回滚, 进程内使用
--spec send_at_immediately(non_neg_integer(), term()) -> ok.
-send_at_immediately(ExceptTime, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(get(?PD_EXIA_DEST), ExceptTime, (Request))], get_msg_millisecond()).
+send_after_immediately(After, Dest, Request) when After =< ((1 bsl 32) - 1) ->
+    flush_msg([?EXIA_PREPARE_MSG(After, Dest, (Request))]).
 
 %% @doc 相当于在X毫秒时间戳发送一条消息, 不可回滚, 进程内使用
 -spec send_at_immediately(non_neg_integer(), server_ref(), term()) -> ok.
-send_at_immediately(ExceptTime, Dest, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(Dest, ExceptTime, (Request))], get_msg_millisecond()).
-
-%% @doc 马上发送一条延时N毫秒的消息同时指定期望时间, 不可回滚, 进程内使用
--spec send_after_immediately(non_neg_integer(), server_ref(), non_neg_integer(), term()) -> ok.
-send_after_immediately(After, Dest, ExceptTime, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(After, Dest, ExceptTime, (Request))], get_msg_millisecond()).
+send_at_immediately(MilliSecond, Dest, Request) when MilliSecond > ((1 bsl 32) - 1) ->
+    flush_msg([?EXIA_PREPARE_MSG(MilliSecond, Dest, (Request))]).
 
 %% 刷新msg缓存
 flush_msg() ->
-    flush_msg(lists:reverse(get(?PD_EXIA_SEND)), get_msg_millisecond()),
+    flush_msg(lists:reverse(get(?PD_EXIA_SEND))),
     put(?PD_EXIA_SEND, []).
 
-flush_msg([], _MsgMilliSecond) ->
+flush_msg([]) ->
     ok;
-flush_msg([?EXIA_PREPARE_MSG(Dest, undefined, Request) | T], MsgMilliSecond) ->
-    do_send(Dest, #exia_msg{expect_time = get_expect_millisecond(), msg = Request}),
-    flush_msg(T, MsgMilliSecond);
-flush_msg([?EXIA_PREPARE_MSG(Dest, ExceptTime, Request) | T], MsgMilliSecond) ->
-    case MsgMilliSecond >= ExceptTime of
-        true ->
-            %% 期望时间比真实时间还要早, 马上发
-            do_send(Dest, #exia_msg{expect_time = ExceptTime, msg = Request});
-        _ ->
-            After = ExceptTime - MsgMilliSecond,
-            erlang:send_after(After, Dest, #exia_msg{expect_time = ExceptTime, msg = Request})
-    end,
-    flush_msg(T, MsgMilliSecond);
-flush_msg([?EXIA_PREPARE_MSG(After, Dest, ExceptTime, Request) | T], MsgMilliSecond) ->
-    erlang:send_after(After, Dest, #exia_msg{expect_time = ExceptTime, msg = Request}),
-    flush_msg(T, MsgMilliSecond).
+flush_msg([?EXIA_PREPARE_MSG(0, Dest, Request) | T]) ->
+    do_send(Dest, Request),
+    flush_msg(T);
+flush_msg([?EXIA_PREPARE_MSG(After, Dest, Request) | T]) when After =< ((1 bsl 32) - 1) ->
+    erlang:send_after(After, Dest, Request),
+    flush_msg(T);
+flush_msg([?EXIA_PREPARE_MSG(MilliSecond, Dest, Request) | T]) ->
+    erlang:send_after(max(0, MilliSecond - get_millisecond()), Dest, Request),
+    flush_msg(T).
 
 do_send({global, Name}, Request) ->
     catch global:send(Name, Request),
@@ -646,34 +411,43 @@ multi_call(Nodes, Name, Req, Timeout)
 %%% -----------------------------------------------------------------
 %% 时间相关
 %%% -----------------------------------------------------------------
-%% @doc 获取期望时间, 毫秒, 进程内使用
--spec get_expect_millisecond() -> non_neg_integer().
-get_expect_millisecond() ->
-    get(?PD_EXIA_EXPECT_TIME).
+%% @doc 获取毫秒, 进程内使用
+-spec get_millisecond() -> non_neg_integer().
+get_millisecond() ->
+    case get(?PD_EXIA_TIME) of
+        undefined ->
+            Time = erlang:system_time(microsecond),
+            put(?PD_EXIA_TIME, Time),
+            Time;
+        Time ->
+            Time
+    end.
 
-%% @doc 获取期望时间, 秒, 进程内使用
--spec get_expect_second() -> non_neg_integer().
-get_expect_second() ->
-    get(?PD_EXIA_EXPECT_TIME) div 1000.
+%% @doc 设置毫秒, 消息如同在X时间点收到,
+%% 减少由于erlang内部定时器带来的误差,
+%% 对时间极度敏感可以使用,
+%% 注意这部分不参与回滚, 进程内使用
+-spec set_millisecond(non_neg_integer()) -> ok.
+set_millisecond(Time) ->
+    put(?PD_EXIA_TIME, Time).
 
-%% @doc 获取消息时间, 毫秒, 进程内使用
--spec get_msg_millisecond() -> non_neg_integer().
-get_msg_millisecond() ->
-    get(?PD_EXIA_MSG_TIME).
+%% @doc 获取秒, 进程内使用
+-spec get_second() -> non_neg_integer().
+get_second() ->
+    get(?PD_EXIA_TIME) div 1000.
 
-%% @doc 获取消息时间, 秒, 进程内使用
--spec get_msg_second() -> non_neg_integer().
-get_msg_second() ->
-    get(?PD_EXIA_MSG_TIME) div 1000.
+%% @equiv set_millisecond(Time * 1000)
+-spec set_second(non_neg_integer()) -> ok.
+set_second(Time) ->
+    set_millisecond(Time * 1000).
 
 %%% -----------------------------------------------------------------
 %% 模拟进程字典
 %%% -----------------------------------------------------------------
 %% @doc 模拟进程字典获取value, 进程内使用
--spec eget(term(), term()) -> ok.
+-spec eget(term(), term()) -> term().
 eget(Key, Default) ->
-    maps:get(Key, get(?PD_EXIA_PD), Default),
-    ok.
+    maps:get(Key, get(?PD_EXIA_PD), Default).
 
 %% @doc 模拟进程字典设置value, 但不会返回以前的值, 进程内使用
 -spec eset(term(), term()) -> ok.
@@ -735,7 +509,7 @@ init_it(Starter, Parent, Name0, Mod, Args, Options) ->
     Debug = gen:debug_options(Name, Options),
     HibernateAfterTimeout = gen:hibernate_after(Options),
     init_pd(),
-
+    
     case init_it(Mod, Args) of
         {ok, {ok, State}} ->
             proc_lib:init_ack(Starter, {ok, self()}),
@@ -1055,21 +829,9 @@ try_dispatch(Mod, Func, Msg, State) ->
             {'EXIT', Class, R, Stacktrace}
     end.
 
-try_handle_call(_Mod, {exia_private, get_dest}, _From, State) ->
-    {ok, {reply, get(?PD_EXIA_DEST), State}};
-try_handle_call(_Mod, {exia_private, set_dest, Dest}, _From, State) ->
-    {ok, {reply, put(?PD_EXIA_DEST, Dest), State}};
 try_handle_call(_Mod, {exia_private, execute, Execute}, _From, State) ->
     try
         {ok, prim_execute(Execute, State)}
-    catch
-        throw:{exia_private, return, R} -> {ok, R};
-        Class:R:Stacktrace ->
-            {'EXIT', Class, R, Stacktrace}
-    end;
-try_handle_call(Mod, #exia_msg{msg = Msg}, From, State) ->
-    try
-        {ok, Mod:handle_call(Msg, From, State)}
     catch
         throw:{exia_private, return, R} -> {ok, R};
         Class:R:Stacktrace ->
@@ -1245,32 +1007,19 @@ reply(Name, From, Reply, State, Debug) ->
 init_pd() ->
     put(?PD_EXIA_SEND, []),
     put(?PD_EXIA_PD, #{}),
-    Now = erlang:system_time(millisecond),
-    put(?PD_EXIA_MSG_TIME, Now),
-    put(?PD_EXIA_EXPECT_TIME, Now),
     vmysql:process_init().
 
 %% 处理消息前后
 before_msg(State) ->
-    Now = erlang:system_time(millisecond),
-    put(?PD_EXIA_MSG_TIME, Now),
-    put(?PD_EXIA_EXPECT_TIME, Now),
     hold(State).
 
-before_msg(#exia_msg{msg = Msg, expect_time = ExpectTime}, State) ->
-    Now = erlang:system_time(millisecond),
-    put(?PD_EXIA_MSG_TIME, Now),
-    put(?PD_EXIA_EXPECT_TIME, ExpectTime),
-    {Msg, hold(State)};
 before_msg(Msg, State) ->
-    Now = erlang:system_time(millisecond),
-    put(?PD_EXIA_MSG_TIME, Now),
-    put(?PD_EXIA_EXPECT_TIME, Now),
     {Msg, hold(State)}.
 
 after_msg() ->
     flush_msg(),
     vmysql:sync_to_ets(),
+    put(?PD_EXIA_TIME, undefined),
     put(?PD_EXIA_ROLLBACK, undefined).
 
 %% @doc 刷新缓存, 保存回滚点, 进程内使用
@@ -1287,8 +1036,14 @@ return(Return) ->
     throw({exia_private, return, Return}).
 
 %% @doc 下层return若被上层catch到, 可以用该函数获取return内容, 进程内使用
--spec get_return(term()) -> error| {ok, Return :: term()}.
-get_return({exia_private, return, Return}) -> {ok, Return};
+%% ```
+%% case exit:get_return((catch Expr)) of
+%%   {exia_return, Return} -> exit:return(Return);
+%%   Other -> do_something
+%% end
+%% '''
+-spec get_return(term()) -> {exia_return, Return :: term()}|term().
+get_return({exia_private, return, Return}) -> {exia_return, Return};
 get_return(_) -> error.
 
 %%-----------------------------------------------------------------
@@ -1297,7 +1052,6 @@ get_return(_) -> error.
 hold(State) ->
     #exia_rollback{
         state = State,
-        dest = get(?PD_EXIA_DEST),
         send = get(?PD_EXIA_SEND),
         virture = vmysql:hold(),
         pd = get(?PD_EXIA_PD)
@@ -1306,11 +1060,10 @@ hold(State) ->
 rollback(Rollback) ->
     case get(?PD_EXIA_ROLLBACK) of
         undefined ->
-            #exia_rollback{state = State, dest = Dest, send = Send, virture = Virture, pd = PD} = Rollback;
-        #exia_rollback{state = State, dest = Dest, send = Send, virture = Virture, pd = PD} ->
+            #exia_rollback{state = State, send = Send, virture = Virture, pd = PD} = Rollback;
+        #exia_rollback{state = State, send = Send, virture = Virture, pd = PD} ->
             put(?PD_EXIA_ROLLBACK, undefined)
     end,
-    put(?PD_EXIA_DEST, Dest),
     put(?PD_EXIA_SEND, Send),
     vmysql:rollback(Virture),
     put(?PD_EXIA_PD, PD),
