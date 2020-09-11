@@ -12,31 +12,42 @@
 %% API
 -export([main/1]).
 
+%% ========private_split_str==========
+-include_lib("kernel/include/file.hrl").
+
 -define(RELEASE_TAG, "prod").
 -define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {fix_hot, fix, []}).
 -define(SAVE_DIR, ["log"]).
 
+main(Args) ->
+    case make_escript() of
+        true ->
+            escript:start(Args);
+        _ ->
+            do_main(Args)
+    end.
+
 %% 打包机用
-main(["tar" | Opt]) ->
+do_main(["tar" | Opt]) ->
     tar(make_opt(Opt));
-main(["tar_date" | Opt]) ->
-    tar_date(make_opt(Opt));
-main(["tar_ebin" | Opt]) ->
+do_main(["tar_backup" | Opt]) ->
+    tar_backup(make_opt(Opt));
+do_main(["tar_ebin" | Opt]) ->
     tar_ebin(make_opt(Opt));
-main(["backup_tree" | Opt]) ->
+do_main(["backup_tree" | Opt]) ->
     backup_tree(make_opt(Opt));
 %% 发布机用
-main(["replace_tar" | Opt]) ->
+do_main(["replace_tar" | Opt]) ->
     replace_tar(make_opt(Opt));
-main(["restart" | Opt]) ->
+do_main(["restart" | Opt]) ->
     stop(make_opt(Opt)),
     start();
-main(["stop" | Opt]) ->
+do_main(["stop" | Opt]) ->
     stop(make_opt(Opt));
-main(["update_ebin" | Opt]) ->
+do_main(["update_ebin" | Opt]) ->
     update_ebin(make_opt(Opt));
-main(_) ->
+do_main(_) ->
     usage().
 
 make_opt([]) ->
@@ -50,11 +61,16 @@ tar(Opt) ->
     {AppName, Version} = get_name_version(Tag),
     io:format("tar ~s-~s~n", [AppName, Version]),
     %% 先打包
-    os:cmd("cd .. && \"./rebar3\" as " ++ Tag ++ " tar"),
-    io:format("tar success~n"),
-    %% 复制到这里
+    Cmd = "cd .. && \"./rebar3\" as " ++ Tag ++ " tar",
+    os:cmd(Cmd),
     TarName = AppName ++ "-" ++ Version ++ ".tar.gz",
-    file:copy("../_build/" ++ Tag ++ "/rel/" ++ AppName ++ "/" ++ TarName, "tmp.tar.gz"),
+    BuildPath = "../_build/" ++ Tag ++ "/rel/" ++ AppName ++ "/" ++ TarName,
+    case filelib:is_file(BuildPath) of
+        true -> skip;
+        _ -> io:format("tar fail, cmd:~n~s~n", [Cmd])
+    end,
+    %% 复制到这里
+    file:copy(BuildPath, "tmp.tar.gz"),
     %% 再套一层打包tar
     ReleaseName = AppName ++ ".tar.gz",
     erl_tar:create(ReleaseName, [{TarName, "tmp.tar.gz"}, "release.escript"]),
@@ -63,29 +79,33 @@ tar(Opt) ->
     %% 备份
     backup(ReleaseName, Opt).
 
-tar_date(Opt) ->
+tar_backup(Opt) ->
     {_, Backup} = lists:keyfind("-backup", 1, Opt),
     {_, Tar} = lists:keyfind("-tar", 1, Opt),
     [AppName, _Date] = string:split(Tar, "_"),
     Tree = make_backup_tree(Backup),
     {_, EBinTarList} = lists:keyfind(Tar, 1, Tree),
     ReleaseName = AppName ++ ".tar.gz",
-    erl_tar:create(ReleaseName, [{EBinTar, Backup ++ "/" ++ EBinTar} || EBinTar <- EBinTarList] ++ [{Tar, Backup ++ "/" ++ Tar}, "release.escript"]).
+    erl_tar:create(ReleaseName, [{EBinTar, Backup ++ "/" ++ EBinTar} || EBinTar <- EBinTarList] ++ [{Tar, Backup ++ "/" ++ Tar}, "release.escript"]),
+    io:format("tar backup:~n~s~n", [[Tar, $\n, [[EBinTar, $\n] || EBinTar <- EBinTarList]]]).
 
 tar_ebin(Opt) ->
     Tag = proplists:get_value("-profile", Opt, ?RELEASE_TAG),
     {AppName, Version} = get_name_version(Tag),
     io:format("tar ~s-~s~n", [AppName, Version]),
     %% 先编译
-    os:cmd("cd .. && \"./rebar3\" as " ++ Tag ++ " compile"),
-    %% 打压缩包
+    Cmd = "cd .. && \"./rebar3\" as " ++ Tag ++ " compile",
+    os:cmd(Cmd),
     EBinPath = "../_build/" ++ Tag ++ "/lib/" ++ AppName ++ "/ebin",
+    %% 打压缩包
     case filelib:is_dir(EBinPath) of
-        true -> erl_tar:create("ebin.tar.gz", [{".", EBinPath}]);
-        _ -> throw({no_ebin, EBinPath})
-    end,
-    io:format("create tar ebin.tar.gz~n", []),
-    backup("ebin.tar.gz", Opt).
+        true ->
+            erl_tar:create("ebin.tar.gz", [{".", EBinPath}]),
+            io:format("create tar ebin.tar.gz~n", []),
+            backup("ebin.tar.gz", Opt);
+        _ ->
+            io:format("tar fail, cmd:~n~s~n", [Cmd])
+    end.
 
 get_name_version(Tag) ->
     {ok, RebarConfig} = file:script("../rebar.config.script"),
@@ -257,8 +277,10 @@ replace_tar(Opt) ->
             end end, {undefined, undefined}, ListDir),
     case Dir of
         undefined ->
+            io:format("install tar~n"),
             init_tar(Opt);
         _ ->
+            io:format("replace tar~n"),
             stop(Opt),
             %% 复制要保存的文件夹
             case filelib:is_dir("replace_tar_tmp") of
@@ -267,9 +289,13 @@ replace_tar(Opt) ->
             end,
             file:make_dir("replace_tar_tmp"),
             lists:foreach(fun(FN) ->
-                case filelib:is_dir(Dir ++ "/" ++ FN) of
-                    true -> copy_dir(Dir ++ "/" ++ FN, "replace_tar_tmp/" ++ FN);
-                    _ -> skip
+                SaveDir = Dir ++ "/" ++ FN,
+                case filelib:is_dir(SaveDir) of
+                    true ->
+                        io:format("backup dir ~s~n", [SaveDir]),
+                        copy_dir(SaveDir, "replace_tar_tmp/" ++ FN);
+                    _ ->
+                        skip
                 end
                           end, ?SAVE_DIR),
             file:del_dir_r(Dir),
@@ -277,6 +303,7 @@ replace_tar(Opt) ->
             OverwriteList = TarListDir -- ["release.escript"],
             ok = erl_tar:extract(Tar, [{cwd, "."}, {files, OverwriteList}, compressed]),
             file:delete(Tar),
+            io:format("extract:~n~s~n", [string:join(OverwriteList, "~n")]),
             init_tar(Opt)
     end.
 
@@ -295,9 +322,11 @@ init_tar(Opt) ->
     %% 解压启动app
     case lists:member($-, AppTar) of
         true ->% {app_name}-{version}
+            io:format("init tar: ~s~n", [AppTar]),
             App = filename:rootname(AppTar, ".tar.gz"),
             ok = erl_tar:extract(AppTar, [{cwd, App}, compressed]);
         _ ->% {app_name}_{date}
+            io:format("init tar_backup: ~s~n", [AppTar]),
             [AppTar1] = element(2, erl_tar:table(AppTar)) -- ["release.escript"],
             ok = erl_tar:extract(AppTar, [{cwd, "."}, {files, [AppTar1]}, compressed]),
             App = filename:rootname(AppTar1, ".tar.gz"),
@@ -309,7 +338,9 @@ init_tar(Opt) ->
         true ->
             lists:foreach(fun(FN) ->
                 case filelib:is_dir("replace_tar_tmp/" ++ FN) of
-                    true -> copy_dir("replace_tar_tmp/" ++ FN, App ++ "/" ++ FN);
+                    true ->
+                        io:format("recover dir ~s~n", [App ++ "/" ++ FN]),
+                        copy_dir("replace_tar_tmp/" ++ FN, App ++ "/" ++ FN);
                     _ -> skip
                 end
                           end, ?SAVE_DIR),
@@ -319,7 +350,7 @@ init_tar(Opt) ->
     end,
     start(),
     Wait = proplists:get_value("-wait", Opt, 1000),
-    io:format("wait ~w~n", [Wait]),
+    io:format("wait: ~w~n", [Wait]),
     timer:sleep(Wait),
     %% 更新 ebin tar
     EBinTarList1 = lists:sort(EBinTarList),
@@ -341,6 +372,7 @@ update_ebin(Tar, Opt) ->
     [Name, _] = string:split(Dir, "-"),
     %% 解压
     ok = erl_tar:extract(Tar, [{cwd, "ebin"}]),
+    io:format("update ebin: ~s~n", [Tar]),
     %% 移动ebin到app的lib
     lists:any(fun(Lib) ->
         case Lib -- Name of
@@ -407,6 +439,24 @@ get_dir() ->
             _ -> Acc
         end end, undefined, FileList).
 
+make_escript() ->
+    {ok, #file_info{mtime = ScriptMTime}} = file:read_file_info("release.escript"),
+    IsMake =
+        case file:read_file_info("release.erl") of
+            {ok, #file_info{mtime = ErlMTime}} when ErlMTime > ScriptMTime -> true;
+            _ -> false
+        end,
+    case IsMake of
+        true ->
+            {ok, Bin} = file:read_file("release.erl"),
+            [_, EscriptBody] = re:split(Bin, <<"%% ========private_split_str==========">>, [{parts, 2}]),
+            file:write_file("release.escript", ["#!/usr/bin/env escript", EscriptBody]),
+            io:format("make ~s~n", ["release.escript"]);
+        _ ->
+            skip
+    end,
+    IsMake.
+
 usage() ->
     io:format("
 release tool
@@ -419,7 +469,7 @@ tar:    create a {app_name}.tar.gz
     -profile [tag], tag define in rebar3.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
     -backup [dir], backup tar to dir like {app_name}-{tag}_yyyymmddhhmmss.tar.gz
     
-tar_date:   create a {app_name}.tar.gz
+tar_backup:   create a {app_name}.tar.gz
         read app and ebin from backup dir and pack a 'date version' like backup tree show
     -backup [dir], backup tar to dir like {app_name}-{tag}_yyyymmddhhmmss.tar.gz
     -tar [app_tar], {app_name}-{tag}_yyyymmddhhmmss.tar.gz
@@ -436,7 +486,7 @@ replace_tar:    update 'app tar', stop -> update/install -> start
                 install if no dir(meaning exist an app) in the path
                 orelse, update
     -mfa [{M, F, A}], if need stop, default " ++ io_lib:format("~w", [?STOP_MFA]) ++ "
-    -wait [time], if tar_date, start -> wait X ms -> update ebin
+    -wait [time], start -> wait X ms -> update ebin
     
 restart:    restart, stop -> start
 
