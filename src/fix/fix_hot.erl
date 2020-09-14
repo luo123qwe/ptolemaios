@@ -11,10 +11,81 @@
 -include("util.hrl").
 
 %% API
--export([fix/0]).
+-export([fix/0, suspend/1, resume/1]).
 
 fix() ->
     ?LOG_ERROR.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 参考release_handler_1 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+suspend(SupList) ->
+    suspend_sup(SupList, []).
+
+suspend_sup([], SuspendList) ->
+    SuspendList;
+suspend_sup([Sup | T], SuspendList) ->
+    case catch supervisor:which_children(Sup) of
+        ChildList when is_list(ChildList) ->
+            SuspendList1 = suspend_pid(Sup, SuspendList),
+            case suspend_child(ChildList, []) of
+                NewSuspendList when is_list(NewSuspendList) ->
+                    suspend_sup(T, NewSuspendList ++ SuspendList1);
+                _Error ->
+                    resume(lists:reverse(SuspendList1)),
+                    error(suspend_fail)
+            end;
+        Error ->
+            ?LOG_ERROR("~p", [Error]),
+            resume(lists:reverse(SuspendList)),
+            error(suspend_fail)
+    end.
+
+suspend_child([], SuspendList) ->
+    SuspendList;
+suspend_child([{_Name, Pid, worker, _Mods} | T], SuspendList) when is_pid(Pid) ->
+    SuspendList1 = suspend_pid(Pid, SuspendList),
+    suspend_child(T, SuspendList1);
+suspend_child([{Name, Pid, supervisor, _Mods} | T], SuspendList) when is_pid(Pid) ->
+    case catch supervisor:which_children(Pid) of
+        ChildList when is_list(ChildList) ->
+            SuspendList1 = suspend_pid(Pid, SuspendList),
+            case catch suspend_child(ChildList, []) of
+                NewSuspendList when is_list(NewSuspendList) ->
+                    %% 先暂停的先恢复
+                    suspend_child(T, NewSuspendList ++ SuspendList1);
+                _Error ->
+                    resume(lists:reverse(SuspendList)),
+                    error(suspend_fail)
+            end;
+        Other ->
+            ?LOG_ERROR("release_handler: ~p~nerror during"
+            " a which_children call to ~p (~w)."
+            " [State: running] Exiting ... ~n",
+                [Other, Name, Pid]),
+            error(which_children_failed)
+    end;
+suspend_child([_ | T], SuspendList) ->
+    suspend_child(T, SuspendList).
+
+suspend_pid(Pid, SuspendList) ->
+    case catch sys:suspend(Pid) of
+        ok ->
+            [Pid | SuspendList];
+        Error ->
+            ?LOG_ERROR("~p", [Error]),
+            resume(lists:reverse(SuspendList)),
+            error(suspend_fail)
+    end.
+
+resume([]) ->
+    ok;
+resume([H | T]) ->
+    case catch sys:resume(H) of
+        ok -> ok;
+        Error ->
+            ?LOG_ERROR("~p", [Error])
+    end,
+    resume([H | T]).
 
 %%reload() ->
 %%    SearchPathList =

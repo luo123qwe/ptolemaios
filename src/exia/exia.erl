@@ -21,15 +21,6 @@
 %%% {exia_private, ...}消息为exia内部消息, 用于支持exia进程的功能
 %%% 其他消息按照gen_server原有设定解码'''</dd>
 %%% </dl>
-%%% <dt>Module:exia_before_msg/1</dt>
-%%% <dd>```
-%%% 收到消息, 执行前的回调'''</dd>
-%%% <dt>Module:exia_flush/1</dt>
-%%% <dd>```
-%%% exia:flush/1, flush前的回调'''</dd>
-%%% <dt>Module:exia_after_msg/1</dt>
-%%% <dd>```
-%%% 收到消息, 执行后, flush前的回调'''</dd>
 %%% @end
 %%%-------------------------------------------------------------------
 -module(exia).
@@ -116,9 +107,6 @@ F :: function()
     {noreply, NewState :: term()} |
     {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
     {stop, Reason :: term(), NewState :: term()}.
--callback exia_before_msg(State :: term()) -> {exia_return, State1 :: term()}.
--callback exia_flush(State :: term()) -> {exia_return, State1 :: term()}.
--callback exia_after_msg(State :: term()) -> {exia_return, State1 :: term()}.
 -callback handle_continue(Info :: term(), State :: term()) ->
     {noreply, NewState :: term()} |
     {noreply, NewState :: term(), timeout() | hibernate | {continue, term()}} |
@@ -138,7 +126,7 @@ term()),
     Status :: term().
 
 -optional_callbacks(
-[exia_before_msg/1, exia_flush/1, exia_after_msg/1, handle_continue/2, terminate/2, code_change/3, format_status/2]).
+[handle_continue/2, terminate/2, code_change/3, format_status/2]).
 
 %%%  -----------------------------------------------------------------
 %%% Starts a generic server.
