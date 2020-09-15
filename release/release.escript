@@ -289,7 +289,7 @@ replace_tar(Opt) ->
             OverwriteList = TarListDir -- ["release.escript"],
             ok = erl_tar:extract(Tar, [{cwd, "."}, {files, OverwriteList}, compressed]),
             file:delete(Tar),
-            io:format("extract: ~s~n", [string:join(OverwriteList, " ")]),
+            io:format("extract:~n~s~n", [string:join(OverwriteList, "~n")]),
             init_tar(Opt)
     end.
 

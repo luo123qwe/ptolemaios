@@ -85,10 +85,7 @@ system_init() ->
 -spec system_init(undefined|function(), undefined|fun((Record :: tuple())-> term()), undefined|function()) -> term().
 system_init(Before, Fun, After) ->
     ?LOG_NOTICE("~p", [build_table()]),
-    case filelib:is_dir(?VMYSQL_DETS_PATH) of
-        true -> ok;
-        _ -> file:make_dir(?VMYSQL_DETS_PATH)
-    end,
+    file:make_dir(?VMYSQL_DETS_PATH),
     ?ETS_VMYSQL_LOAD = ets:new(?ETS_VMYSQL_LOAD, [public, named_table]),
     lists:foreach(fun(Virture) ->
         EtsName = make_ets_name(Virture),
@@ -101,11 +98,11 @@ system_init(Before, Fun, After) ->
 
 %% 保存定义
 save_defined() ->
-    {ok, ?VMYSQL_DETS} = dets:open_file(?VMYSQL_DETS, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?VMYSQL_DETS)}, {keypos, #vmysql.table}]),
+    {ok, ?DETS_VMYSQL} = dets:open_file(?DETS_VMYSQL, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?DETS_VMYSQL)}, {keypos, #vmysql.table}]),
     lists:foreach(fun(Virture) ->
-        dets:insert(?VMYSQL_DETS, Virture)
+        dets:insert(?DETS_VMYSQL, Virture)
                   end, virture_config:all(mysql)),
-    dets:close(?VMYSQL_DETS).
+    dets:close(?DETS_VMYSQL).
 
 %% @doc 初始化进程字典
 process_init() ->
@@ -397,15 +394,15 @@ sync_dets(#vmysql{table = Table, data = Data, private_key_pos = PKPos}) ->
 
 %% @doc 检查dets
 check_dets() ->
-    {ok, ?VMYSQL_DETS} = dets:open_file(?VMYSQL_DETS, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?VMYSQL_DETS)}, {keypos, #vmysql.table}]),
+    {ok, ?DETS_VMYSQL} = dets:open_file(?DETS_VMYSQL, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?DETS_VMYSQL)}, {keypos, #vmysql.table}]),
     filelib:fold_files(?VMYSQL_DETS_PATH, ".*", false,
         fun(FileName, _Acc) ->
             Table = list_to_atom(filename:basename(FileName)),
             case Table of
-                ?VMYSQL_DETS ->
+                ?DETS_VMYSQL ->
                     skip;
                 _ ->
-                    [Virture] = dets:lookup(?VMYSQL_DETS, Table),
+                    [Virture] = dets:lookup(?DETS_VMYSQL, Table),
                     case dets:open_file(Table, [{file, FileName}, {keypos, Virture#vmysql.private_key_pos}]) of
                         {ok, Table} ->
                             case dets:info(Table, size) > 0 of
@@ -435,16 +432,16 @@ fix_dets(Before, Fun, After) ->
     Spawn =
         spawn_link(fun() ->
             process_init(),
-            {ok, ?VMYSQL_DETS} = dets:open_file(?VMYSQL_DETS, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?VMYSQL_DETS)}, {keypos, #vmysql.table}]),
+            {ok, ?DETS_VMYSQL} = dets:open_file(?DETS_VMYSQL, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?DETS_VMYSQL)}, {keypos, #vmysql.table}]),
             ?DO_IF(is_function(Before), Before()),
             filelib:fold_files(?VMYSQL_DETS_PATH, ".*", false,
                 fun(FileName, _Acc) ->
                     Table = list_to_atom(filename:basename(FileName)),
                     case Table of
-                        ?VMYSQL_DETS ->
+                        ?DETS_VMYSQL ->
                             skip;
                         _ ->
-                            [#vmysql{state_pos = StatePos, private_key_pos = PKPos} = Virture] = dets:lookup(?VMYSQL_DETS, Table),
+                            [#vmysql{state_pos = StatePos, private_key_pos = PKPos} = Virture] = dets:lookup(?DETS_VMYSQL, Table),
                             case dets:open_file(Table, [{file, FileName}, {keypos, PKPos}]) of
                                 {ok, Table} ->
                                     %% 兼容在线修复
@@ -478,7 +475,7 @@ fix_dets(Before, Fun, After) ->
                             end
                     end
                 end, []),
-            dets:close(?VMYSQL_DETS),
+            dets:close(?DETS_VMYSQL),
             ?DO_IF(is_function(After), After()),
             Self ! fix
                    end),
@@ -563,7 +560,7 @@ hotfix(Table, Fun) ->
     end.
 
 do_hotfix(Fun, #vmysql{table = Table, state_pos = StatePos, private_key_pos = PKPos, data = Data} = OldVirture, VMysql) ->
-    {ok, ?VMYSQL_DETS} = dets:open_file(?VMYSQL_DETS, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?VMYSQL_DETS)}, {keypos, #vmysql.table}]),
+    {ok, ?DETS_VMYSQL} = dets:open_file(?DETS_VMYSQL, [{file, ?VMYSQL_DETS_PATH ++ "/" ++ atom_to_list(?DETS_VMYSQL)}, {keypos, #vmysql.table}]),
     case virture_config:get(mysql, Table) of
         #vmysql{} = NewConfig ->
             case PKPos == NewConfig#vmysql.private_key_pos of
@@ -598,14 +595,14 @@ do_hotfix(Fun, #vmysql{table = Table, state_pos = StatePos, private_key_pos = PK
                 end end,
             maps:fold(WarpFun, [], Data),
             %% 全部成功, 更新定义
-            dets:insert(?VMYSQL_DETS, NewConfig),
-            dets:close(?VMYSQL_DETS);
+            dets:insert(?DETS_VMYSQL, NewConfig),
+            dets:close(?DETS_VMYSQL);
         _ ->% 表被删除了
             VMsql1 = maps:remove(Table, VMysql),
             put(?PD_VMYSQL, VMsql1),
             put(?PD_VMYSQL_NOT_FLUSH, lists:delete(Table, get(?PD_VMYSQL_NOT_FLUSH))),
-            dets:delete(?VMYSQL_DETS, Table),
-            dets:close(?VMYSQL_DETS)
+            dets:delete(?DETS_VMYSQL, Table),
+            dets:close(?DETS_VMYSQL)
     end,
     ok.
 

@@ -10,7 +10,8 @@
 -export([start/2, stop/1, async_stop/1]).
 
 start(_StartType, _StartArgs) ->
-    log:start(),% 日志
+    %% 日志
+    log:start(),
     ptolemaios_sup:start_link().
 
 stop(_State) ->

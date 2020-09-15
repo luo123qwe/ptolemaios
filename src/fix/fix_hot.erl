@@ -9,12 +9,55 @@
 -author("dominic").
 
 -include("util.hrl").
+-include("fix.hrl").
 
 %% API
--export([fix/0, suspend/1, resume/1]).
+-export([
+    fix/1,
+    suspend/1, resume/1,
+    reload_shell/0, reload_shell/2,
+    reload_release/0, reload_release/1
+]).
 
-fix() ->
-    ?LOG_ERROR.
+-callback run() -> term().
+
+fix(DefaultIndex) ->
+    file:make_dir(?FIX_DETS_PATH),
+    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
+    %% 获取执行下标
+    case dets:lookup(?DETS_FIX, ?MODULE) of
+        [{_, Index0}] -> Index = Index0 + 1;
+        _ -> Index = DefaultIndex
+    end,
+    %% 执行热更代码
+    case Index of
+        undefined -> ok;
+        _ -> dets:insert(?DETS_FIX, {?MODULE, execute(Index)})
+    end,
+    dets:close(?DETS_FIX).
+
+%% 执行代码并且返回最后执行的下标
+execute(Index) ->
+    Module = list_to_atom("fix_hot_" ++ integer_to_list(Index)),
+    case code:is_loaded(Module) =/= false orelse element(1, code:load_file(Module)) =/= error of
+        true ->
+            IsFail =
+                try
+                    ?LOG_NOTICE("~w:run()", [Module]),
+                    Module:run(),
+                    false
+                catch
+                    C:E:S ->
+                        ?LOG_ERROR("hot fix fail fail when ~w~n~w ~w~n~p", [Module, C, E, S]),
+                        true
+                end,
+            case IsFail of
+                true -> Index;
+                _ -> execute(Index + 1)
+            end;
+        false ->
+            Index - 1
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 参考release_handler_1 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -87,55 +130,100 @@ resume([H | T]) ->
     end,
     resume([H | T]).
 
-%%reload() ->
-%%    SearchPathList =
-%%        lists:foldl(fun(CodePath, Acc) ->
-%%
-%%                    end, code:get_path()),
-%%
-%%    Filelist = filelib:fold_files("/../ebin", ".beam", true, fun(File, Acc) -> [File | Acc] end, []),
-%%
-%%    F = fun(File, Acc) ->
-%%        {ok, {Module, NewVsn}} = beam_lib:version(File),
-%%        Acc#{Module => NewVsn}
-%%        end,
-%%    Vsns = lists:foldl(F, #{}, Filelist),
-%%
-%%    F2 = fun(M, Acc0) ->
-%%        List = M:module_info(attributes),
-%%        case lists:keyfind(vsn, 1, List) of
-%%            {vsn, Vsn} ->
-%%                case maps:find(M, Vsns) of
-%%                    {ok, NewVsn} when NewVsn =/= Vsn ->
-%%                        [M | Acc0];
-%%                    _ ->
-%%                        Acc0
-%%                end;
-%%            _ ->
-%%                Acc0
-%%        end
-%%         end,
-%%    Modules = lists:foldl(F2, [], erlang:loaded()),
-%%    error_logger:info_msg("Hotup ~p", [Modules]),
-%%    hotup(Modules, ?false).
-%%hotup(Modules) ->
-%%    hotup(Modules, ?true).
-%%hotup(Modules, IsSync) ->
-%%    {ok, Prepared} = code:prepare_loading(Modules),
-%%    [code:purge(M) || M <- Modules],
-%%    code:finish_loading(Prepared),
-%%    % 是否其他节点也加载
-%%    if
-%%        IsSync ->
-%%            Nodes =
-%%                case xg_span:center_node() of
-%%                    ?undefined ->
-%%                        nodes();
-%%                    Node ->
-%%                        [Node | nodes()]
-%%                end,
-%%            rpc:multicall(Nodes, ?MODULE, hotup, [Modules, ?false]);
-%%        ?true ->
-%%            ok
-%%    end,
-%%    ok.
+reload_shell() ->
+    reload_shell(default, [ptolemaios]).
+
+reload_shell(Profile, AppList) ->
+    ProfileStr = atom_to_list(Profile),
+    %% 先编译
+    ?LOG_NOTICE("~s", [string:replace(os:cmd("cd . && \"./rebar3\" as " ++ ProfileStr ++ " compile"), "\n", "~n")]),
+    %% 获取更新的模块
+    Modules =
+        lists:foldl(fun(App, Acc1) ->
+            %% 代码路径
+            EBinDir = "./_build/" ++ ProfileStr ++ "/lib/" ++ atom_to_list(App) ++ "/ebin",
+            get_app_modules(EBinDir) ++ Acc1
+                    end, [], AppList),
+    {ok, Prepared} = code:prepare_loading(Modules),
+    [code:purge(M) || M <- Modules],
+    code:finish_loading(Prepared),
+    ?LOG_NOTICE("load: ~w", [Modules]).
+
+reload_release() ->
+    reload_release([ptolemaios]).
+
+reload_release(AppList) ->
+    {ok, LibDirList} = file:list_dir("./lib"),
+    %% 获取更新的模块
+    Modules =
+        lists:foldl(fun(App, Acc1) ->
+            %% 找到代码路径
+            LibDir = get_lib_dir(atom_to_list(App), LibDirList),
+            EBinDir = "./lib/" ++ LibDir ++ "/ebin",
+            get_app_modules(EBinDir) ++ Acc1
+                    end, [], AppList),
+    {ok, Prepared} = code:prepare_loading(Modules),
+    [code:purge(M) || M <- Modules],
+    code:finish_loading(Prepared),
+    ?LOG_NOTICE("load: ~w", [Modules]).
+
+get_app_modules(EBinDir) ->
+    %% 拿到所有模块, 对比版本
+    filelib:fold_files(EBinDir, ".beam", true, fun(File, Acc2) ->
+        Module = list_to_atom(filename:rootname(filename:basename(File))),
+        %% 获取代码版本
+        OldVsn = get_current_vsn(Module),
+        NewVsn = get_vsn(File),
+        case OldVsn == unload orelse OldVsn == NewVsn of
+            true -> Acc2;
+            false -> [Module | Acc2]
+        end
+                                               end,
+        []).
+
+get_current_vsn(Mod) ->
+    case code:is_loaded(Mod) of
+        {file, _} ->
+            Attributes = Mod:module_info(attributes),
+            case lists:keyfind(vsn, 1, Attributes) of
+                {vsn, [Vsn]} ->
+                    Vsn;
+                error ->
+                    undefined
+            end;
+        _ ->
+            unload
+    end.
+
+%%-----------------------------------------------------------------
+%% Func: get_vsn/1
+%% Args: Bin = binary()
+%% Purpose: Finds the version attribute of a module.
+%% Returns: Vsn = term()
+%%-----------------------------------------------------------------
+get_vsn(Bin) ->
+    {ok, {_Mod, Vsn}} = beam_lib:version(Bin),
+    case misc_supp:is_string(Vsn) of
+        true ->
+            Vsn;
+        false ->
+            %% If -vsn(Vsn) defines a term which is not a
+            %% string, the value is returned here as [Vsn].
+            case Vsn of
+                [VsnTerm] ->
+                    VsnTerm;
+                _ ->
+                    Vsn
+            end
+    end.
+
+get_lib_dir(AppStr, LibDirList) ->
+    AppStr1 = AppStr ++ "-",
+    [AppDir]
+        = lists:filter(fun(LibDir) ->
+        case re:run(LibDir, AppStr1) of
+            {match, _} -> true;
+            _ -> false
+        end
+                       end, LibDirList),
+    AppDir.

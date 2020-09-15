@@ -1,0 +1,2 @@
+-define(DETS_FIX, fix).
+-define(FIX_DETS_PATH, "fix_dets").

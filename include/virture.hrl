@@ -39,7 +39,7 @@
 -define(PD_VMYSQL_NOT_FLUSH, pd_vmysql_not_flush).%% [table], 记录改变数据且未同步到ets的table, 避免每次遍历全部表
 -define(ETS_VMYSQL_LOAD, ets_vmysql_load).% 已经加载的数据, {{table, key}, 1}
 % 数据保存到数据失败时保存到dets
--define(VMYSQL_DETS, vmysql).% 配置保存表名
+-define(DETS_VMYSQL, vmysql).% 配置保存表名
 -define(VMYSQL_DETS_PATH, "vmysql_dets").% dets文件夹
 -define(VMYSQL_SQL_LIMIT, 1000).% 单次操作拼sql的条数
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

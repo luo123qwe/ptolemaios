@@ -120,8 +120,8 @@
     ]},
 
     {port_specs, [
-        {"priv/enif_example.so", [
-            "c_src/enif_example.c"
+        {"priv/example_enif.so", [
+            "c_src/example_enif.c"
         ]}
     ]}
 ].
