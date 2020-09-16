@@ -13,7 +13,8 @@
 
 %% API
 -export([
-    fix/1,
+    system_init/0,
+    fix/0, fix/1,
     suspend/1, resume/1,
     reload_shell/0, reload_shell/2,
     reload_release/0, reload_release/1
@@ -21,7 +22,30 @@
 
 -callback run() -> term().
 
+system_init() ->
+    file:make_dir(?FIX_DETS_PATH),
+    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
+    case dets:lookup(?DETS_FIX, ?MODULE) of
+        [{_, _Index}] -> skip;
+        _ -> system_init(1)
+    end,
+    dets:close(?DETS_FIX),
+    ok.
+
+system_init(Index) ->
+    Module = ?FIX_HOT_MODULE(Index),
+    case code:load_file(Module) of
+        {module, _} ->
+            system_init(Index + 1);
+        _ ->
+            dets:insert(?DETS_FIX, {?MODULE, Index - 1})
+    end.
+
+fix() ->
+    fix(1).
+
 fix(DefaultIndex) ->
+    %% 只是兼容测试, 因为测试的时候我会直接删掉dets文件夹
     file:make_dir(?FIX_DETS_PATH),
     {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
     %% 获取执行下标
@@ -38,7 +62,7 @@ fix(DefaultIndex) ->
 
 %% 执行代码并且返回最后执行的下标
 execute(Index) ->
-    Module = list_to_atom("fix_hot_" ++ integer_to_list(Index)),
+    Module = ?FIX_HOT_MODULE(Index),
     case code:is_loaded(Module) =/= false orelse element(1, code:load_file(Module)) =/= error of
         true ->
             IsFail =

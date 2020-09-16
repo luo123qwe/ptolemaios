@@ -12,7 +12,13 @@
 start(_StartType, _StartArgs) ->
     %% 日志
     log:start(),
-    ptolemaios_sup:start_link().
+    %% 修复
+    fix_hot:system_init(),
+    fix_restart:system_init(),
+    {ok, Pid} = ptolemaios_sup:start_link(),
+    %% 重启更新
+    fix_restart:fix(),
+    {ok, Pid}.
 
 stop(_State) ->
     log:stop(),% 日志

@@ -1,2 +1,4 @@
 -define(DETS_FIX, fix).
 -define(FIX_DETS_PATH, "fix_dets").
+-define(FIX_HOT_MODULE(Index), list_to_atom("fix_hot_" ++ integer_to_list(Index))).
+-define(FIX_RESTART_MODULE(Index), list_to_atom("fix_restart_" ++ integer_to_list(Index))).

@@ -4,7 +4,7 @@
 -define(RELEASE_TAG, "prod").
 -define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {fix_hot, fix, []}).
--define(SAVE_DIR, ["log"]).
+-define(SAVE_DIR, ["log", "fix_dets", "vmysql_dets"]).
 
 main(Args) ->
     case make_escript() of
