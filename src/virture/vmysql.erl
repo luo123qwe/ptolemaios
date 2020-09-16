@@ -89,7 +89,7 @@ system_init() ->
 system_init(Before, Fun, After) ->
     ?LOG_NOTICE("~p", [build_table()]),
     file:make_dir(?VMYSQL_DETS_PATH),
-    ?ETS_VMYSQL_LOAD = ets:new(?ETS_VMYSQL_LOAD, [public, named_table]),
+    ?ETS_VMYSQL_LOAD = ets:new(?ETS_VMYSQL_LOAD, [public, named_table, {read_concurrency, true}]),
     lists:foreach(fun(Virture) ->
         EtsName = make_ets_name(Virture),
         EtsName = ets:new(EtsName, [{keypos, Virture#vmysql.private_key_pos} | lists:keydelete(keypos, 1, Virture#vmysql.ets_opt)])
@@ -137,7 +137,7 @@ load(Table, SelectKey) ->
 %% @doc 在当前进程初始化一个表
 %% 当SelectKey或WhereSql为undefined时, 等效于没有这个where条件
 %% WhereSql为额外的where语句, 你需要清楚自己在做什么, 否则请加载到内存进行复杂查询
-%% WhereSql=/=[]时总是查询数据库再合本地数据比较
+%% WhereSql=/=undefined时总是查询数据库再和本地数据比较, 同时不会缓存ETS_VMYSQL_LOAD
 -spec load(atom(), undefiend|list(), undefined|iolist()) -> term().
 load(Virture = #vmysql{}, SelectKey, WhereSql) ->
     %% 初始化缓存
@@ -733,7 +733,8 @@ init_data(SelectValue, ExtWhereSql, Virture) ->
                             end
                     end
                           end, Data, Data),
-            ets:insert(?ETS_VMYSQL_LOAD, {{Table, SelectValue}}),
+            %% where总是查表
+            ?DO_IF(WhereSql =/= undefined, ets:insert(?ETS_VMYSQL_LOAD, {{Table, SelectValue}})),
             Virture#vmysql{data = Data1};
         _ ->
             Spec = erlang:make_tuple(RecordSize, '_'),
