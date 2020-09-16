@@ -22,6 +22,7 @@
 
 -callback run() -> term().
 
+%% @private 系统初始化
 system_init() ->
     file:make_dir(?FIX_DETS_PATH),
     {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
@@ -41,11 +42,12 @@ system_init(Index) ->
             dets:insert(?DETS_FIX, {?MODULE, Index - 1})
     end.
 
+%% @doc 执行热更新
 fix() ->
     fix(1).
 
+%% @private 只是兼容测试, 因为测试的时候会直接删掉dets文件夹, 所以给一个默认值
 fix(DefaultIndex) ->
-    %% 只是兼容测试, 因为测试的时候我会直接删掉dets文件夹
     file:make_dir(?FIX_DETS_PATH),
     {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
     %% 获取执行下标
@@ -84,7 +86,8 @@ execute(Index) ->
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 参考release_handler_1 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%% @doc 挂起一个监督者(包括它本身)下的所有进程
+-spec suspend([supervisor:sup_ref()]) -> [pid()].
 suspend(SupList) ->
     suspend_sup(SupList, []).
 
@@ -144,6 +147,8 @@ suspend_pid(Pid, SuspendList) ->
             error(suspend_fail)
     end.
 
+%% @doc 恢复进程, 配合suspend/1使用
+-spec resume([pid()]) -> ok.
 resume([]) ->
     ok;
 resume([H | T]) ->
@@ -154,9 +159,12 @@ resume([H | T]) ->
     end,
     resume([H | T]).
 
+%% @equiv  reload_shell(default, [ptolemaios])
 reload_shell() ->
     reload_shell(default, [ptolemaios]).
 
+%% @doc 对于rebar3 shell启动的终端, 重载app的代码
+-spec reload_shell(atom(), [atom()]) -> any().
 reload_shell(Profile, AppList) ->
     ProfileStr = atom_to_list(Profile),
     %% 先编译
@@ -173,9 +181,12 @@ reload_shell(Profile, AppList) ->
     code:finish_loading(Prepared),
     ?LOG_NOTICE("load: ~w", [Modules]).
 
+%% @equiv  reload_release([ptolemaios])
 reload_release() ->
     reload_release([ptolemaios]).
 
+%% @doc 对于release启动的终端, 重载app的代码
+-spec reload_release([atom()]) -> any().
 reload_release(AppList) ->
     {ok, LibDirList} = file:list_dir("./lib"),
     %% 获取更新的模块

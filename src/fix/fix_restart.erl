@@ -2,7 +2,7 @@
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
 %%% @doc
-%%%
+%%% 重启更新
 %%% @end
 %%%-------------------------------------------------------------------
 -module(fix_restart).
@@ -19,6 +19,7 @@
 
 -callback run() -> term().
 
+%% @private 系统初始化
 system_init() ->
     file:make_dir(?FIX_DETS_PATH),
     {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
@@ -38,11 +39,12 @@ system_init(Index) ->
             dets:insert(?DETS_FIX, {?MODULE, Index - 1})
     end.
 
+%% @doc 执行更新
 fix() ->
     fix(1).
 
+%% @private 只是兼容测试, 因为测试的时候会直接删掉dets文件夹, 所以给一个默认值
 fix(DefaultIndex) ->
-    %% 只是兼容测试, 因为测试的时候我会直接删掉dets文件夹
     file:make_dir(?FIX_DETS_PATH),
     {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
     %% 获取执行下标
@@ -69,7 +71,7 @@ execute(Index) ->
                     false
                 catch
                     C:E:S ->
-                        ?LOG_ERROR("hot fix fail fail when ~w~n~w ~w~n~p", [Module, C, E, S]),
+                        ?LOG_ERROR("restart fix fail fail when ~w~n~w ~w~n~p", [Module, C, E, S]),
                         true
                 end,
             case IsFail of

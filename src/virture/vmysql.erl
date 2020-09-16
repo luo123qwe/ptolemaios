@@ -25,6 +25,9 @@
 %% 算是private
 -export([build_table/0, build_table/1, system_init/0, system_init/3, save_defined/0, fix_dets/3, check_dets/0, hotfix/2]).
 
+%% 数据库结构
+-export([query/1]).
+
 -type json_def() :: term().
 -type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary|json_def().
 -export_type([field_type/0]).
@@ -42,7 +45,7 @@ build_table(VirtureList) ->
         PrivateKey = ["primary key(", string:join([atom_to_list(Field) || Field <- Virture#vmysql.private_key], ","), $)],
         Sql = ["create table ", atom_to_list(Virture#vmysql.table), "(", Fields, PrivateKey, Index, ")ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
 %%        io:format("~s~n", [Sql]),
-        case mysql_poolboy:query(?VMYSQL_POOL, Sql) of
+        case query(Sql) of
             {error, {1050, _, _}} ->% 表已经存在
                 {Virture#vmysql.table, exists};
             {error, Error} ->
@@ -371,9 +374,9 @@ do_sync_to_db(ReplaceSql, ReplaceIOList, DeleteIOList) ->
     %% 执行sql
     if
         ReplaceIOList1 =/= [] ->
-            mysql_poolboy:query(?VMYSQL_POOL, [ReplaceSql, ReplaceIOList1, $;, DeleteIOList]);
+            query([ReplaceSql, ReplaceIOList1, $;, DeleteIOList]);
         DeleteIOList =/= [] ->
-            mysql_poolboy:query(?VMYSQL_POOL, DeleteIOList);
+            query(DeleteIOList);
         true ->
             ok
     end.
@@ -614,6 +617,10 @@ is_same_def(Old, New) ->
         andalso Old#vmysql.all_fields == New#vmysql.all_fields
         andalso Old#vmysql.record_size == New#vmysql.record_size.
 
+%% @doc 数据库查询
+query(IOList) ->
+    mysql_poolboy:query(?VMYSQL_POOL, IOList).
+
 %% 初始化
 init_virture(#vmysql{all_fields = AllField, private_key = PrivateKey, select_key = Selectkey} = Virture) ->
     %% 初始化优化sql
@@ -699,7 +706,7 @@ init_data(SelectValue, ExtWhereSql, Virture) ->
                             _ -> [join_where(WhereSql, SelectKey, SelectValue), " AND ", ExtWhereSql]
                         end
                 end,
-            {ok, _ColumnNames, Rows} = mysql_poolboy:query(?VMYSQL_POOL, [SelectSql, WhereSql1]),
+            {ok, _ColumnNames, Rows} = query([SelectSql, WhereSql1]),
             %% 构造record数据
             Data =
                 lists:foldl(fun(Row, Acc) ->
@@ -976,7 +983,7 @@ base_test_() ->
             vmysql:fix_dets(undefined, fun(R) ->
                 R1 = R#vmysql_test_player{to_json = [{1, {2, 3}}, {11, {22, 33}}]},
                 vmysql:insert(R1)
-                                              end, undefined),
+                                       end, undefined),
             [#vmysql_test_player{}] = ets:lookup(vmysql:make_ets_name(vmysql_test_player), [4]),
             vmysql:clean_pd([vmysql_test_player]),
             vmysql:clean_ets([vmysql_test_player]),
