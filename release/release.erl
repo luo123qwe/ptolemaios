@@ -18,12 +18,13 @@
 -define(RELEASE_TAG, "prod").
 -define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {fix_hot, fix, []}).
--define(SAVE_DIR, ["log", "fix_dets", "vmysql_dets"]).
+-define(REUSE_DIR, ["log", "fix_dets", "vmysql_dets"]).
 
 main(Args) ->
     case make_escript() of
         true ->
-            escript:start(Args);
+            %% 新代码再执行一次
+            escript:start();
         _ ->
             do_main(Args)
     end.
@@ -52,20 +53,20 @@ do_main(_) ->
 
 make_opt([]) ->
     [];
-make_opt(["-save_dir" | T]) ->
-    {T1, SaveDirList} = make_opt_save_dir(T, []),
-    [{"-save_dir", SaveDirList} | make_opt(T1)];
+make_opt(["-reuse_dir" | T]) ->
+    {T1, SaveDirList} = make_opt_reuse_dir(T, []),
+    [{"-reuse_dir", SaveDirList} | make_opt(T1)];
 make_opt([K, V | T]) ->
     [{K, V} | make_opt(T)].
 
-make_opt_save_dir([], SaveDirList) ->
+make_opt_reuse_dir([], SaveDirList) ->
     {[], SaveDirList};
-make_opt_save_dir([H | T] = L, SaveDirList) ->
+make_opt_reuse_dir([H | T] = L, SaveDirList) ->
     case H of
         "-" ++ _ ->
             {L, SaveDirList};
         _ ->
-            make_opt_save_dir(T, [H | SaveDirList])
+            make_opt_reuse_dir(T, [H | SaveDirList])
     end.
 
 %% 打包一个版本
@@ -293,32 +294,41 @@ replace_tar(Opt) ->
             io:format("install tar~n"),
             init_tar(Opt);
         _ ->
-            io:format("replace tar~n"),
-            stop(Opt),
-            %% 复制要保存的文件夹
-            case filelib:is_dir("replace_tar_tmp") of
-                true -> file:del_dir_r("replace_tar_tmp");
-                _ -> skip
-            end,
-            file:make_dir("replace_tar_tmp"),
-            SaveDirList = proplists:get_value("-save_dir", Opt, ?SAVE_DIR),
-            lists:foreach(fun(FN) ->
-                SaveDir = Dir ++ "/" ++ FN,
-                case filelib:is_dir(SaveDir) of
-                    true ->
-                        io:format("backup dir ~s~n", [SaveDir]),
-                        copy_dir(SaveDir, "replace_tar_tmp/" ++ FN);
-                    _ ->
-                        skip
-                end
-                          end, SaveDirList),
-            file:del_dir_r(Dir),
-            {ok, TarListDir} = erl_tar:table(Tar, [compressed]),
-            OverwriteList = TarListDir -- ["release.escript"],
-            ok = erl_tar:extract(Tar, [{cwd, "."}, {files, OverwriteList}, compressed]),
-            file:delete(Tar),
-            io:format("extract:~n~s~n", [string:join(OverwriteList, "~n")]),
-            init_tar(Opt)
+            case filelib:is_file("replace_escript_mask") of
+                false ->
+                    io:format("replace escript~n"),
+                    ok = erl_tar:extract(Tar, [{cwd, "."}, {files, ["release.escript"]}, compressed]),
+                    file:write_file("replace_escript_mask", []),
+                    escript:start();
+                _ ->
+                    file:delete("replace_escript_mask"),
+                    io:format("replace tar~n"),
+                    stop(Opt),
+                    %% 复制要保存的文件夹
+                    case filelib:is_dir("replace_tar_tmp") of
+                        true -> file:del_dir_r("replace_tar_tmp");
+                        _ -> skip
+                    end,
+                    file:make_dir("replace_tar_tmp"),
+                    SaveDirList = proplists:get_value("-reuse_dir", Opt, ?REUSE_DIR),
+                    lists:foreach(fun(FN) ->
+                        SaveDir = Dir ++ "/" ++ FN,
+                        case filelib:is_dir(SaveDir) of
+                            true ->
+                                io:format("backup dir ~s~n", [SaveDir]),
+                                copy_dir(SaveDir, "replace_tar_tmp/" ++ FN);
+                            _ ->
+                                skip
+                        end
+                                  end, SaveDirList),
+                    file:del_dir_r(Dir),
+                    {ok, TarListDir} = erl_tar:table(Tar, [compressed]),
+                    OverwriteList = TarListDir -- ["release.escript"],
+                    ok = erl_tar:extract(Tar, [{cwd, "."}, {files, OverwriteList}, compressed]),
+                    file:delete(Tar),
+                    io:format("extract:~n~s~n", [string:join(OverwriteList, "~n")]),
+                    init_tar(Opt)
+            end
     end.
 
 init_tar(Opt) ->
@@ -350,7 +360,7 @@ init_tar(Opt) ->
     %% 复制保存的文件夹
     case filelib:is_dir("replace_tar_tmp") of
         true ->
-            SaveDirList = proplists:get_value("-save_dir", Opt, ?SAVE_DIR),
+            SaveDirList = proplists:get_value("-reuse_dir", Opt, ?REUSE_DIR),
             lists:foreach(fun(FN) ->
                 case filelib:is_dir("replace_tar_tmp/" ++ FN) of
                     true ->
@@ -502,7 +512,7 @@ replace_tar:    update 'app tar', stop -> update/install -> start
                 orelse, update
     -mfa [{M, F, A}], if need stop, default " ++ io_lib:format("~w", [?STOP_MFA]) ++ "
     -wait [time], start -> wait X ms -> update ebin
-    -save_dir [dir1[ dir2]], save these dir when replace, default " ++ string:join(?SAVE_DIR, " ") ++ "
+    -reuse_dir [dir1[ dir2]], reuse these dir when replace, default " ++ string:join(?REUSE_DIR, " ") ++ "
     
 restart:    restart, stop -> start
 
