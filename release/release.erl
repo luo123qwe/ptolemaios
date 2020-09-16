@@ -52,8 +52,21 @@ do_main(_) ->
 
 make_opt([]) ->
     [];
+make_opt(["-save_dir" | T]) ->
+    {T1, SaveDirList} = make_opt_save_dir(T, []),
+    [{"-save_dir", SaveDirList} | make_opt(T1)];
 make_opt([K, V | T]) ->
     [{K, V} | make_opt(T)].
+
+make_opt_save_dir([], SaveDirList) ->
+    {[], SaveDirList};
+make_opt_save_dir([H | T] = L, SaveDirList) ->
+    case H of
+        "-" ++ _ ->
+            {L, SaveDirList};
+        _ ->
+            make_opt_save_dir(T, [H | SaveDirList])
+    end.
 
 %% 打包一个版本
 tar(Opt) ->
@@ -288,6 +301,7 @@ replace_tar(Opt) ->
                 _ -> skip
             end,
             file:make_dir("replace_tar_tmp"),
+            SaveDirList = proplists:get_value("-save_dir", Opt, ?SAVE_DIR),
             lists:foreach(fun(FN) ->
                 SaveDir = Dir ++ "/" ++ FN,
                 case filelib:is_dir(SaveDir) of
@@ -297,7 +311,7 @@ replace_tar(Opt) ->
                     _ ->
                         skip
                 end
-                          end, ?SAVE_DIR),
+                          end, SaveDirList),
             file:del_dir_r(Dir),
             {ok, TarListDir} = erl_tar:table(Tar, [compressed]),
             OverwriteList = TarListDir -- ["release.escript"],
@@ -336,6 +350,7 @@ init_tar(Opt) ->
     %% 复制保存的文件夹
     case filelib:is_dir("replace_tar_tmp") of
         true ->
+            SaveDirList = proplists:get_value("-save_dir", Opt, ?SAVE_DIR),
             lists:foreach(fun(FN) ->
                 case filelib:is_dir("replace_tar_tmp/" ++ FN) of
                     true ->
@@ -343,7 +358,7 @@ init_tar(Opt) ->
                         copy_dir("replace_tar_tmp/" ++ FN, App ++ "/" ++ FN);
                     _ -> skip
                 end
-                          end, ?SAVE_DIR),
+                          end, SaveDirList),
             file:del_dir_r("replace_tar_tmp");
         _ ->
             skip
@@ -487,6 +502,7 @@ replace_tar:    update 'app tar', stop -> update/install -> start
                 orelse, update
     -mfa [{M, F, A}], if need stop, default " ++ io_lib:format("~w", [?STOP_MFA]) ++ "
     -wait [time], start -> wait X ms -> update ebin
+    -save_dir [dir1[ dir2]], save these dir when replace, default " ++ string:join(?SAVE_DIR, " ") ++ "
     
 restart:    restart, stop -> start
 
