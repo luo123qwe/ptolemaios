@@ -40,7 +40,6 @@ make_opt([]) ->
     [];
 make_opt(["-save_dir" | T]) ->
     {T1, SaveDirList} = make_opt_save_dir(T, []),
-    io:format(string:join(SaveDirList, " ") ++ "~n"),
     [{"-save_dir", SaveDirList} | make_opt(T1)];
 make_opt([K, V | T]) ->
     [{K, V} | make_opt(T)].
