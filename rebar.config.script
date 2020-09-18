@@ -27,7 +27,7 @@
             %% 设置当前shell环境
             %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
             %% "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
-            {plugins, [{pc, "v1.11.0"}]}
+            {plugins, [{pc, ".*", {git, "https://github.com/DominicGame/port_compiler.git", {tag, "master"}}}]}
 
         ]},
         %% 换成hex下载
