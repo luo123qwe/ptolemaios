@@ -1,5 +1,8 @@
 %% https://github.com/erlang/rebar3/blob/master/rebar.config.sample
 
+%% behaviac是否debug模式
+BehaviacDebug = true,
+
 [
     {rebar_packages_cdn, "https://hexpm.upyun.com"},
 
@@ -119,9 +122,31 @@
         type_specs
     ]},
 
+
     {port_specs, [
         {"priv/example_enif.so", [
             "c_src/example_enif.c"
+        ]},
+        {"priv/behaviac_enif.so", [
+            "c_src/behaviac/behaviac_enif.cpp",
+            "c_src/behaviac/src/*/*.cpp",
+            "c_src/behaviac/src/*/*/*.cpp",
+            "c_src/behaviac/src/*/*/*/*.cpp",
+            "c_src/behaviac/behaviac_generated/*/*.cpp",
+            "c_src/behaviac/behaviac_generated/*/*/*.cpp"
         ]}
-    ]}
+    ]},
+
+    case BehaviacDebug of
+        true ->
+            {port_env, [
+                {"CXXFLAGS", "-I\"c_src/behaviac\" /DBEHAVIAC_RELEASE_CUSTOMIZED"},
+                 {"win32", "LDFLAGS", "shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib"}
+            ]};
+        false ->
+            {port_env, [
+                {"CXXFLAGS", "-I\"c_src/behaviac\""},
+                {"win32", "LDFLAGS", "shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib"}
+            ]}
+    end
 ].
