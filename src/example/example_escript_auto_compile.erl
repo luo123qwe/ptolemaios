@@ -14,7 +14,7 @@
 -export([main/1]).
 
 %% 新建同名escript, 第一行添加 "#!/usr/bin/env escript"
-%% 修改 make_escript("填上文件名")
+%% 修改main/1的make_escript("填上文件名")
 %% 然后复制以下部分到escript
 
 %% ========private_split_str==========

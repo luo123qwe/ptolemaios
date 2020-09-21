@@ -411,9 +411,8 @@ get_millisecond() ->
             Time
     end.
 
-%% @doc 设置毫秒, 消息如同在X时间点收到,
-%% 减少由于erlang内部定时器带来的误差,
-%% 对时间极度敏感可以使用,
+%% @doc 覆盖get_millisecond/0的值, 相当于设置当前时间,
+%% 对时间敏感的消息可以通过这个函数修正时间,
 %% 注意这部分不参与回滚, 进程内使用
 -spec set_millisecond(non_neg_integer()) -> ok.
 set_millisecond(Time) ->
@@ -1026,12 +1025,12 @@ return(Return) ->
 %% @doc 下层return若被上层catch到, 可以用该函数获取return内容, 进程内使用
 %% ```
 %% case exit:get_return((catch Expr)) of
-%%   {exia_return, Return} -> exit:return(Return);
+%%   ?EXIA_RETURN(Return) -> exit:return(Return);
 %%   Other -> do_something
 %% end
 %% '''
--spec get_return(term()) -> {exia_return, Return :: term()}|term().
-get_return({exia_private, return, Return}) -> {exia_return, Return};
+-spec get_return(term()) -> ExiaReturn :: term()|error.
+get_return({exia_private, return, Return}) -> ?EXIA_RETURN(Return);
 get_return(_) -> error.
 
 %%-----------------------------------------------------------------

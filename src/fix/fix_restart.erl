@@ -1,8 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
-%%% 重启更新
+%%% @doc 重启更新
+%%% 顺序执行fix_restart_{index}文件, 并且记录index到dets
+%%%
+%%% 注意数据是不可回滚的, 代码报错时, 再次重启会重复执行一次代码,
+%%% 所以通过get/set在新代码打上标识再次执行, 跳过已经正确执行的代码
 %%% @end
 %%%-------------------------------------------------------------------
 -module(fix_restart).
@@ -14,7 +17,8 @@
 %% API
 -export([
     system_init/0,
-    fix/0, fix/1
+    fix/0, fix/1,
+    set/3, get/3
 ]).
 
 -callback run() -> term().
@@ -39,11 +43,13 @@ system_init(Index) ->
             dets:insert(?DETS_FIX, {?MODULE, Index - 1})
     end.
 
-%% @doc 执行更新
+%% @equiv fix(1)
 fix() ->
     fix(1).
 
-%% @private 只是兼容测试, 因为测试的时候会直接删掉dets文件夹, 所以给一个默认值
+%% @doc 执行重启修复文件```
+%% 1, 从上次记录的文件开始修复, 直到没有更多修复文件
+%% 2, 没有修复记录, 从默认下标(版本)开始执行修复文件'''
 fix(DefaultIndex) ->
     file:make_dir(?FIX_DETS_PATH),
     {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
@@ -81,3 +87,21 @@ execute(Index) ->
         false ->
             Index - 1
     end.
+
+%% @doc 设置kv
+-spec set(any(), any(), any()) -> ok.
+set(Index, Key, Value) ->
+    dets:insert(?DETS_FIX, {{?MODULE, Index, Key}, Value}),
+    ok.
+
+%% @doc 获取kv
+-spec set(any(), any(), any()) -> ok.
+get(Index, Key, Default) ->
+    case dets:lookup(?DETS_FIX, {?MODULE, Index, Key}) of
+        [{_, Value}] ->
+            Value;
+        Default ->
+            Default
+    end.
+
+

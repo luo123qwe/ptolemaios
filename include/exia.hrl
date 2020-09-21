@@ -2,6 +2,7 @@
 -define(PD_EXIA_TIME, pd_exia_time).% 单条消息真实时间
 -define(PD_EXIA_PD, pd_exia_pd).% 替代进程字典, 用来回滚
 -define(PD_EXIA_ROLLBACK, pd_exia_rollback).% 回滚
+-define(EXIA_RETURN(Return), {exia_return, Return}).% 返回
 
 -define(EXIA_PREPARE_MSG(After, Dest, Msg), {After, Dest, Msg}).
 

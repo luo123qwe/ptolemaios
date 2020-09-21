@@ -17,21 +17,46 @@
   <li>{@section 协议(proto)}</li>
   <li>{@section 网关(gateway)}</li>
   <li>{@section 修复(fix)}</li>
+  <li>{@section 发布(release)}</li>
   <li>{@section 例子(example)}</li>
   <li>{@section 性能(performance)}</li>
   <li>{@section 结构(struct)}</li>
-  <li>{@section 发布(release)}</li>
+  <li>{@section 行为树(behaviac)}</li>
 </ol>
 
 == 规范 ==
 
-=== 命名 ===
+=== 设计思路 ===
 
-基于idea的Find Usages功能, 标识, 消息, 动态调用(MFA), 尽量利用宏或者函数包起来, 可以提高代码修改和回顾时的效率(相比全局搜索)
+利用idea的Find Usages功能, 业务系统, 消息, 动态调用(MFA), 尽量利用宏或者函数包起来, 可以提高代码维护的效率(相比全局搜索).
 
-所以, 标识命名应该包含功能标识(下面用{MODULE}代替), 例如玩家功能使用player, 那么对应的宏和模块名应该使用?[内部标识_]player_{模块名或标识}, 例如, ?PD_PLAYER_NAME, ?PLAYER_ID, player_server, player_helper....
+每个业务系统都有自己的唯一标识(下面用main代替), 逻辑上每个业务的分块保持树状结构, 使每个业务开发的时候能够保持逻辑和模块的互相独立
 
-所有功能标识定义在module_sname.txt中(人工维护), 功能标识很长的时候使用缩写, module_sname.txt中所有名字都是唯一, 例如: virture_mysql => vmysql, abcdef_ghijklmn_opq => ago
+实际上业务系统逻辑总是互相交叉, 这样仅仅为了把代码都放在'自己'的系统里面, A系统需要B系统提供XXX时, 代码写到A系统对应的模块中, 尽量避免写到B系统的模块中, 除非忍不住
+
+```
+业务模块(main)
+|--业务子模块N
+    |--业务子子模块N
+        ...'''
+
+有时名字会非常非常长, 所以引入缩写的设定, 例如:  virture_mysql => vmysql, abcdef_ghijklmn_opq => ago
+
+这里使用 module_sname.txt 人工维护业务系统标识(必须写)和名字缩写, 保证里面所有名字(包括缩写)唯一, 简单来说就是全词搜索新名字直到找不到匹配, 那么这个名字就是可用的
+
+=== 模块命名 ===
+
+main[_sub[_subsub[...]]]
+
+例如, player, player_info, player_api, player_api_data, player_api_msg
+
+=== 宏命名 ===
+
+[内部标识_]main[_标识[_标识[...]]]
+
+例如, ?PD_PLAYER_NAME, ?PLAYER_ID, ?MSG_PLAYER_GET_ID
+
+内部标识
 
 <dl>
     <dt>进程字典</dt>
@@ -64,9 +89,19 @@
     '''</dd>
 </dl>
 
+=== 函数名 ===
+
+只要能达成好查都可以.
+
+cast, call, rpc之类的操作在模块中再写一个函数包起来; 例如: my_server:call, my_server:cast.
+
+对于动态执行MFA, 使用模块名的宏或者生成模块名的宏包装; 例如: [apply(M, run, []) || M ``<-'' [?PLAYER]], (?MAKE_NAME(Integer)):run().
+
+过长的名字依然推荐使用缩写, 在函数注释好即可.
+
 == 工具(util) ==
 
-util文件夹下均为工具类模块, 每个模块等效于一个功能.
+util文件夹下均为工具类模块, 每个模块等效于一个系统, 会记在module_sname.txt的意思.
 
 <dl>
     <dt>util.hrl</dt>
@@ -143,18 +178,6 @@ client实现和gateway的协议通讯, 用于模拟客户端, 详情查看{@link
 
 节点重启更新{@link fix_restart}
 
-== 例子(example) ==
-
-各式各样的例子, 这些文件都是作为参考用, 实际生产中并不使用, 文件不会生产文档, 详情查看src/example/*.erl.
-
-== 性能(performance) ==
-
-各式各样的性能测试, 这些文件仅用于测试性能, 实际生产中并不使用, 文件不会生产文档, 详情查看src/performance/*.erl.
-
-== 结构(struct) ==
-
-各式各样的数据结构, 部分结构并不能在实际生产中使用, 仅用于测试对比, 详情查看src/struct/*.erl.
-
 == 发布(release) ==
 
 发布使用release/release.escript
@@ -193,3 +216,19 @@ tar_a -> tar_ebin_a1    -> tar_ebin_a2  -> tar_b -> tar_ebin_b2
     <dt>backup_tree</dt>
     <dd>如果tar和tar_ebin都会备份到一个文件夹, 那么根据备份文件中的时间戳会生成类似 [{tar1, [ebin11, ebin12..]}, {tar2, [ebin21, ebin22..]}] 的顺序结构, 反映某个tar下的所有ebin更新</dd>
 </dl>
+
+== 例子(example) ==
+
+各式各样的例子, 这些文件都是作为参考用, 实际生产中并不使用, 文件不会生产文档, 详情查看src/example/*.erl.
+
+== 性能(performance) ==
+
+各式各样的性能测试, 这些文件仅用于测试性能, 实际生产中并不使用, 文件不会生产文档, 详情查看src/performance/*.erl.
+
+== 结构(struct) ==
+
+各式各样的数据结构, 部分结构并不能在实际生产中使用, 仅用于测试对比, 详情查看src/struct/*.erl.
+
+== 行为树(behaviac) ==
+
+接入腾讯开源的行为树工具, 目前实现调用工具产生的代码和行为树, 详情查看{@link behaviac_enif}.
