@@ -10,8 +10,9 @@
 %%% 读和挂起中间的时间可能会产生新的进程, 而这些新的进程将不会被挂起和执行相关代码,
 %%% 并且会被kill掉(lib/sasl-3.5/src/release_handler_1.erl:369)
 %%%
-%%% 注意数据是不可回滚的, 代码报错时, 再次执行修复会重复执行一次代码,
-%%% 所以通过get/set在新代码打上标识再次执行, 跳过已经正确执行的代码
+%%% 注意数据是不可回滚的, 若执行到某个函数失败时, 有这两种情况```
+%%% 第一, 已经执行过该修复模块, 修改对应的tar的模块, 再次进行更新, 这里的修改都是针对某些已经部署的release(不同环境下可能会有不同的修复), 因为新的release会直接执行正确的代码
+%%% 第二, 未经执行过该修复模块, 转情况一'''
 %%% @end
 %%%-------------------------------------------------------------------
 -module(fix_hot).
@@ -24,94 +25,24 @@
 -export([
     system_init/0,
     fix/0, fix/1,
-    get/3, set/3,
     suspend/1, resume/1,
     reload_shell/0, reload_shell/2,
     reload_release/0, reload_release/1
 ]).
 
--callback run() -> term().
-
 %% @private 系统初始化
 system_init() ->
-    file:make_dir(?FIX_DETS_PATH),
-    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
-    case dets:lookup(?DETS_FIX, ?MODULE) of
-        [{_, _Index}] -> skip;
-        _ -> system_init(1)
-    end,
-    dets:close(?DETS_FIX),
-    ok.
-
-system_init(Index) ->
-    Module = ?FIX_HOT_MODULE(Index),
-    case code:load_file(Module) of
-        {module, _} ->
-            system_init(Index + 1);
-        _ ->
-            dets:insert(?DETS_FIX, {?MODULE, Index - 1})
-    end.
+    fix:system_init(?MODULE).
 
 %% @equiv fix(1)
 fix() ->
-    fix(1).
+    fix:fix(?MODULE).
 
-%% @doc 执行热修复文件```
+%% @doc 执行重启修复文件```
 %% 1, 从上次记录的文件开始修复, 直到没有更多修复文件
 %% 2, 没有修复记录, 从默认下标(版本)开始执行修复文件'''
 fix(DefaultIndex) ->
-    file:make_dir(?FIX_DETS_PATH),
-    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
-    %% 获取执行下标
-    case dets:lookup(?DETS_FIX, ?MODULE) of
-        [{_, Index0}] -> Index = Index0 + 1;
-        _ -> Index = DefaultIndex
-    end,
-    %% 执行热更代码
-    case Index of
-        undefined -> ok;
-        _ -> dets:insert(?DETS_FIX, {?MODULE, execute(Index)})
-    end,
-    dets:close(?DETS_FIX).
-
-%% 执行代码并且返回最后执行的下标
-execute(Index) ->
-    Module = ?FIX_HOT_MODULE(Index),
-    case code:is_loaded(Module) =/= false orelse element(1, code:load_file(Module)) =/= error of
-        true ->
-            IsFail =
-                try
-                    ?LOG_NOTICE("~w:run()", [Module]),
-                    Module:run(),
-                    false
-                catch
-                    C:E:S ->
-                        ?LOG_ERROR("hot fix fail fail when ~w~n~w ~w~n~p", [Module, C, E, S]),
-                        true
-                end,
-            case IsFail of
-                true -> Index;
-                _ -> execute(Index + 1)
-            end;
-        false ->
-            Index - 1
-    end.
-
-%% @doc 设置kv
--spec set(any(), any(), any()) -> ok.
-set(Index, Key, Value) ->
-    dets:insert(?DETS_FIX, {{?MODULE, Index, Key}, Value}),
-    ok.
-
-%% @doc 获取kv
--spec set(any(), any(), any()) -> ok.
-get(Index, Key, Default) ->
-    case dets:lookup(?DETS_FIX, {?MODULE, Index, Key}) of
-        [{_, Value}] ->
-            Value;
-        Default ->
-            Default
-    end.
+    fix:fix(?MODULE, DefaultIndex).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 参考release_handler_1 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc 挂起一个监督者(包括它本身)下的所有进程

@@ -87,6 +87,13 @@ main[_sub[_subsub[...]]]
 
     -define(DETS_PLAYER_NAME1(ServerId), list_to_atom("ets_player_name_" ++ integer_to_list(ServerId))).% 某个服务器的玩家名字
     '''</dd>
+    <dt>动态调用</dt>
+    <dd>使用?DYM_{MODULE}_{TAG}[参数个数]的宏包装, 例如
+    ```
+    -define(?DYM_HERO_MODULE(Id), list_to_atom("hero_" ++ integer_to_list(Id))).% xxx英雄模块
+
+     -define(?DYM_HERO_CALLBACK, [hero_1, hero_2]).% 英雄回调模块
+    '''</dd>
 </dl>
 
 === 函数名 ===
