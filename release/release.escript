@@ -642,6 +642,14 @@ make_escript() ->
     end,
     IsMake.
 
+%% 命令行支持中文好难弄, 写着凑合
+%% tar: 打包一个版本, 根据rebar3.config.script获取app名字和版本
+%% tar_backup:  打包一个backup树的分支
+%% tar_ebin:    打包ebin, 用于更新
+%% backup_tree: 显示backup树
+%% replace_tar: 部署或更新一个tar
+%% update_ebin: 更新上面打出来的ebin包, 仅替换文件
+%% update_backup: 更新backup中的tar, 仅替换文件
 usage() ->
     io:format("
 release tool
