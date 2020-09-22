@@ -47,6 +47,10 @@ BehaviacDebug = true,
     ]},
 
     {relx, [
+        %% 第一, 对于一个上线的项目, 只会更改项目的app, 如果要改其他app那必须跟着一个'大版本'走才合理
+        %% 第二, release名字可以通过version区别不同的release
+        %% 第三, 根据第一, 实际上热更只会更新项目的app
+        %% 所以这里release的名字必须和app的名字一致
         {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
 
         {sys_config, "./config/sys.config"},
