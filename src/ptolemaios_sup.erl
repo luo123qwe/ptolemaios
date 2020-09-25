@@ -42,7 +42,7 @@ init([]) ->
     %% 子进程
     ChildSpecs = virture_config:get_sup_spec() ++
         [
-            #{id => gateway_sup, start => {gateway_sup, start_link, []}, type => supervisor},
+            #{id => gw_sup, start => {gw_sup, start_link, []}, type => supervisor},
             #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor}
         ],
     

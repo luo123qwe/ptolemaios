@@ -1,20 +1,22 @@
 full name                           |short name         |中文注释
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 框架核心 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+supervisor                          |sup                |缩写
+sever                               |svr                |缩写
+callback                            |cb                 |缩写
 ptolemaios                          |                   |这个app
 util                                |                   |杂乱的工具
 kv_op                               |                   |kv数据结构操作
 local_lock                          |                   |本地锁
 log                                 |                   |日志
 fold                                |                   |支持break的遍历操作
-virture                             |                   |数据操作
-virture_mysql                       |vmysql             |mysql数据操作
+virture                             |vt                 |数据操作
 exia                                |                   |gen_server的修改版
 proto                               |                   |协议
-gateway                             |                   |网关
-client                              |                   |模拟客户端
+gateway                             |gw                 |网关
+gateway_client                      |gw_c               |客户端
 fix                                 |                   |数据, 代码修复
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 框架补充 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-performance                         |                   |性能测试用文件
+performance                         |perf               |性能测试用文件
 example                             |                   |例子文件
 fractal_tree                        |                   |分型树
 hash_tuple                          |                   |哈希tuple(数组)

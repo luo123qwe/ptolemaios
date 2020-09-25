@@ -1,3 +1,4 @@
+%%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
@@ -11,10 +12,10 @@
 %%%     该实现不能使用
 %%% @end
 %%%-------------------------------------------------------------------
--module(performance_hash_tuple).
+-module(perf_hash_tuple).
 -author("dominic").
 
--include("performance.hrl").
+-include("perf.hrl").
 
 %% API
 -export([run/1, prof/0]).

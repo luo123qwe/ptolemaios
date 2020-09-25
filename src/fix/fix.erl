@@ -37,7 +37,7 @@ system_init(Module) ->
 
 %% 新部署的release记录当前最大下标
 system_init(Module, Index) ->
-    FixModule = ?DYM_FIX_MODULE(Module, Index),
+    FixModule = ?DYM_FIX_MODULE2(Module, Index),
     case code:load_file(FixModule) of
         {module, _} ->
             system_init(Module, Index + 1);
@@ -75,7 +75,7 @@ fix(Module, DefaultIndex) ->
 
 %% 执行代码并且返回最后执行的下标
 execute(Module, Index, IsFirstTimes) ->
-    FixModule = ?DYM_FIX_MODULE(Module, Index),
+    FixModule = ?DYM_FIX_MODULE2(Module, Index),
     case code:is_loaded(FixModule) =/= false orelse element(1, code:load_file(FixModule)) =/= error of
         true ->
             IsFail =

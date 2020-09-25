@@ -1,14 +1,15 @@
+%%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
+%%% @doc virture mysql效率
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(performance_virture).
+-module(perf_virture).
 -author("dominic").
 
--include("performance.hrl").
+-include("perf.hrl").
 -include("virture.hrl").
 
 %% API

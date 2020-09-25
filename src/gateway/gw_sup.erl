@@ -1,10 +1,11 @@
+%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
+%%% @doc 网关sup
 %%% @end
 %%%-------------------------------------------------------------------
--module(gateway_sup).
+-module(gw_sup).
 
 -behaviour(supervisor).
 
@@ -16,10 +17,10 @@ start_link() ->
 init([]) ->
     {ok, Config} = application:get_env(ptolemaios, gateway),
     Port = proplists:get_value(port, Config),
-    ListenerSpec = ranch:child_spec(gateway, ranch_tcp, #{socket_opts => [{port, Port}]}, gateway_server, []),
+    ListenerSpec = ranch:child_spec(gateway, ranch_tcp, #{socket_opts => [{port, Port}]}, gw_svr, []),
     
     {ok, {#{strategy => one_for_one,
         intensity => 5,
         period => 30},
-        [#{id => client_sup, start => {client_sup, start_link, []}, type => supervisor}, ListenerSpec]}
+        [#{id => gw_c_sup, start => {gw_c_sup, start_link, []}, type => supervisor}, ListenerSpec]}
     }.

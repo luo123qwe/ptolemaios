@@ -2,7 +2,7 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
+%%% @doc exia测试用
 %%% @end
 %%%-------------------------------------------------------------------
 -module(exia_test).
@@ -104,10 +104,10 @@ base_test_() ->
                     ?_assertEqual(#exia_test_state{id = cast_at_immediately},
                         exia:call_execute(Pid, fun(S) -> {reply, S, S} end)),
                     
-                    ?_test(exia:cast_execute(Pid, fun(S) -> exia:eset(exia, exia), throw(test), {noreply, S} end)),
+                    ?_test(exia:cast_execute(Pid, fun(S) -> exia:eput(exia, exia), throw(test), {noreply, S} end)),
                     ?_assertEqual(undefined, exia:call_execute(Pid, fun(S) -> {reply, exia:eget(exia, undefined), S} end)),
                     ?_test(exia:cast_execute(Pid, fun(S) ->
-                        exia:eset(exia, exia),
+                        exia:eput(exia, exia),
                         exia:flush(S),
                         throw(test),
                         {noreply, S}

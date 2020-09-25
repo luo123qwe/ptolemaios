@@ -18,7 +18,7 @@
 %%% 用户可以也可以在一段逻辑成功后flush/1, 类似continue的机制, 分段执行, 失败可以回滚'''</dd>
 %%% <dt>exia消息</dt>
 %%% <dd>```
-%%% {exia_private, ...}消息为exia内部消息, 用于支持exia进程的功能
+%%% {exia_private_xxx, ...}消息为exia内部消息, 用于支持exia进程的功能
 %%% 其他消息按照gen_server原有设定解码'''</dd>
 %%% </dl>
 %%% @end
@@ -52,7 +52,7 @@
     cast_immediately/2, cast_after_immediately/3, cast_at_immediately/3,
     flush/1, return/1, get_return/1,
     get_millisecond/0, set_millisecond/1, get_second/0, set_second/1,
-    eget/2, eset/2
+    eget/1, eget/2, eput/2
 ]).
 
 -export([system_continue/3,
@@ -188,12 +188,12 @@ stop(Name, Reason, Timeout) ->
 %% @doc 执行一个函数, 函数返回的值与handle_call一样
 -spec call_execute(server_ref(), execute()) -> term().
 call_execute(Dest, Execute) ->
-    call(Dest, {exia_private, execute, Execute}).
+    call(Dest, ?MSG_EXIA_EXECUTE1(Execute)).
 
 %% @doc 执行一个函数, 函数返回的值与handle_cast一样
 -spec cast_execute(server_ref(), execute()) -> ok.
 cast_execute(Dest, Execute) ->
-    cast(Dest, {exia_private, execute, Execute}).
+    cast(Dest, ?MSG_EXIA_EXECUTE1(Execute)).
 
 %% -----------------------------------------------------------------
 %% Make a call to a generic server.
@@ -284,35 +284,35 @@ cast_msg(Request) -> {'$gen_cast', Request}.
 %% @doc 发送一条消息, 进程内使用
 -spec send(non_neg_integer(), term()) -> ok.
 send(Dest, Request) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(0, Dest, (Request)) | get(?PD_EXIA_SEND)]),
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG3(0, Dest, (Request)) | get(?PD_EXIA_SEND)]),
     ok.
 
 %% @doc 发送一条延时N毫秒的消息, 进程内使用
 -spec send_after(non_neg_integer(), server_ref(), term()) -> ok.
 send_after(After, Dest, Request) when After =< ((1 bsl 32) - 1) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(After, Dest, (Request)) | get(?PD_EXIA_SEND)]),
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG3(After, Dest, (Request)) | get(?PD_EXIA_SEND)]),
     ok.
 
 %% @doc 相当于在X毫秒时间戳(毫秒)发送一条消息, 进程内使用
 -spec send_at(non_neg_integer(), server_ref(), term()) -> ok.
 send_at(MilliSecond, Dest, Request) when MilliSecond > ((1 bsl 32) - 1) ->
-    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG(MilliSecond, Dest, (Request)) | get(?PD_EXIA_SEND)]),
+    put(?PD_EXIA_SEND, [?EXIA_PREPARE_MSG3(MilliSecond, Dest, (Request)) | get(?PD_EXIA_SEND)]),
     ok.
 
 %% @doc 马上发送一条消息, 不可回滚, 进程内使用
 -spec send_immediately(server_ref(), term()) -> ok.
 send_immediately(Dest, Request) ->
-    flush_msg([?EXIA_PREPARE_MSG(0, Dest, (Request))]).
+    flush_msg([?EXIA_PREPARE_MSG3(0, Dest, (Request))]).
 
 %% @doc 马上发送一条延时N毫秒的消息, 不可回滚, 进程内使用
 -spec send_after_immediately(non_neg_integer(), server_ref(), term()) -> ok.
 send_after_immediately(After, Dest, Request) when After =< ((1 bsl 32) - 1) ->
-    flush_msg([?EXIA_PREPARE_MSG(After, Dest, (Request))]).
+    flush_msg([?EXIA_PREPARE_MSG3(After, Dest, (Request))]).
 
 %% @doc 相当于在X毫秒时间戳发送一条消息, 不可回滚, 进程内使用
 -spec send_at_immediately(non_neg_integer(), server_ref(), term()) -> ok.
 send_at_immediately(MilliSecond, Dest, Request) when MilliSecond > ((1 bsl 32) - 1) ->
-    flush_msg([?EXIA_PREPARE_MSG(MilliSecond, Dest, (Request))]).
+    flush_msg([?EXIA_PREPARE_MSG3(MilliSecond, Dest, (Request))]).
 
 %% 刷新msg缓存
 flush_msg() ->
@@ -321,13 +321,13 @@ flush_msg() ->
 
 flush_msg([]) ->
     ok;
-flush_msg([?EXIA_PREPARE_MSG(0, Dest, Request) | T]) ->
+flush_msg([?EXIA_PREPARE_MSG3(0, Dest, Request) | T]) ->
     do_send(Dest, Request),
     flush_msg(T);
-flush_msg([?EXIA_PREPARE_MSG(After, Dest, Request) | T]) when After =< ((1 bsl 32) - 1) ->
+flush_msg([?EXIA_PREPARE_MSG3(After, Dest, Request) | T]) when After =< ((1 bsl 32) - 1) ->
     erlang:send_after(After, Dest, Request),
     flush_msg(T);
-flush_msg([?EXIA_PREPARE_MSG(MilliSecond, Dest, Request) | T]) ->
+flush_msg([?EXIA_PREPARE_MSG3(MilliSecond, Dest, Request) | T]) ->
     erlang:send_after(max(0, MilliSecond - get_millisecond()), Dest, Request),
     flush_msg(T).
 
@@ -335,7 +335,7 @@ do_send({global, Name}, Request) ->
     catch global:send(Name, Request),
     ok;
 do_send({via, Mod, Name}, Request) ->
-    catch Mod:send(Name, Request),
+    catch ?DYM_EXIA_SEND2(Mod, [Name, Request]),
     ok;
 do_send({Name, Node} = Dest, Request) when is_atom(Name), is_atom(Node) ->
     do_normal_send(Dest, Request);
@@ -431,14 +431,19 @@ set_second(Time) ->
 %%% -----------------------------------------------------------------
 %% 模拟进程字典
 %%% -----------------------------------------------------------------
+%% @equiv eget(Key, undefined)
+-spec eget(term()) -> term().
+eget(Key) ->
+    eget(Key, undefined).
+
 %% @doc 模拟进程字典获取value, 进程内使用
 -spec eget(term(), term()) -> term().
 eget(Key, Default) ->
     maps:get(Key, get(?PD_EXIA_PD), Default).
 
 %% @doc 模拟进程字典设置value, 但不会返回以前的值, 进程内使用
--spec eset(term(), term()) -> ok.
-eset(Key, Value) ->
+-spec eput(term(), term()) -> ok.
+eput(Key, Value) ->
     put(?PD_EXIA_PD, maps:put(Key, Value, get(?PD_EXIA_PD))),
     ok.
 
@@ -535,9 +540,9 @@ init_it(Starter, Parent, Name0, Mod, Args, Options) ->
     end.
 init_it(Mod, Args) ->
     try
-        {ok, Mod:init(Args)}
+        {ok, ?DYM_EXIA_CB3(Mod, init, [Args])}
     catch
-        throw:{exia_private, return, R} -> {ok, R};
+        throw:?EXIA_RETURN1(R) -> {ok, R};
         Class:R:S -> {'EXIT', Class, R, S}
     end.
 
@@ -794,11 +799,11 @@ start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
 %% stacktraces.
 %% ---------------------------------------------------
 
-try_dispatch({'$gen_cast', {exia_private, execute, Execute}}, _Mod, State) ->
+try_dispatch({'$gen_cast', ?MSG_EXIA_EXECUTE1(Execute)}, _Mod, State) ->
     try
         {ok, prim_execute(Execute, State)}
     catch
-        throw:{exia_private, return, R} -> {ok, R};
+        throw:?EXIA_RETURN1(R) -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end;
@@ -809,26 +814,26 @@ try_dispatch(Info, Mod, State) ->
 
 try_dispatch(Mod, Func, Msg, State) ->
     try
-        {ok, Mod:Func(Msg, State)}
+        {ok, ?DYM_EXIA_CB3(Mod, Func, [Msg, State])}
     catch
-        throw:{exia_private, return, R} -> {ok, R};
+        throw:?EXIA_RETURN1(R) -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end.
 
-try_handle_call(_Mod, {exia_private, execute, Execute}, _From, State) ->
+try_handle_call(_Mod, ?MSG_EXIA_EXECUTE1(Execute), _From, State) ->
     try
         {ok, prim_execute(Execute, State)}
     catch
-        throw:{exia_private, return, R} -> {ok, R};
+        throw:?EXIA_RETURN1(R) -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end;
 try_handle_call(Mod, Msg, From, State) ->
     try
-        {ok, Mod:handle_call(Msg, From, State)}
+        {ok, ?DYM_EXIA_CB3(Mod, handle_call, [Msg, From, State])}
     catch
-        throw:{exia_private, return, R} -> {ok, R};
+        throw:?EXIA_RETURN1(R) -> {ok, R};
         Class:R:Stacktrace ->
             {'EXIT', Class, R, Stacktrace}
     end.
@@ -849,9 +854,9 @@ try_terminate(Mod, Reason, State) ->
     case erlang:function_exported(Mod, terminate, 2) of
         true ->
             try
-                {ok, Mod:terminate(Reason, State)}
+                {ok, ?DYM_EXIA_CB3(Mod, terminate, [Reason, State])}
             catch
-                throw:{exia_private, return, R} -> {ok, R};
+                throw:?EXIA_RETURN1(R) -> {ok, R};
                 Class:R:Stacktrace ->
                     {'EXIT', Class, R, Stacktrace}
             end;
@@ -1020,17 +1025,17 @@ flush(State) ->
 %% @doc 通过throw返回, 注意不要被catch, 进程内使用
 -spec return(term()) -> term().
 return(Return) ->
-    throw({exia_private, return, Return}).
+    throw(?EXIA_RETURN1(Return)).
 
 %% @doc 下层return若被上层catch到, 可以用该函数获取return内容, 进程内使用
 %% ```
 %% case exit:get_return((catch Expr)) of
-%%   ?EXIA_RETURN(Return) -> exit:return(Return);
+%%   ?EXIA_RETURN1(Return) -> exit:return(Return);
 %%   Other -> do_something
 %% end
 %% '''
 -spec get_return(term()) -> ExiaReturn :: term()|error.
-get_return({exia_private, return, Return}) -> ?EXIA_RETURN(Return);
+get_return(?EXIA_RETURN1(Return)) -> ?EXIA_RETURN1(Return);
 get_return(_) -> error.
 
 %%-----------------------------------------------------------------
@@ -1076,11 +1081,11 @@ system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time, _HibernateAft
 %% @private
 system_code_change([Name, State, Mod, Time, HibernateAfterTimeout], _Module, OldVsn, Extra) ->
     Rollback = before_msg(State),
-    case catch Mod:code_change(OldVsn, State, Extra) of
+    case catch ?DYM_EXIA_CB3(Mod, code_change, [OldVsn, State, Extra]) of
         {ok, NewState} ->
             after_msg(),
             {ok, [Name, NewState, Mod, Time, HibernateAfterTimeout]};
-        {exia_private, return, NewState} ->
+        ?EXIA_RETURN1(NewState) ->
             after_msg(),
             {ok, [Name, NewState, Mod, Time, HibernateAfterTimeout]};
         Else ->
@@ -1101,7 +1106,7 @@ system_replace_state(StateFun, [Name, State, Mod, Time, HibernateAfterTimeout]) 
         after_msg(),
         {ok, NewState, [Name, NewState, Mod, Time, HibernateAfterTimeout]}
     catch
-        throw:{exia_private, return, NState} ->
+        throw:?EXIA_RETURN1(NState)  ->
             after_msg(),
             {ok, NState, [Name, NState, Mod, Time, HibernateAfterTimeout]};
         Class:Reason:Stacktrace ->
@@ -1250,7 +1255,7 @@ format_status(Opt, Mod, PDict, State) ->
                 end,
     case erlang:function_exported(Mod, format_status, 2) of
         true ->
-            case catch Mod:format_status(Opt, [PDict, State]) of
+            case catch ?DYM_EXIA_CB3(Mod, format_status, [Opt, [PDict, State]]) of
                 {'EXIT', _} -> DefStatus;
                 Else -> Else
             end;

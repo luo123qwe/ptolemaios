@@ -44,6 +44,8 @@
 
 这里使用 module_sname.txt 人工维护业务系统标识(必须写)和名字缩写, 保证里面所有名字(包括缩写)唯一, 简单来说就是全词搜索新名字直到找不到匹配, 那么这个名字就是可用的
 
+注意文件夹不要使用缩写, 不然看的时候会很痛苦-_-!
+
 === 模块命名 ===
 
 main[_sub[_subsub[...]]]
@@ -67,7 +69,7 @@ main[_sub[_subsub[...]]]
     -define(PD_PLAYER_NAME1(Id), {pd_player_name, Id}).% 玩家名字
     '''</dd>
     <dt>进程消息</dt>
-    <dd>使用?MSG_{MODULE}_{TAG}[参数个数]的宏包装, 例如
+    <dd>使用?MSG_{MODULE}_{TAG}[参数个数]的宏包装, 哪个进程处理{MODULE}就打哪个, 例如
     ```
     -define(MSG_GET_PLAYER_NAME, get_player_name).% 玩家名字
 
@@ -226,7 +228,7 @@ tar_a -> tar_ebin_a1    -> tar_ebin_a2  -> tar_b -> tar_ebin_b2
 
 == 例子(example) ==
 
-各式各样的例子, 这些文件都是作为参考用, 实际生产中并不使用, 文件不会生产文档, 详情查看src/example/*.erl.
+各式各样的例子和模板, 这些文件都是作为参考用, 实际生产中并不使用, 文件不会生产文档, 详情查看src/example/*.erl.
 
 == 性能(performance) ==
 

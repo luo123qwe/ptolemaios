@@ -1,3 +1,4 @@
+%%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
@@ -11,10 +12,10 @@
 %%%     似乎是因为每次更新都会复制
 %%% @end
 %%%-------------------------------------------------------------------
--module(performance_element).
+-module(perf_element).
 -author("dominic").
 
--include("performance.hrl").
+-include("perf.hrl").
 
 %% API
 -export([

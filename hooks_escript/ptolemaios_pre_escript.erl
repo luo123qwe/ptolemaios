@@ -114,11 +114,11 @@ compile_proto(RebarConfig) ->
                                     "-include(\"" ++ Name ++ ".hrl\").\n\n"
                                     "-export([handle/2]).\n\n"
                                     "handle(Msg, Acc) ->\n"
-                                    "  ?LOG_WARNING(\"unknow msg ~w\", [Msg]),\n"
-                                    "  Acc.\n\n"
+                                    "    ?LOG_WARNING(\"unknow msg ~w\", [Msg]),\n"
+                                    "    Acc.\n\n"
                                 ])
                             end,
-                            L1 = ["  enif_protobuf:load_cache(", Name, ":get_msg_defs()),\n" | L],
+                            L1 = ["    enif_protobuf:load_cache(", Name, ":get_msg_defs()),\n" | L],
                             {PB1, D1, R1} =
                                 lists:foldr(fun([PName, Proto], {PB_1, D_1, R_1}) ->
                                     {
@@ -133,19 +133,19 @@ compile_proto(RebarConfig) ->
                             Acc
                     end
                                                                         end, {[], [], [], []}),
-            LoadTail = "  ok.\n\n",
+            LoadTail = "    ok.\n\n",
             ProtoTail = "proto(_) -> error.\n\n",
             Encode =
                 "-spec encode(tuple()) -> {error, atom()} | binary().\n"
                 "encode(Msg) ->\n"
-                "  enif_protobuf:encode(Msg).\n\n",
+                "    enif_protobuf:encode(Msg).\n\n",
             DecodeTail =
                 "decode(_Proto, _Bin) ->\n"
-                "  {error, noexist}.\n\n",
+                "    {error, noexist}.\n\n",
             RouteTail =
                 "route(Msg, Acc) ->\n"
-                "  ?LOG_WARNING(\"unknow msg ~w\", [Msg]),\n"
-                "  Acc.\n\n",
+                "    ?LOG_WARNING(\"unknow msg ~w\", [Msg]),\n"
+                "    Acc.\n\n",
             file:write_file(MappingFile, [
                 Head,
                 LoadHead, Load, LoadTail,

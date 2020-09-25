@@ -1,3 +1,4 @@
+%%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @doc
@@ -9,11 +10,11 @@
 %%%     热点数据场景下, 效率会大幅提升
 %%% @end
 %%%-------------------------------------------------------------------
--module(performance_fractal_tree).
+-module(perf_fractal_tree).
 -author("dominic").
 
 -include("util.hrl").
--include("performance.hrl").
+-include("perf.hrl").
 
 %% API
 -export([run/1]).

@@ -1,3 +1,8 @@
--define(DETS_FIX, fix).
+%% tag
 -define(FIX_DETS_PATH, "fix_dets").
--define(DYM_FIX_MODULE(Module, Index), list_to_atom(atom_to_list(Module) ++ "_" ++ integer_to_list(Index))).
+
+%% dets
+-define(DETS_FIX, fix).
+
+%% dynamic
+-define(DYM_FIX_MODULE2(Module, Index), list_to_atom(atom_to_list(Module) ++ "_" ++ integer_to_list(Index))).

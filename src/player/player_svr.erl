@@ -1,33 +1,43 @@
-%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
-%%% 模板
+%%% @doc 玩家进程
+%%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(exia_template).
+-module(player_svr).
 -author("dominic").
 
 -behaviour(exia).
 
 -include("util.hrl").
+-include("player.hrl").
 
 %% API
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
--export([start/0]).
+-export([start_link/1]).
 
-start() ->
-    exia:start(?MODULE, [], []).
+start_link(Id) ->
+    exia:start_link(name(Id), ?MODULE, [Id], []).
 
-init([]) ->
-    {ok, []}.
+name(Id) ->
+    atom_to_list("player_" ++ integer_to_list(Id)).
+
+init([Id]) ->
+    {ok, #player{id = Id}}.
 
 handle_call(Request, From, State) ->
     ?LOG_ERROR("~w ~w", [Request, From]),
     {reply, error, State}.
 
+handle_cast(?MSG_PLAYER_GW_MSG1(Msg), State) ->
+    State1 = proto_mapping:route(Msg, State),
+    {noreply, State1};
+
+handle_cast(?MSG_PLAYER_GW_DISCONNECT, State) ->
+    ?LOG_NOTICE("gateway disconnect"),
+    {noreply, State};
 handle_cast(Request, State) ->
     ?LOG_ERROR("~w", [Request]),
     {noreply, State}.
