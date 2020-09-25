@@ -97,7 +97,7 @@ compile_proto(RebarConfig) ->
             RouteHead =
                 "-spec route(tuple(), term()) -> term().\n",
             {Load, ProtoBody, Decode, Route} =
-                filelib:fold_files(ProtoSrc, ".*?_[0-9]+\.proto", true, fun(FileName, {L, PB, D, R} = Acc) ->
+                filelib:fold_files(ProtoSrc, ".*\.proto", true, fun(FileName, {L, PB, D, R} = Acc) ->
                     {ok, B} = file:read_file(FileName),
                     %% 匹配所有, message name{// 12345
                     case re:run(B, "message\s*([A-z0-9_]*)\s*{//\s*([0-9]*)", [global, multiline, {capture, [1, 2], binary}]) of

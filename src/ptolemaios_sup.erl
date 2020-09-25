@@ -1,3 +1,4 @@
+%%% @private
 %%%-------------------------------------------------------------------
 %% @doc ptolemaios top level supervisor.
 %% @end
