@@ -26,8 +26,10 @@
 %% @private 系统初始化
 -spec system_init(atom()) -> ok.
 system_init(Module) ->
-    file:make_dir(?FIX_DETS_PATH),
-    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
+    {ok, Config} = application:get_env(ptolemaios, fix),
+    {_, DetsDir} = lists:keyfind(dets_dir, 1, Config),
+    file:make_dir(DetsDir),
+    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, DetsDir ++ "/" ++ atom_to_list(?DETS_FIX)}]),
     case dets:lookup(?DETS_FIX, Module) of
         [{_, _Index, _IsSuccess}] -> skip;
         _ -> system_init(Module, 1)
@@ -54,8 +56,10 @@ fix(Module) ->
 %% 2, 没有修复记录, 从默认下标(版本)开始执行修复文件'''
 -spec fix(atom(), non_neg_integer()) -> any().
 fix(Module, DefaultIndex) ->
-    file:make_dir(?FIX_DETS_PATH),
-    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, ?FIX_DETS_PATH ++ "/" ++ atom_to_list(?DETS_FIX)}]),
+    {ok, Config} = application:get_env(ptolemaios, fix),
+    {_, DetsDir} = lists:keyfind(dets_dir, 1, Config),
+    file:make_dir(DetsDir),
+    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, DetsDir ++ "/" ++ atom_to_list(?DETS_FIX)}]),
     %% 获取执行下标
     case dets:lookup(?DETS_FIX, Module) of
         [{_, Index0, true}] ->

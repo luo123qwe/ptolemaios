@@ -29,9 +29,9 @@ run_fix_data() ->
     %% 重载代码
     fix_hot:reload_release(),
     %% 修改数据库
-    vmysql:query("update example set a=1 where a=2"),
+    vt_sql:query("update example set a=1 where a=2"),
     %% 修改ets数据
-    Ets = vmysql:make_ets_name(example),
+    Ets = vt_sql:make_ets_name(example),
     ets:foldl(fun(Record, []) ->
         case Record#example.a of
             2 -> ets:insert(Ets, Record#example{a = 1});
@@ -45,9 +45,9 @@ run_fix_data() ->
             {example_sup} ->
                 S;
             {example_child} ->
-                vmysql:fold_cache(fun(Record, []) ->
+                vt_sql:fold_cache(fun(Record, []) ->
                     case Record#example.a of
-                        2 -> vmysql:insert(Record#example{a = 1});
+                        2 -> vt_sql:insert(Record#example{a = 1});
                         _ -> skip
                     end
                                   end, [], example),

@@ -999,7 +999,7 @@ reply(Name, From, Reply, State, Debug) ->
 init_pd() ->
     put(?PD_EXIA_SEND, []),
     put(?PD_EXIA_PD, #{}),
-    vmysql:process_init().
+    vt_sql:process_init().
 
 %% 处理消息前后
 before_msg(State) ->
@@ -1010,7 +1010,7 @@ before_msg(Msg, State) ->
 
 after_msg() ->
     flush_msg(),
-    vmysql:sync_to_ets(),
+    vt_sql:sync_to_ets(),
     put(?PD_EXIA_TIME, undefined),
     put(?PD_EXIA_ROLLBACK, undefined).
 
@@ -1018,7 +1018,7 @@ after_msg() ->
 -spec flush(term()) -> ok.
 flush(State) ->
     flush_msg(),
-    vmysql:sync_to_ets(),
+    vt_sql:sync_to_ets(),
     put(?PD_EXIA_ROLLBACK, hold(State)),
     ok.
 
@@ -1045,7 +1045,7 @@ hold(State) ->
     #exia_rollback{
         state = State,
         send = get(?PD_EXIA_SEND),
-        virture = vmysql:hold(),
+        virture = vt_sql:hold(),
         pd = get(?PD_EXIA_PD)
     }.
 
@@ -1057,13 +1057,13 @@ rollback(Rollback) ->
             put(?PD_EXIA_ROLLBACK, undefined)
     end,
     put(?PD_EXIA_SEND, Send),
-    vmysql:rollback(Virture),
+    vt_sql:rollback(Virture),
     put(?PD_EXIA_PD, PD),
     State.
 
 after_terminate() ->
     flush_msg(),
-    vmysql:sync_to_db().
+    vt_sql:sync_to_db().
 
 %%-----------------------------------------------------------------
 %% Callback functions for system messages handling.

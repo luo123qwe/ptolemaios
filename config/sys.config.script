@@ -7,7 +7,15 @@
             {type, mysql},
             {mysql_user, "root"},
             {mysql_password, "123456"},
-            {mysql_database, "test"}
+            {mysql_database, "test"},
+            {mysql_dets, "vt_sql_dets"}
+        ]},
+        {fix, [
+            {dets_dir, "fix_dets"}
+        ]},
+        {log, [
+            {level, notice},
+            {log_dir, "log/log"}
         ]}
     ]}
 ].

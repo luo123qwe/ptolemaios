@@ -10,6 +10,7 @@ local_lock                          |                   |本地锁
 log                                 |                   |日志
 fold                                |                   |支持break的遍历操作
 virture                             |vt                 |数据操作
+virture_mysql                       |vt_sql             |使用mysql作为数据库
 exia                                |                   |gen_server的修改版
 proto                               |                   |协议
 gateway                             |gw                 |网关

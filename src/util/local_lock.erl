@@ -1,7 +1,8 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
-%%% @doc
-%%% 单节点的锁
+%%% @doc 单节点的锁
+%%%
+%%% 通过ets的xxx_element函数实现简单的悲观锁
 %%% @end
 %%%-------------------------------------------------------------------
 -module(local_lock).
@@ -45,8 +46,7 @@ is_lock(Key, Owner) ->
 lock(Key) ->
     lock(Key, self()).
 
-%% @doc 获取锁, 成功时返回lock, 
-%% 已获取锁时依然返回fail
+%% @doc 获取锁, 成功时返回lock, 已获取锁时依然返回fail
 -spec lock(term(), term()) -> fail|lock.
 lock(Key, Owner) ->
     case ets:update_counter(?ETS_LOCAL_LOCK, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of
@@ -61,8 +61,7 @@ lock(Key, Owner) ->
 lock(Key, Interval, Times) ->
     lock(Key, self(), Interval, Times).
 
-%% @doc 尝试N次间隔M毫秒获取锁, 成功时返回lock, 
-%%%% 已获取锁时依然返回fail
+%% @doc 尝试N次间隔M毫秒获取锁, 成功时返回lock, 已获取锁时依然返回fail
 -spec lock(term(), term(), non_neg_integer(), non_neg_integer()) -> fail|lock.
 lock(_Key, _Owner, _Interval, Times) when Times =< 0 ->
     fail;
@@ -95,8 +94,11 @@ release(Key, Owner) ->
 force_lock(Key) ->
     force_lock(Key, self()).
 
-%% @doc 强制获取锁, 成功时返回lock或force_lock, 
-%%%% 已获取锁时会重新获取锁
+%% @doc 强制获取锁, 成功时返回lock或force_lock, 已获取锁时依然会重新获取锁
+%%
+%% 如果出现以下并发情况则返回fail, A删除锁 -> B增加锁 -> A增加锁失败
+%%
+%% 以下情况并发不能保证锁功能正确执行, A删除锁 -> A添加锁 -> A认为成功锁 -> B删除锁 -> B添加锁 -> B认为成功锁
 -spec force_lock(term(), term()) -> lock|force_lock|fail.
 force_lock(Key, Owner) ->
     case ets:update_counter(?ETS_LOCAL_LOCK, Key, {#local_lock.lock, 1}, #local_lock{key = Key, owner = Owner}) of

@@ -1,7 +1,38 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
-%%% @doc
-%%% 键值型数据结构操作
+%%% @doc 键值型数据结构操作
+%%%
+%%% <b>第一部分, 对于以下深嵌套的结构kv场景</b>
+%%%
+%%% ```
+%%% {_, List2} = lists:keyfind(Key1, Pos1, List1),
+%%% {_, Dict3} = lists:keyfind(Key2, Pos2, List2)
+%%% {ok, #record{x = X}} = dict:find(Key3, Dict3)'''
+%%%
+%%% 查询和更改都要一层层find和store, 本模块尝试把这个流程合并成一个key列表, 查询和存储都可以一句代码完成
+%%%
+%%% 存在一点点效率损耗, 判断数据类型和存储的时候会再次查找一遍
+%%%
+%%% 支持 tuple_list, map, tuple, map, dict, ets, key+struct对应结果:
+%%% ```
+%%% k + [{k,v}] -> v
+%%% {k, pos} + [tuple] -> tuple
+%%% k + map -> v
+%%% k + tuple -> element(k, tuple)
+%%% k + dict -> v
+%%% k + ets -> tuple'''
+%%%
+%%% <b>第二部分, 提供加减乘除数学运算</b>
+%%%
+%%% 从左到右, 支持 [{k,v}], map, dict, ets, 且结构不能嵌套
+%%%
+%%% [s1,s2,s3,s4], 执行顺序, s1 + (遍历s2 => 遍历s3 => 遍历s4)
+%%%
+%%% 最终产出的是s1的结构, 若key不存在, 默认值为0
+%%%
+%%% <b>第三部分, 直接在内部执行一个函数</b>
+%%%
+%%% 对第一部分进一步的优化, 可以减少一次store时的lookup
 %%% @end
 %%%-------------------------------------------------------------------
 -module(kv_op).
@@ -93,7 +124,9 @@ lookup(Key, Struct, Default) ->
     lookup([Key], Struct, Default).
 
 %% @doc 存储一个值
+%%
 %% 注意最后一个default值是无效果的, 因为value值会直接覆盖
+%%
 %% 所以当直接传入key时可以不写default ^ ^
 -spec store(key()|[{key(), default()}], value(), struct()) -> struct().
 store([{{Key, Pos} = SKey, Default} | T], Value, Struct) ->
@@ -265,8 +298,11 @@ math_op(multiply, V1, V2) -> V1 * V2;
 math_op(divide, V1, V2) -> V1 / V2.
 
 %% @doc 执行一个函数如果值存在
+%%
 %% 若函数返回DeleteMask, 则删除该值
+%%
 %% 若函数执行, 返回Struct, 否则返回error
+%%
 %% 所以ets不能使用表名'error'
 -spec apply_if_exist(fun((K :: key(), V :: value()) -> V1 :: value()),
     key()|[key()], struct(), term()) -> error| struct().
@@ -379,6 +415,7 @@ apply_if_exist(F, Key, Struct, DeleteMask) ->
     apply_if_exist(F, [Key], Struct, DeleteMask).
 
 %% @doc 执行一个函数, 如果值不存在则使用默认值
+%%
 %% 若函数返回DeleteMask, 则删除该值
 -spec apply(fun((K :: key(), V :: value()) -> V1 :: value()),
     {key(), default()}|[{key(), default()}], struct(), term()) -> struct().

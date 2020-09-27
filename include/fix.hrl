@@ -1,6 +1,3 @@
-%% tag
--define(FIX_DETS_PATH, "fix_dets").
-
 %% dets
 -define(DETS_FIX, fix).
 

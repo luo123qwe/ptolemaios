@@ -1,6 +1,6 @@
 %% break循环, 支持的函数才能用
 -define(FOLD_BREAK, fold_break).
--define(FOLD_BREAK_1(Acc), {fold_break, Acc}).
+-define(FOLD_BREAK1(Acc), {fold_break, Acc}).
 
 %% 常用的宏
 %% Match系列

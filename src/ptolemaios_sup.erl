@@ -9,7 +9,6 @@
 -behaviour(supervisor).
 
 -include("util.hrl").
--include("virture.hrl").
 
 -export([start_link/0]).
 
@@ -41,7 +40,7 @@ init([]) ->
     proto_mapping:load(),
     
     %% 子进程
-    ChildSpecs = virture_config:get_sup_spec() ++
+    ChildSpecs = vt:get_sup_spec() ++
         [
             #{id => gw_sup, start => {gw_sup, start_link, []}, type => supervisor},
             #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor}

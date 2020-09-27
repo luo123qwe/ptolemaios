@@ -110,7 +110,7 @@ fold(Fun, Acc, N, Tuple) ->
             case Fun(K, V, Acc) of
                 ?FOLD_BREAK ->
                     Acc;
-                ?FOLD_BREAK_1(Acc1) ->
+                ?FOLD_BREAK1(Acc1) ->
                     Acc1;
                 Acc1 ->
                     fold(Fun, Acc1, N - 1, Tuple)
