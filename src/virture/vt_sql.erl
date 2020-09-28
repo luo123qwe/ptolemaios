@@ -1,14 +1,16 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
-%%% 数据库用的5.7
-%%% 数据缓存和落地
-%%% 原则上只有单个进程能够操作数据
-%%% 通常一组表由一类进程操作, 并且在进程初始化的时候就加锁
-%%% 所以这里的方法不提供锁检测, 需要上层保证加锁
-%%% 例如操作某个玩家的数据, 应该为那个玩家加上锁
-%%% 而不是仅对某个表加锁
+%%% @doc 数据存储, 使用mysql作为数据库
+%%%
+%%% mysql版本的5.7, 支持json
+%%%
+%%% 设计上同一时间只有一个进程能够写某条数据
+%%%
+%%% 例如操作某个玩家的数据, 只能由该玩家进程进行写, 其他进程脏读
+%%%
+%%% 但是修复数据的时候, 是由修复数据的进程进行写, 因为管理数据的进程可能没开启
+%%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(vt_sql).
@@ -32,11 +34,13 @@
 -type field_type() :: int32|int64|uint32|uint64|float|string|to_string|binary|to_binary|json_def().
 -export_type([field_type/0]).
 
-%% @doc 自动创建数据表
+%% @private 自动创建数据表
 -spec build_table() -> [{Table :: atom(), Error :: term()|exists|ok}].
 build_table() ->
     build_table(vt:all(mysql)).
 
+%% @private 自动创建数据表
+-spec build_table([#vt_sql{}]) -> [{Table :: atom(), Error :: term()|exists|ok}].
 build_table(VirtureList) ->
     lists:map(fun(Virture) ->
         Fields = [[atom_to_list(Field), $ , convert_type(Type), " NOT NULL,"]
@@ -80,11 +84,12 @@ convert_type(?VT_JSON_OBJ(_)) ->
 convert_type(?VT_JSON_OBJ_LIST(_)) ->
     "json".
 
-%% @doc 初始化, system_init
+%% @private 初始化, system_init
+-spec system_init() -> term().
 system_init() ->
     system_init(undefined, undefined, undefined).
 
-%% @doc 如果没有数据需要修复Fun传undefined即可, 更多信息看 fix_dets/3
+%% @private 如果没有数据需要修复Fun传undefined即可, 更多信息看 fix_dets/3
 -spec system_init(undefined|function(), undefined|fun((Record :: tuple())-> term()), undefined|function()) -> term().
 system_init(Before, Fun, After) ->
     ?LOG_NOTICE("~p", [build_table()]),
@@ -99,7 +104,8 @@ system_init(Before, Fun, After) ->
         {error, Error} -> throw({virture, system_init, Error})
     end.
 
-%% 保存定义
+%% @private 保存定义
+-spec save_defined() -> any().
 save_defined() ->
     {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, get_dets_path() ++ "/" ++ atom_to_list(?DETS_VT_SQL)}, {keypos, #vt_sql.table}]),
     lists:foreach(fun(Virture) ->
@@ -107,7 +113,7 @@ save_defined() ->
                   end, vt:all(mysql)),
     dets:close(?DETS_VT_SQL).
 
-%% @doc 初始化进程字典
+%% @private 初始化进程字典
 process_init() ->
     case get(?PD_VT_SQL) of
         undefined -> put(?PD_VT_SQL, #{});
@@ -135,8 +141,11 @@ load(Table, SelectKey) ->
     load(Table, SelectKey, undefined).
 
 %% @doc 在当前进程初始化一个表
+%%
 %% 当SelectKey或WhereSql为undefined时, 等效于没有这个where条件
+%%
 %% WhereSql为额外的where语句, 你需要清楚自己在做什么, 否则请加载到内存进行复杂查询
+%%
 %% WhereSql=/=undefined时总是查询数据库再和本地数据比较, 同时不会缓存ETS_VT_SQL_LOAD
 -spec load(atom(), undefiend|list(), undefined|iolist()) -> term().
 load(Virture = #vt_sql{}, SelectKey, WhereSql) ->
@@ -183,7 +192,7 @@ dirty_lookup(Table, Key) ->
             undefined
     end.
 
-%% 插入一条数据
+%% @doc 插入一条数据
 -spec insert(tuple()) -> term().
 insert(Record) ->
     Table = element(1, Record),
@@ -292,7 +301,7 @@ do_sync_to_ets(#vt_sql{ets = Ets, data = Data, change = Change} = Virture) ->
               end, [], Change),
     Virture#vt_sql{change = #{}}.
 
-%% @doc 同步到数据库, 同时也会同步到ets
+%% @doc 同步到数据库, 同时也会同步到ets, 若同步数据库失败, 则同步到dets
 sync_to_db() ->
     VtSql = get(?PD_VT_SQL),
     %% 遍历所有数据
@@ -395,7 +404,7 @@ sync_dets(#vt_sql{table = Table, data = Data, private_key_pos = PKPos}) ->
             ?LOG_ERROR("~p", [Error])
     end.
 
-%% @doc 检查dets
+%% @doc 检查dets是否存在数据
 check_dets() ->
     DetsPath = get_dets_path(),
     {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, DetsPath ++ "/" ++ atom_to_list(?DETS_VT_SQL)}, {keypos, #vt_sql.table}]),
@@ -423,10 +432,15 @@ check_dets() ->
         end, []).
 
 %% @doc 修复dets数据, 同步到数据库
+%%
 %% 提供两个钩子, 全部修复开始前, 全部修复成功后
-%% Fun函数里面必须包含insert或者delete操作, 否则数据会丢失
+%%
+%% Fun函数里面必须包含insert或者delete操作, 否则数据会错乱
+%%
 %% 如果数据已删除, 则函数传入{delete, key}
+%%
 %% 简单的修复, A数据在dets, 仅使用正常的数据+坏掉数据A修复
+%%
 %% 如果涉及复杂修复, 请直接使用dets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
 -spec fix_dets(undefined|function(), fun((Record :: tuple())-> term()), undefined|function()) -> term().
 fix_dets(Before, Fun, After) ->
@@ -496,23 +510,23 @@ fix_dets(Before, Fun, After) ->
     erlang:process_flag(trap_exit, OldTrapExit),
     Result.
 
-%% @doc 获取当前状态, 用于回滚
+%% @doc 获取当前状态, 用于rollback/1
 -spec hold() -> {list(), map()}.
 hold() ->
     {get(?PD_VT_SQL_NOT_FLUSH), get(?PD_VT_SQL)}.
 
-%% @doc hold()的状态回滚
+%% @doc hold/0的状态回滚
 -spec rollback({list(), map()}) -> term().
 rollback({NotFlush, VtSql}) ->
     put(?PD_VT_SQL_NOT_FLUSH, NotFlush),
     put(?PD_VT_SQL, VtSql).
 
-%% @doc 清理缓存数据
+%% @doc 清理进程字典缓存数据
 clean_pd() ->
     put(?PD_VT_SQL, #{}),
     put(?PD_VT_SQL_NOT_FLUSH, []).
 
-%% @doc 清理缓存
+%% @doc 清理某些table的进程字典缓存数据
 -spec clean_pd(list()) -> term().
 clean_pd(TableList) ->
     clean(TableList, get(?PD_VT_SQL), get(?PD_VT_SQL_NOT_FLUSH)).
@@ -524,6 +538,8 @@ clean([], VtSql, NotFlush) ->
 clean([Table | T], VtSql, NotFlush) ->
     clean(T, maps:remove(Table, VtSql), lists:delete(Table, NotFlush)).
 
+%% @doc 清理所有ets数据
+-spec clean_ets() -> any().
 clean_ets() ->
     TableList = lists:usort(ets:select(?ETS_VT_SQL_LOAD, [{{{'$1', '_'}}, [], ['$1']}])),
     lists:foreach(fun(Table) ->
@@ -531,6 +547,8 @@ clean_ets() ->
                   end, TableList),
     ets:delete_all_objects(?ETS_LOCAL_LOCK).
 
+%% @doc 清理某些table的ets数据
+-spec clean_ets(list()) -> list().
 clean_ets([]) ->
     [];
 clean_ets([Table | T]) ->
@@ -538,7 +556,7 @@ clean_ets([Table | T]) ->
     ets:select_delete(?ETS_VT_SQL_LOAD, [{{{Table, '_'}}, [], [true]}]),
     clean_ets(T).
 
-%% @doc 获取全部table
+%% @doc 获取全部进程初始化的table
 -spec all_table() -> list().
 all_table() ->
     case get(?PD_VT_SQL) of
@@ -547,11 +565,15 @@ all_table() ->
     end.
 
 %% @doc 热修复某个表
-%% 如果定义变了(is_diff_def/2) ,Fun函数里面必须包含insert或者delete操作, 否则数据会丢失
-%% 因为ets热修复不会进行重置
-%% 所以ets参数不会覆盖, private_key_pos不能改变
+%%
+%% 如果定义变了(is_diff_def/2) ,Fun函数里面必须包含insert或者delete操作, 否则数据会错乱
+%%
+%% 因为ets热修复不会进行重置, 所以ets参数不会覆盖, private_key_pos不能改变
+%%
 %% 简单的修复, A数据在缓存, 仅使用正常的数据+坏掉数据A修复
+%%
 %% 如果涉及复杂修复, 请直接使用fold_cache和ets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
+-spec hotfix(atom(), fun((Record :: term()) -> term())) -> any().
 hotfix(Table, Fun) ->
     Hold = hold(),
     #{Table := Virture} = VtSql = get(?PD_VT_SQL),

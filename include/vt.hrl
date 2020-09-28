@@ -54,6 +54,7 @@
 -record(vt_sql, {
     %% 配置项
     table = error({require, table}) :: atom(),% 数据表名和mysql一样
+    use_ets = true :: boolean(),% 是否使用ets作为缓存
     private_key_pos = error({require, private_key_pos}) :: integer(),% 额外字段, 避免重新构造key, 插入时自动构造
     state_pos = error({require, state_pos}) :: integer(),% 额外字段, 用于缓存中标识数据状态
     select_key = error({require, select_key}) :: [],% 初始化数据库搜索全部数据用的key
