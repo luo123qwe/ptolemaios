@@ -85,6 +85,19 @@ all(mysql) ->
             record_size = record_info(size, vt_sql_test_goods)
         },
         #vt_sql{
+            table = vt_sql_test_equip,
+            use_ets = false,
+            private_key_pos = #vt_sql_test_equip.vt_sql_key,
+            state_pos = #vt_sql_test_equip.vt_sql_state,
+            select_key = [player_id],
+            private_key = [player_id, equip_id],
+            all_fields = [
+                #vt_sql_field{name = player_id, pos = #vt_sql_test_equip.player_id, type = ?VT_UINT32},
+                #vt_sql_field{name = equip_id, pos = #vt_sql_test_equip.equip_id, type = ?VT_UINT32}
+            ],
+            record_size = record_info(size, vt_sql_test_equip)
+        },
+        #vt_sql{
             table = player,
             private_key_pos = #player.vt_sql_key,
             state_pos = #player.vt_sql_state,

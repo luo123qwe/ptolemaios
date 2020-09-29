@@ -100,3 +100,11 @@
     to_bin
 }).
 
+%% 测试不使用ets缓存
+-record(vt_sql_test_equip, {
+    vt_sql_key,
+    vt_sql_state,
+    player_id,
+    equip_id
+}).
+

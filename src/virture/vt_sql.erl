@@ -19,7 +19,7 @@
 -include("util.hrl").
 
 %% 基本操作
--export([process_init/0, is_load/2, ensure_load/2, load/2, load/3, lookup/2, dirty_lookup/2, insert/1, delete/2, fold_cache/3, make_ets_name/1]).
+-export([process_init/0, is_load_ets/2, ensure_load_ets/2, load/2, load/3, lookup/2, lookup_ets/2, insert/1, delete/2, fold_cache/3, make_ets_name/1]).
 
 %% 回滚, 刷到数据库
 -export([sync_to_ets/0, sync_to_db/0, hold/0, rollback/1, all_table/0, clean_pd/0, clean_pd/1, clean_ets/0, clean_ets/1]).
@@ -90,14 +90,21 @@ system_init() ->
     system_init(undefined, undefined, undefined).
 
 %% @private 如果没有数据需要修复Fun传undefined即可, 更多信息看 fix_dets/3
+%%
+%% 因为修复完dets数据就清空了, 所以fix_dets只需要执行一次, 跟版本没关系(对比fix_restart)
 -spec system_init(undefined|function(), undefined|fun((Record :: tuple())-> term()), undefined|function()) -> term().
 system_init(Before, Fun, After) ->
     ?LOG_NOTICE("~p", [build_table()]),
     file:make_dir(get_dets_path()),
     ?ETS_VT_SQL_LOAD = ets:new(?ETS_VT_SQL_LOAD, [public, named_table, {read_concurrency, true}]),
     lists:foreach(fun(Virture) ->
-        EtsName = make_ets_name(Virture),
-        EtsName = ets:new(EtsName, [{keypos, Virture#vt_sql.private_key_pos} | lists:keydelete(keypos, 1, Virture#vt_sql.ets_opt)])
+        case Virture#vt_sql.use_ets of
+            true ->
+                EtsName = make_ets_name(Virture),
+                EtsName = ets:new(EtsName, [{keypos, Virture#vt_sql.private_key_pos} | lists:keydelete(keypos, 1, Virture#vt_sql.ets_opt)]);
+            _ ->
+                skip
+        end
                   end, vt:all(mysql)),
     case fix_dets(Before, Fun, After) of
         ok -> ok;
@@ -125,12 +132,12 @@ process_init() ->
     end.
 
 
-%% @doc 是否已加载某个表
-is_load(Table, SelectKey) ->
+%% @doc 是否已加载某个表到ets
+is_load_ets(Table, SelectKey) ->
     ets:member(?ETS_VT_SQL_LOAD, {Table, SelectKey}).
 
-%% @doc 没加载则加载
-ensure_load(Table, SelectKey) ->
+%% @doc 是否已加载某个表到ets, 没加载则加载
+ensure_load_ets(Table, SelectKey) ->
     case ets:member(?ETS_VT_SQL_LOAD, {Table, SelectKey}) of
         true -> true;
         _ -> load(Table, SelectKey)
@@ -183,8 +190,8 @@ lookup(Table, Key) when is_list(Key) ->
 
 
 %% @doc 脏读ets, 上层需要保证数据已经加载
--spec dirty_lookup(atom(), list()) -> undefined|tuple().
-dirty_lookup(Table, Key) ->
+-spec lookup_ets(atom(), list()) -> undefined|tuple().
+lookup_ets(Table, Key) ->
     case ets:lookup(make_ets_name(Table), Key) of
         [Record] ->
             Record;
@@ -197,6 +204,7 @@ dirty_lookup(Table, Key) ->
 insert(Record) ->
     Table = element(1, Record),
     #{Table := #vt_sql{
+        use_ets = UseEts,
         state_pos = StatePos, private_key_pos = PrivateKeyPos,
         private_key = PrivateKey, data = Data, change = ChangeMap
     } = Virture} = VtSql = get(?PD_VT_SQL),
@@ -212,15 +220,22 @@ insert(Record) ->
     %% 更新缓存
     Data1 = Data#{Key => Record2},
     %% 更新change
-    ChangeMap1 = ChangeMap#{Key => ?VT_STATE_REPLACE},
-    Virture1 = Virture#vt_sql{has_change = true, data = Data1, change = ChangeMap1},
-    put(?PD_VT_SQL, VtSql#{Table => Virture1}),
-    save_not_flush(Table).
+    case UseEts of
+        true ->
+            ChangeMap1 = ChangeMap#{Key => ?VT_STATE_REPLACE},
+            Virture1 = Virture#vt_sql{has_change = true, data = Data1, change = ChangeMap1},
+            put(?PD_VT_SQL, VtSql#{Table => Virture1}),
+            save_not_flush(Table);
+        _ ->
+            Virture1 = Virture#vt_sql{has_change = true, data = Data1},
+            put(?PD_VT_SQL, VtSql#{Table => Virture1})
+    end.
 
 %% @doc 删除一条数据
 -spec delete(atom(), list()) -> term().
 delete(Table, Key) when is_list(Key) ->
     #{Table := #vt_sql{
+        use_ets = UseEts,
         state_pos = StatePos, private_key_pos = PrivateKeyPos,
         data = Data, change = ChangeMap
     } = Virture} = VtSql = get(?PD_VT_SQL),
@@ -229,10 +244,16 @@ delete(Table, Key) when is_list(Key) ->
     %% 更新缓存
     Data1 = Data#{Key => Record},
     %% 更新change
-    ChangeMap1 = ChangeMap#{Key => ?VT_STATE_DELETE},
-    Virture1 = Virture#vt_sql{has_change = true, data = Data1, change = ChangeMap1},
-    put(?PD_VT_SQL, VtSql#{Table => Virture1}),
-    save_not_flush(Table).
+    case UseEts of
+        true ->
+            ChangeMap1 = ChangeMap#{Key => ?VT_STATE_DELETE},
+            Virture1 = Virture#vt_sql{has_change = true, data = Data1, change = ChangeMap1},
+            put(?PD_VT_SQL, VtSql#{Table => Virture1}),
+            save_not_flush(Table);
+        _ ->
+            Virture1 = Virture#vt_sql{has_change = true, data = Data1},
+            put(?PD_VT_SQL, VtSql#{Table => Virture1})
+    end.
 
 
 %% 记录改变的table
@@ -289,7 +310,7 @@ sync_to_ets([H | T], VtSql) ->
     VtSql1 = VtSql#{H => Virture1},
     sync_to_ets(T, VtSql1).
 
-do_sync_to_ets(#vt_sql{ets = Ets, data = Data, change = Change} = Virture) ->
+do_sync_to_ets(#vt_sql{ets = Ets, use_ets = true, data = Data, change = Change} = Virture) ->
     maps:fold(fun(K, S, _Acc) ->
         case S of
             ?VT_STATE_DELETE ->
@@ -299,7 +320,10 @@ do_sync_to_ets(#vt_sql{ets = Ets, data = Data, change = Change} = Virture) ->
                 ets:insert(Ets, Record)
         end
               end, [], Change),
-    Virture#vt_sql{change = #{}}.
+    Virture#vt_sql{change = #{}};
+do_sync_to_ets(Virture) ->
+    ?LOG_WARNING("~p", [Virture#vt_sql.ets]),
+    Virture.
 
 %% @doc 同步到数据库, 同时也会同步到ets, 若同步数据库失败, 则同步到dets
 sync_to_db() ->
@@ -321,7 +345,7 @@ sync_to_db() ->
     put(?PD_VT_SQL, VtSql1).
 
 sync_to_db(#vt_sql{
-    ets = Ets,
+    ets = Ets, use_ets = UseEts,
     state_pos = StatePos, data = Data, private_key = PrivateKey, all_fields = AllFields,
     private_where_sql = WhereSql, replace_sql = ReplaceSql, delete_sql = DeleteSql
 } = Virture) ->
@@ -331,14 +355,14 @@ sync_to_db(#vt_sql{
             try
                 case element(StatePos, Record) of
                     ?VT_STATE_REPLACE ->
-                        ets:insert(Ets, Record),
+                        ?DO_IF(UseEts, ets:insert(Ets, Record)),
                         Record1 = setelement(StatePos, Record, ?VT_STATE_NOT_CHANGE),
                         D1 = D#{Key => Record1},
                         [[_, First] | Left] = [[$,, encode(Type, element(Pos, Record))] || #vt_sql_field{type = Type, pos = Pos} <- AllFields],
                         RIO1 = [$,, $(, First, Left, $) | RIO],
                         sync_db_check_sql_limit(ReplaceSql, RIO1, DIO, D1, N + 1, LD, HBD);
                     ?VT_STATE_DELETE ->
-                        ets:delete(Ets, Key),
+                        ?DO_IF(UseEts, ets:delete(Ets, Key)),
                         D1 = maps:remove(Key, D),
                         WhereSql1 = join_where(WhereSql, PrivateKey, Key),
                         DIO1 = [DeleteSql, WhereSql1, $; | DIO],
@@ -435,14 +459,16 @@ check_dets() ->
 %%
 %% 提供两个钩子, 全部修复开始前, 全部修复成功后
 %%
-%% Fun函数里面必须包含insert或者delete操作, 否则数据会错乱
+%% Fun函数里面必须包含insert或者delete操作, 否则数据不会落地
 %%
 %% 如果数据已删除, 则函数传入{delete, key}
+%%
+%% 若vt_sql定义变了且需要使用新的定义, 可以通过hotfix先覆盖定义再进行修复
 %%
 %% 简单的修复, A数据在dets, 仅使用正常的数据+坏掉数据A修复
 %%
 %% 如果涉及复杂修复, 请直接使用dets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
--spec fix_dets(undefined|function(), fun((Record :: tuple())-> term()), undefined|function()) -> term().
+-spec fix_dets(undefined|function(), fun((Record :: tuple()|{delete, Key :: list()})-> term()), undefined|function()) -> term().
 fix_dets(Before, Fun, After) ->
     Self = self(),
     OldTrapExit = erlang:process_flag(trap_exit, true),
@@ -564,16 +590,18 @@ all_table() ->
         _ -> []
     end.
 
-%% @doc 热修复某个表
+%% @doc 热修复进程中的某个表
 %%
 %% 如果定义变了(is_diff_def/2) ,Fun函数里面必须包含insert或者delete操作, 否则数据会错乱
 %%
-%% 因为ets热修复不会进行重置, 所以ets参数不会覆盖, private_key_pos不能改变
+%% 如果数据已删除, 则函数传入{delete, key}
+%%
+%% 另外ets不能作任何更改, 因为实际上不太需要这么做, 所以相应的private_key_pos也不能改变
 %%
 %% 简单的修复, A数据在缓存, 仅使用正常的数据+坏掉数据A修复
 %%
 %% 如果涉及复杂修复, 请直接使用fold_cache和ets和sql修复, 因为这里无法处理坏掉数据A+坏掉数据B交叉
--spec hotfix(atom(), fun((Record :: term()) -> term())) -> any().
+-spec hotfix(atom(), fun((Record :: tuple()|{delete, Key :: list()}) -> term())) -> any().
 hotfix(Table, Fun) ->
     Hold = hold(),
     #{Table := Virture} = VtSql = get(?PD_VT_SQL),
@@ -586,15 +614,15 @@ hotfix(Table, Fun) ->
             error
     end.
 
-do_hotfix(Fun, #vt_sql{table = Table, state_pos = StatePos, private_key_pos = PKPos, data = Data} = OldVirture, VtSql) ->
+do_hotfix(Fun, #vt_sql{table = Table, use_ets = UseEts, state_pos = StatePos, private_key_pos = PKPos, data = Data} = OldVirture, VtSql) ->
     {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, get_dets_path() ++ "/" ++ atom_to_list(?DETS_VT_SQL)}, {keypos, #vt_sql.table}]),
     case vt:get(mysql, Table) of
         #vt_sql{} = NewConfig ->
-            case PKPos == NewConfig#vt_sql.private_key_pos of
+            case UseEts == NewConfig#vt_sql.use_ets andalso PKPos == NewConfig#vt_sql.private_key_pos of
                 true -> skip;
                 _ ->
-                    %% 主键位置不能改变因为ets无法中途变更
-                    throw({vt_sql, Table, private_key_pos, cant, change})
+                    %% ets无法中途变更
+                    throw({vt_sql, Table, config_cant_change})
             end,
             NewVirture =
                 case is_same_def(OldVirture, NewConfig) of
@@ -643,7 +671,13 @@ is_same_def(Old, New) ->
 
 %% @doc 数据库查询
 query(IOList) ->
-    mysql_poolboy:query(?VT_SQL_POOL, IOList).
+    case mysql_poolboy:query(?VT_SQL_POOL, IOList) of
+        {error, Error} = E ->
+            ?LOG_WARNING("~p", [Error]),
+            E;
+        Ok ->
+            Ok
+    end.
 
 %% 初始化
 init_virture(#vt_sql{all_fields = AllField, private_key = PrivateKey, select_key = Selectkey} = Virture) ->
@@ -707,14 +741,14 @@ join_where([SqlH | SqlT], [#vt_sql_field{type = Type} | FieldT], [Value | ValueT
 %% 初始化数据
 init_data(SelectValue, ExtWhereSql, Virture) ->
     #vt_sql{
-        table = Table, ets = EtsName,
+        table = Table, use_ets = UseEts, ets = EtsName,
         private_key_pos = PrivateKeyPos, state_pos = StatePos,
         private_key = PrivateKey, select_key = SelectKey,
         select_where_sql = WhereSql, select_sql = SelectSql,
         record_size = RecordSize,
         data = VData, init_fun = InitFun
     } = Virture,
-    case ExtWhereSql =/= undefined orelse SelectValue == undefined orelse is_load(Table, SelectValue) == false of
+    case UseEts == false orelse ExtWhereSql =/= undefined orelse SelectValue == undefined orelse is_load_ets(Table, SelectValue) == false of
         true ->
             %% 从数据库拿
             WhereSql1 =
@@ -742,25 +776,31 @@ init_data(SelectValue, ExtWhereSql, Virture) ->
                     Record2 = erlang:setelement(StatePos, Record1, ?VT_STATE_NOT_CHANGE),
                     Acc#{K => Record2}
                             end, VData, Rows),
-            %% 全部初始化成功再放到ets
             Data1 =
-                maps:fold(fun(K, Value, Acc) ->
-                    %% 读进程可以很多个, 但是写进程只有一个
-                    %% 保证初始化不会覆盖即可
-                    case ets:insert_new(EtsName, Value) of
-                        true -> Acc;
-                        false ->
-                            %% 缓存中已经有数据
-                            case ets:lookup(EtsName, K) of
-                                [Value1] -> Acc#{K => Value1};
-                                _ -> maps:remove(K, Acc)
+                case UseEts of
+                    true ->
+                        %% 全部初始化成功再放到ets
+                        maps:fold(fun(K, Value, Acc) ->
+                            %% 读进程可以很多个, 但是写进程只有一个
+                            %% 保证初始化不会覆盖即可
+                            case ets:insert_new(EtsName, Value) of
+                                true -> Acc;
+                                false ->
+                                    %% 缓存中已经有数据
+                                    case ets:lookup(EtsName, K) of
+                                        [Value1] -> Acc#{K => Value1};
+                                        _ -> maps:remove(K, Acc)
+                                    end
                             end
-                    end
-                          end, Data, Data),
+                                  end, Data, Data);
+                    _ ->
+                        Data
+                end,
             %% where总是查表
-            ?DO_IF(WhereSql =/= undefined, ets:insert(?ETS_VT_SQL_LOAD, {{Table, SelectValue}})),
+            ?DO_IF(UseEts andalso WhereSql =/= undefined, ets:insert(?ETS_VT_SQL_LOAD, {{Table, SelectValue}})),
             Virture#vt_sql{data = Data1};
         _ ->
+            %% 从ets拿
             Spec = erlang:make_tuple(RecordSize, '_'),
             KeySpec = make_ets_key_spec(PrivateKey, SelectKey, SelectValue),
             Spec1 = setelement(PrivateKeyPos, Spec, KeySpec),
@@ -920,7 +960,8 @@ base_test_() ->
             mysql_poolboy:add_pool(?VT_SQL_POOL, PoolOptions, MySqlOptions),
             %% 删除test数据表
             mysql_poolboy:query(?VT_SQL_POOL, "drop table if exists vt_sql_test_player;
-    drop table if exists vt_sql_test_goods;"),
+    drop table if exists vt_sql_test_goods;
+    drop table if exists vt_sql_test_equip;"),
             %% build
             vt_sql:system_init()
         end,
@@ -1027,10 +1068,10 @@ base_test_() ->
             %% dirty lookup
             vt_sql:clean_ets([vt_sql_test_goods]),
             vt_sql:clean_pd(),
-            undefined = vt_sql:dirty_lookup(vt_sql_test_goods, [4, 1]),
+            undefined = vt_sql:lookup_ets(vt_sql_test_goods, [4, 1]),
             vt_sql:load(vt_sql_test_goods, [4]),
             clean_pd(),
-            #vt_sql_test_goods{} = vt_sql:dirty_lookup(vt_sql_test_goods, [4, 1]),
+            #vt_sql_test_goods{} = vt_sql:lookup_ets(vt_sql_test_goods, [4, 1]),
             %% fold_cache
             vt_sql:load(vt_sql_test_goods, [4]),
             2 = fold_cache(fun(_K, _V, Acc) ->
@@ -1049,6 +1090,26 @@ base_test_() ->
             %% 看数据库
             %% vt_sql:clean(), vt_sql:clean_ets().
             %% vt_sql:load(vt_sql_test_goods, [4]), vt_sql:lookup(vt_sql_test_goods, [4, 1]).
+            %% 无ets缓存
+            undefined = ets:info(vt_sql:make_ets_name(vt_sql_test_equip)),
+            vt_sql:load(vt_sql_test_equip, [1]),
+            undefined = vt_sql:lookup(vt_sql_test_equip, [1, 1]),
+            vt_sql:insert(#vt_sql_test_equip{player_id = 1, equip_id = 1}),
+            #vt_sql_test_equip{player_id = 1, equip_id = 1} = vt_sql:lookup(vt_sql_test_equip, [1, 1]),
+            vt_sql:sync_to_ets(),
+            vt_sql:sync_to_db(),
+            vt_sql:clean_pd(),
+            vt_sql:load(vt_sql_test_equip, [1]),
+            #vt_sql_test_equip{player_id = 1, equip_id = 1} = vt_sql:lookup(vt_sql_test_equip, [1, 1]),
+            vt_sql:insert(#vt_sql_test_equip{player_id = 1, equip_id = 2}),
+            vt_sql:insert(#vt_sql_test_equip{player_id = 1, equip_id = 3}),
+            vt_sql:delete(vt_sql_test_equip, [1, 1]),
+            vt_sql:sync_to_db(),
+            vt_sql:clean_pd(),
+            vt_sql:load(vt_sql_test_equip, [1]),
+            undefined = vt_sql:lookup(vt_sql_test_equip, [1, 1]),
+            #vt_sql_test_equip{player_id = 1, equip_id = 2} = vt_sql:lookup(vt_sql_test_equip, [1, 2]),
+            #vt_sql_test_equip{player_id = 1, equip_id = 3} = vt_sql:lookup(vt_sql_test_equip, [1, 3]),
             []
         end}.
 
