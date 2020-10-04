@@ -42,6 +42,9 @@ BehaviacDebug = true,
         %% rebar_ct在hex上面都搜不到了, 先屏蔽掉
         {override, mongodb, [{plugins, []}]},
 
+        %% window10 mkdir -p 有问题, 而且应该不需要这个的
+        {override, pbkdf2, [{pre_hooks, []}]},
+
         %% 全都换成这个源
         {override, [{rebar_packages_cdn, "https://hexpm.upyun.com"}]}
     ]},

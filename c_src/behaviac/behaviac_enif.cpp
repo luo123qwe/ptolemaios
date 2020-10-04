@@ -56,7 +56,7 @@ bool InitBehavic()
 {
 	LOGI("InitBehavic\n");
 
-	behaviac::Workspace::GetInstance()->SetFilePath("./behaviac");
+	behaviac::Workspace::GetInstance()->SetFilePath("./behaviors/exported");
 
 	behaviac::Workspace::GetInstance()->SetFileFormat(behaviac::Workspace::EFF_xml);
 
