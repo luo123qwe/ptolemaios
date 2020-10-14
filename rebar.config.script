@@ -15,32 +15,21 @@ BehaviacDebug = true,
 
     {deps, [
         {ranch, "2.0.0"},
-        {enif_protobuf, ".*", {git, "https://github.com/jg513/enif_protobuf.git", {tag, "master"}}},
+        {enif_protobuf, ".*", {git, "https://github.com/DominicGame/enif_protobuf.git", {tag, "master"}}},
         {mongodb, ".*", {git, "git://github.com/comtihon/mongodb-erlang", {tag, "v3.2.0"}}},
         {mysql_poolboy, ".*", {git, "https://github.com/mysql-otp/mysql-otp-poolboy", {tag, "0.2.0"}}},
         {jsx, "3.0.0"}
     ]},
 
     {overrides, [
-        {add, enif_protobuf, [
-            %% 用pc编译
-            {provider_hooks, [{pre, [{compile, {pc, compile}}, {clean, {pc, clean}}]}]},
-            %% Windows需要先设置编译环境
-            %% 把cl.exe放到环境变量
-            %% 设置当前shell环境
-            %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
-            %% "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
-            {plugins, [{pc, ".*", {git, "https://github.com/DominicGame/port_compiler.git", {tag, "master"}}}]}
-
-        ]},
         %% 换成hex下载
         {override, mysql_poolboy, [{deps, [{mysql, "1.6.0"}, {poolboy, "1.5.2"}]}]},
 
-        %% 用rebar3_gpb_plugin的版本
-        {override, enif_protobuf, [{deps, []}]},
-
         %% rebar_ct在hex上面都搜不到了, 先屏蔽掉
         {override, mongodb, [{plugins, []}]},
+
+        %% window10 mkdir -p 有问题, 而且应该不需要这个的
+        {override, pbkdf2, [{pre_hooks, []}]},
 
         %% 全都换成这个源
         {override, [{rebar_packages_cdn, "https://hexpm.upyun.com"}]}
@@ -126,7 +115,11 @@ BehaviacDebug = true,
         type_specs
     ]},
 
-
+    %% Windows需要先设置编译环境
+    %% 把cl.exe放到环境变量
+    %% 设置当前shell环境
+    %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
+    %% "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
     {port_specs, [
         {"priv/example_enif.so", [
             "c_src/example_enif.c"

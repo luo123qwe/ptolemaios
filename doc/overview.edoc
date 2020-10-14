@@ -239,6 +239,8 @@ tar_a -> tar_ebin_a1    -> tar_ebin_a2  -> tar_b -> tar_ebin_b2
     <dd>替换app的ebin, 如果节点启动, 则使用rpc call调用更新函数</dd>
     <dt>backup_tree</dt>
     <dd>如果tar和tar_ebin都会备份到一个文件夹, 那么根据备份文件中的时间戳会生成类似 [{tar1, [ebin11, ebin12..]}, {tar2, [ebin21, ebin22..]}] 的顺序结构, 反映某个tar下的所有ebin更新</dd>
+    <dt>update_backup</dt>
+    <dd>使用当前的lib更新backup文件夹里某个版本以后所有tar.gz里的beam文件</dd>
 </dl>
 
 == 例子(example) ==

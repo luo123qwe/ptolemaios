@@ -129,7 +129,7 @@ compile_proto(RebarConfig) ->
                                             end, {PB, D, R}, MatchList),
                             {L1, PB1, D1, R1};
                         _ ->
-                            io:format("warning bad proto ~s", [FileName]),
+                            io:format("warning no proto in ~s~n", [FileName]),
                             Acc
                     end
                                                                         end, {[], [], [], []}),
