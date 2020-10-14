@@ -1,0 +1,5 @@
+Q:
+    在win下执行os:cmd("a/b/c/d")失败, 另外使用os:cmd("a\\b\\c\\d")成功
+A:
+    原因不明, 使用os:cmd(filename:absname("a/b/c/d"))解决
+

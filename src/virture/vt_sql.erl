@@ -200,6 +200,7 @@ lookup_ets(Table, Key) ->
     end.
 
 %% @doc 插入一条数据
+%% todo 批量操作
 -spec insert(tuple()) -> term().
 insert(Record) ->
     Table = element(1, Record),
@@ -232,6 +233,7 @@ insert(Record) ->
     end.
 
 %% @doc 删除一条数据
+%% todo 批量操作
 -spec delete(atom(), list()) -> term().
 delete(Table, Key) when is_list(Key) ->
     #{Table := #vt_sql{
