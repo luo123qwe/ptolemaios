@@ -1,0 +1,16 @@
+[
+    {erl_opts, [no_debug_info]},
+    {deps, [
+        {xlsxio, ".*", {git, "https://github.com/DominicGame/xlsxio.git", {tag, "master"}}}
+    ]},
+
+    {escript_incl_apps, [xlsx2erl, xlsxio]},
+    {escript_main_app, xlsx2erl},
+    {escript_name, xlsx2erl},
+    {escript_emu_args, "%%! +sbtu +A1\n"},
+
+    %% Profiles
+    {profiles, [{test,
+        [{erl_opts, [debug_info]}]
+    }]}
+].
