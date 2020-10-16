@@ -1,7 +1,9 @@
--define(XLSX2ERL_RECORD_START_MASK, "%%%%%%%%%%%" ++ ?MODULE_STRING ++ " record define start%%%%%%%%%%%%%%%%%%%").
--define(XLSX2ERL_RECORD_START_MASK(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define start%%%%%%%%%%%%%%%%%%%").
--define(XLSX2ERL_RECORD_END_MASK, "%%%%%%%%%%%" ++ ?MODULE_STRING ++ " record define end%%%%%%%%%%%%%%%%%%%").
--define(XLSX2ERL_RECORD_END_MASK(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define end%%%%%%%%%%%%%%%%%%%").
+-define(DETS_XLSX2ERL, dets_xlsx2erl).
+-define(XLSX2ERL_DETS_EXCEL_UPDATE1(Module), {Module, update_time}).
+-define(XLSX2ERL_DETS_EXCEL_UPDATE2(Module, Time), #excel_update{tag = ?XLSX2ERL_DETS_EXCEL_UPDATE1(Module), time = Time}).
+
+-define(XLSX2ERL_RECORD_START_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define start%%%%%%%%%%%%%%%%%%%").
+-define(XLSX2ERL_RECORD_END_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define end%%%%%%%%%%%%%%%%%%%").
 
 -record(row, {
     line :: integer(),
@@ -9,12 +11,21 @@
 }).
 
 -record(sheet, {
-    record_name :: atom(),% 表对应的record名字
-    nth_list :: list(),% 对应excel表的列下标
+    name :: atom(),% 表对应的名字
+    nth_list :: list(),% record字段对应excel表的列下标
     row_list :: [#row{}]
 }).
 
+-record(excel, {
+    name :: atom(),% 工作簿对应的名字
+    sheet_list :: [#sheet{}]
+}).
+
+-record(excel_update, {
+    tag :: {update_time, Module :: atom()},
+    time :: non_neg_integer()
+}).
+
 -record(callback_args, {
-    filename,
     export_path
 }).
