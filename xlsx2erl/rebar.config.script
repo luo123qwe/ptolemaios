@@ -1,10 +1,12 @@
 [
+    {rebar_packages_cdn, "https://hexpm.upyun.com"},
     {erl_opts, [no_debug_info]},
     {deps, [
-        {xlsxio, ".*", {git, "https://github.com/DominicGame/xlsxio.git", {tag, "master"}}}
+        {xlsxio, ".*", {git, "https://github.com/DominicGame/xlsxio.git", {tag, "master"}}},
+        {jsx, "3.0.0"}
     ]},
 
-    {escript_incl_apps, [xlsx2erl, xlsxio]},
+    {escript_incl_apps, [xlsx2erl, xlsxio, jsx]},
     {escript_main_app, xlsx2erl},
     {escript_name, xlsx2erl},
     {escript_emu_args, "%%! +sbtu +A1\n"},

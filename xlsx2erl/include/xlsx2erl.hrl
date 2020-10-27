@@ -2,6 +2,8 @@
 -define(XLSX2ERL_DETS_EXCEL_UPDATE1(Module), {Module, update_time}).
 -define(XLSX2ERL_DETS_EXCEL_UPDATE2(Module, Time), #excel_update{tag = ?XLSX2ERL_DETS_EXCEL_UPDATE1(Module), time = Time}).
 
+-define(PD_XLSX2ERL_ROW, pd_xlsx2erl_line).
+
 -define(XLSX2ERL_RECORD_START_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define start%%%%%%%%%%%%%%%%%%%").
 -define(XLSX2ERL_RECORD_END_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define end%%%%%%%%%%%%%%%%%%%").
 

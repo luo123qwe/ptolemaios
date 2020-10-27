@@ -113,7 +113,7 @@ get_excel(Module) ->
         _ -> undefined
     end.
 
-%% @doc 获取所有sheet的数据
+%% @doc 获取所有sheet的数据, 拿到的是倒序的!!
 -spec get_sheet_data([{RecordName :: atom(), RecordFieldList :: [atom()]}], file:filename()) -> error|[#sheet{}].
 get_sheet_data(RecordDefList, XlsxFile) ->
     RowHandler =
