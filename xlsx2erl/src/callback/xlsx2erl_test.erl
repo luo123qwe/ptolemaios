@@ -5,16 +5,16 @@
 -include("xlsx2erl.hrl").
 
 %%%%%%%%%%%xlsx2erl_test record define start%%%%%%%%%%%%%%%%%%%
--record(theme_info, {id, type, name, price, resolve_reward}).
--record(theme_symbol, {id, attr}).
+-record(goods, {id, type, name, price, resolve_reward}).
+-record(equip, {id, attr}).
 %%%%%%%%%%%xlsx2erl_test record define end%%%%%%%%%%%%%%%%%%%
 
 -export([update_dets/1, compile/1, clean/1]).
 
 update_dets(FileName) ->
     RecordDef = [
-        {theme_info, record_info(fields, theme_info)},
-        {theme_symbol, record_info(fields, theme_symbol)}
+        {goods, record_info(fields, goods)},
+        {equip, record_info(fields, equip)}
     ],
     case xlsx2erl:get_sheet_data(RecordDef, FileName) of
         SheetList when is_list(SheetList) ->
@@ -40,31 +40,18 @@ update_dets_convert([#sheet{row_list = RowList} = H | T]) ->
     [H#sheet{row_list = RowList1} | update_dets_convert(T)].
 
 %% todo 在这里添加数据转换代码
-update_dets_convert_record(#theme_info{}) ->
-    #theme_info{
-        id = xlsx2erl_util:convert_bin(#theme_info.id),
-        type = xlsx2erl_util:convert_bin(#theme_info.type),
-        name = xlsx2erl_util:convert_bin(#theme_info.name),
-        price = xlsx2erl_util:convert_bin(#theme_info.price),
-        resolve_reward = xlsx2erl_util:convert_bin(#theme_info.resolve_reward)
+update_dets_convert_record(#goods{}) ->
+    #goods{
+        id = xlsx2erl_util:convert_int(#goods.id),
+        type = xlsx2erl_util:convert_int(#goods.type),
+        name = xlsx2erl_util:convert_bin(#goods.name),
+        price = xlsx2erl_util:convert_float(#goods.price),
+        resolve_reward = xlsx2erl_util:convert_json(#goods.resolve_reward)
     };
-update_dets_convert_record(#theme_symbol{}) ->
-    #theme_symbol{
-        id = xlsx2erl_util:convert_bin(#theme_symbol.id),
-        attr = xlsx2erl_util:convert_bin(#theme_symbol.attr),
-        c = xlsx2erl_util:convert_bin(#theme_symbol.c),
-        d = xlsx2erl_util:convert_bin(#theme_symbol.d),
-        e = xlsx2erl_util:convert_bin(#theme_symbol.e),
-        f = xlsx2erl_util:convert_bin(#theme_symbol.f),
-        g = xlsx2erl_util:convert_bin(#theme_symbol.g),
-        h = xlsx2erl_util:convert_bin(#theme_symbol.h),
-        i = xlsx2erl_util:convert_bin(#theme_symbol.i),
-        j = xlsx2erl_util:convert_bin(#theme_symbol.j),
-        k = xlsx2erl_util:convert_bin(#theme_symbol.k),
-        l = xlsx2erl_util:convert_bin(#theme_symbol.l),
-        m = xlsx2erl_util:convert_bin(#theme_symbol.m),
-        n = xlsx2erl_util:convert_bin(#theme_symbol.n),
-        o = xlsx2erl_util:convert_bin(#theme_symbol.o)
+update_dets_convert_record(#equip{}) ->
+    #equip{
+        id = xlsx2erl_util:convert_bin(#equip.id),
+        attr = xlsx2erl_util:convert_json(#equip.attr)
     }.
 
 compile(#callback_args{export_path = ExportPath} = Args) ->
@@ -74,61 +61,68 @@ compile(#callback_args{export_path = ExportPath} = Args) ->
 
 do_compile([], _Args) ->
     ok;
-do_compile([#sheet{name = theme_info, row_list = RowList} | T], #callback_args{export_path = ExportPath} = Args) ->
+do_compile([#sheet{name = goods, row_list = RowList} = Sheet | T], #callback_args{export_path = ExportPath} = Args) ->
     Head =
-        "-module(data_theme_info).\n\n"
+        "-module(data_goods).\n\n"
         "-include(\"xlsx2erl_test.hrl\").\n\n"
         "-export([get/1]).\n\n",
     Body =
-        lists:map(fun(#row{record = Record}) ->
-            "get(" ++ xlsx2erl_util:to_iolist(Record#theme_info.id) ++ ") ->\n" ++
-                "    #theme_info{\n"
-                "        a = " ++ xlsx2erl_util:to_iolist(Record#theme_info.id) ++ ",\n" ++
-                "        b = " ++ xlsx2erl_util:to_iolist(Record#theme_info.type) ++ ",\n" ++
-                "        c = " ++ xlsx2erl_util:to_iolist(Record#theme_info.name) ++ ",\n" ++
-                "        d = " ++ xlsx2erl_util:to_iolist(Record#theme_info.price) ++ ",\n" ++
-                "        e = " ++ xlsx2erl_util:to_iolist(Record#theme_info.resolve_reward) ++ ",\n" ++
-                "        f = " ++ xlsx2erl_util:to_iolist(Record#theme_info.f) ++ "\n" ++
+        lists:map(fun(#row{record = Record} = Row) ->
+            %% 转换成[{物品id, 数量}]
+            ResolveReward =
+                lists:foldl(fun(Map, Acc) ->
+                    try
+                        #{<<"gid">> := Gid, <<"num">> := Num} = Map,
+                        [{Gid, Num} | Acc]
+                    catch
+                        _:_ ->
+                            ?XLSX2ERL_ERROR(Sheet, Row, "resolve_reward: ~ts~n", [jsx:encode(Map)]),
+                            exit(badarg)
+                    end
+                            end, [], Record#goods.resolve_reward),
+            "get(" ++ xlsx2erl_util:to_iolist(Record#goods.id) ++ ") -> \n" ++
+                "    #goods{\n"
+                "        id = " ++ xlsx2erl_util:to_iolist(Record#goods.id) ++ ", \n" ++
+                "        type = " ++ xlsx2erl_util:to_iolist(Record#goods.type) ++ ", \n" ++
+                "        name = " ++ xlsx2erl_util:to_iolist(Record#goods.name) ++ ", \n" ++
+                "        price = " ++ xlsx2erl_util:to_iolist(Record#goods.price) ++ ", \n" ++
+                "        resolve_reward = " ++ xlsx2erl_util:to_iolist(ResolveReward) ++ "\n" ++
                 "};\n"
                   end, RowList),
     Tail =
         "get(_) -> undefined.",
-    file:write_file(ExportPath ++ "/data_theme_info.erl", [Head, Body, Tail]),
+    file:write_file(ExportPath ++ "/data_goods.erl", [Head, Body, Tail]),
     do_compile(T, Args);
-do_compile([#sheet{name = theme_symbol, row_list = RowList} | T], #callback_args{export_path = ExportPath} = Args) ->
+do_compile([#sheet{name = equip, row_list = RowList} = Sheet | T], #callback_args{export_path = ExportPath} = Args) ->
     Head =
-        "-module(data_theme_symbol).\n\n"
+        "-module(data_equip).\n\n"
         "-include(\"xlsx2erl_test.hrl\").\n\n"
         "-export([get/1]).\n\n",
     Body =
-        lists:map(fun(#row{record = Record}) ->
+        lists:map(fun(#row{record = Record} = Row) ->
+            %% 转换成 [{属性名(atom), 属性值}]
+            Attr =
+                try
+                    [{binary_to_atom(K), V} || {K, V} <- maps:to_list(Record#equip.attr)]
+                catch
+                    _:_ ->
+                        ?XLSX2ERL_ERROR(Sheet, Row, "attr: ~ts~n", [jsx:encode(Record#equip.attr)]),
+                        exit(badarg)
+                end,
             [
-                    "get(" ++ xlsx2erl_util:to_iolist(Record#theme_symbol.id) ++ ") ->\n" ++
-                    "    #theme_symbol{"
-                    "a = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.id) ++ ", " ++
-                    "b = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.attr) ++ ", " ++
-                    "c = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.c) ++ ", " ++
-                    "d = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.d) ++ ", " ++
-                    "e = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.e) ++ ", " ++
-                    "f = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.f) ++ ", " ++
-                    "g = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.g) ++ ", " ++
-                    "h = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.h) ++ ", " ++
-                    "i = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.i) ++ ", " ++
-                    "j = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.j) ++ ", " ++
-                    "k = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.k) ++ ", " ++
-                    "l = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.l) ++ ", " ++
-                    "m = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.m) ++ ", " ++
-                    "n = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.n) ++ ", " ++
-                    "o = " ++ xlsx2erl_util:to_iolist(Record#theme_symbol.o) ++
+                    "get(" ++ xlsx2erl_util:to_iolist(Record#equip.id) ++ ") ->\n" ++
+                    "    #equip{"
+                    "id = " ++ xlsx2erl_util:to_iolist(Record#equip.id) ++ ", " ++
+                    "attr = " ++ xlsx2erl_util:to_iolist(Attr) ++
                     "};\n"
             ]
                   end, RowList),
     Tail =
         "get(_) -> undefined.",
-    file:write_file(ExportPath ++ "/data_theme_symbol.erl", [Head, Body, Tail]),
+    file:write_file(ExportPath ++ "/data_equip.erl", [Head, Body, Tail]),
     do_compile(T, Args).
 
 clean(#callback_args{export_path = ExportPath}) ->
     file:delete(ExportPath ++ "/xlsx2erl_test.hrl"),
-    file:delete(ExportPath ++ "/data_theme_info.erl"),
-    file:delete(ExportPath ++ "/data_theme_symbol.erl").
+    file:delete(ExportPath ++ "/data_goods.erl"),
+    file:delete(ExportPath ++ "/data_equip.erl").

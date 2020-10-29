@@ -17,6 +17,7 @@ main(["compile", XlsxDir0, ExportDir0]) ->
     ExportDir = filename:absname(ExportDir0),
     XlsxDir = filename:absname(XlsxDir0),
     file:make_dir(ExportDir),
+    file:make_dir("dets"),
     {ok, ?DETS_XLSX2ERL} = dets:open_file(?DETS_XLSX2ERL, [{file, "dets/xlsx2erl"}, {keypos, #excel.name}]),
     ModuleList =
         filelib:fold_files(XlsxDir, ".xlsx", true,
@@ -42,17 +43,14 @@ main(["compile", XlsxDir0, ExportDir0]) ->
                                         make_template(FileName)
                                 end,
                                 Acc;
+                            {'EXIT', {undef, [{Module, update_dets, [FileName], _} | _]}} ->
+                                %% 没有这个erlang文件, 自动创建模板
+                                make_template(FileName),
+                                Acc;
                             {'EXIT', Error} ->
-                                case code:is_loaded(Module) of
-                                    false ->
-                                        %% 没有这个erlang文件, 自动创建模板
-                                        make_template(FileName),
-                                        Acc;
-                                    _ ->
-                                        io:format("compile ~p error~n~p~n~n", [Module, Error]),
-                                        dets:close(?DETS_XLSX2ERL),
-                                        throw(error)
-                                end;
+                                io:format("update_dets ~p error~n~p~n~n", [Module, Error]),
+                                dets:close(?DETS_XLSX2ERL),
+                                throw(error);
                             _ ->
                                 io:format("update dets ~ts~n", [FileName]),
                                 [Module | Acc]
@@ -146,7 +144,7 @@ get_sheet_data(RecordDefList, XlsxFile) ->
                             NthList when is_list(NthList) ->
                                 {
                                     [{RecordName, NthList} | NthListList],
-                                    [#sheet{name = RecordName, row_list = []} | SheetList]
+                                    [#sheet{excel_name = XlsxFile, sheet_name = SheetName, name = RecordName, row_list = []} | SheetList]
                                 };
                             Error ->
                                 io:format("bad key in ~ts~n~p~n", [SheetName, Error]),
