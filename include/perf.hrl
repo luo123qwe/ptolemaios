@@ -43,3 +43,9 @@
     store_times,
     fold_times
 }).
+
+-record(performance_split_data_file, {
+    file_num,
+    avg_size,
+    lookup_times% 等效于get(N)
+}).

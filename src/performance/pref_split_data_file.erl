@@ -12,18 +12,29 @@
 %%%         B, 未达到核心数时线性提高
 %%%     执行效率
 %%%         A, 按文件线性搜索时线性下降
-%%%         B, 添加(分块的)条件优化时性能无损失
+%%%         B, 添加(分块的)条件优化时性能非常少的损失
 %%% @end
 %%%-------------------------------------------------------------------
--module(pref_split_date_file).
+-module(pref_split_data_file).
 -author("dominic").
 
-%% API
--export([run/2]).
+-include("perf.hrl").
 
-run(FileNum, Size) ->
-    AvgSize = Size div FileNum,
-    make_0(FileNum, Size),
+%% API
+-export([run/1]).
+
+run(#performance_split_data_file{file_num = FileNum, avg_size = AvgSize, lookup_times = Times} = Performan) ->
+    %% 生成文件
+    make_file(FileNum, AvgSize),
+    %% 编译主文件
+    c:c(test_0),
+    io:format("~200p~n~200p~n~200p~n", [
+        lists:zip(record_info(fields, performance_split_data_file), tl(tuple_to_list(Performan))),
+        {compile, test_0:test_0:compile()}, {lookup, test_0:run(Times)}
+    ]).
+
+make_file(FileNum, AvgSize) ->
+    make_0(FileNum, AvgSize),
     lists:foreach(fun(FileIndex) ->
         FileName = "test_" ++ integer_to_list(FileIndex),
         Head = "-module(" ++ FileName ++ ").\n"
@@ -64,7 +75,8 @@ make_0_get(N, N, _) ->
     OffSet ++ "undefined";
 make_0_get(FileIndex, N, AvgSize) ->
     OffSet = lists:duplicate((FileIndex - 1) * 2 + 1, "    "),
-    OffSet ++ "case " ++ integer_to_list(AvgSize*(FileIndex - 1) + 1) ++ " =< N andalso N =< " ++ integer_to_list(AvgSize*FileIndex) ++ " andalso test_" ++ integer_to_list(FileIndex) ++ ":get(N) of\n"
+%%    OffSet ++ "case  test_" ++ integer_to_list(FileIndex) ++ ":get(N) of\n"% 没有优化
+    OffSet ++ "case " ++ integer_to_list(AvgSize * (FileIndex - 1) + 1) ++ " =< N andalso N =< " ++ integer_to_list(AvgSize * FileIndex) ++ " andalso test_" ++ integer_to_list(FileIndex) ++ ":get(N) of\n"
         ++ OffSet ++ "    undefined ->\n" ++ make_0_get(FileIndex + 1, N, AvgSize) ++ ";\n"
         ++ OffSet ++ "    Return -> Return\n"
         ++ OffSet ++ "end".
