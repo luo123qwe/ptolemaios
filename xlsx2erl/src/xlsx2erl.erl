@@ -17,44 +17,43 @@ main(["compile", XlsxDir0, ExportDir0]) ->
     ExportDir = filename:absname(ExportDir0),
     XlsxDir = filename:absname(XlsxDir0),
     file:make_dir(ExportDir),
-    file:make_dir("dets"),
-    {ok, ?DETS_XLSX2ERL} = dets:open_file(?DETS_XLSX2ERL, [{file, "dets/xlsx2erl"}, {keypos, #excel.name}]),
+    file:make_dir(?DETS_PATH),
     ModuleList =
         filelib:fold_files(XlsxDir, ".xlsx", true,
             fun(FileName, Acc) ->
                 case string:split(filename:rootname(filename:basename(FileName)), "-") of
                     [_, TagStr] ->
-                        Module = list_to_atom("xlsx2erl_" ++ TagStr),
+                        ModuleStr = "xlsx2erl_" ++ TagStr,
+                        Module = list_to_atom(ModuleStr),
+                        {ok, ?DETS_XLSX2ERL1(Module)} = dets:open_file(?DETS_XLSX2ERL1(Module), [{file, ?DETS_PATH ++ "/" ++ ModuleStr}, {keypos, #excel.name}]),
                         NeedUpdateDets =
-                            case dets:lookup(?DETS_XLSX2ERL, ?XLSX2ERL_DETS_EXCEL_UPDATE1(Module)) of
+                            case dets:lookup(?DETS_XLSX2ERL1(Module), ?XLSX2ERL_DETS_EXCEL_UPDATE1(Module)) of
                                 [?XLSX2ERL_DETS_EXCEL_UPDATE2(_, UpdateTime)] ->
                                     {ok, #file_info{mtime = MTime}} = file:read_file_info(FileName),
                                     UpdateTime < MTime;
                                 _ ->
                                     true
                             end,
-                        case NeedUpdateDets andalso (catch Module:update_dets(FileName)) of
-                            false when NeedUpdateDets == false ->
-                                case code:load_file(Module) of
-                                    {module, Module} ->
-                                        skip;
-                                    _ ->
-                                        %% 没有这个erlang文件, 自动创建模板
-                                        make_template(FileName)
-                                end,
-                                Acc;
-                            {'EXIT', {undef, [{Module, update_dets, [FileName], _} | _]}} ->
-                                %% 没有这个erlang文件, 自动创建模板
-                                make_template(FileName),
-                                Acc;
-                            {'EXIT', Error} ->
-                                io:format("update_dets ~p error~n~p~n~n", [Module, Error]),
-                                dets:close(?DETS_XLSX2ERL),
-                                throw(error);
-                            _ ->
-                                io:format("update dets ~ts~n", [FileName]),
-                                [Module | Acc]
-                        end;
+                        Acc1 =
+                            case NeedUpdateDets andalso (catch Module:update_dets(FileName)) of
+                                false when NeedUpdateDets == false ->
+                                    Acc;
+                                {'EXIT', {undef, [{Module, update_dets, [FileName], _} | _]}} ->
+                                    %% 没有这个erlang文件, 自动创建模板
+                                    make_template(FileName),
+                                    io:format("make_template ~p~n", [Module]),
+                                    dets:close(?DETS_XLSX2ERL1(Module)),
+                                    throw(error);
+                                {'EXIT', Error} ->
+                                    io:format("update_dets ~p error~n~p~n~n", [Module, Error]),
+                                    dets:close(?DETS_XLSX2ERL1(Module)),
+                                    file:delete(?DETS_PATH ++ "/" ++ ModuleStr),
+                                    throw(error);
+                                _ ->
+                                    io:format("update dets ~ts~n", [FileName]),
+                                    [Module | Acc]
+                            end,
+                        Acc1;
                     _ ->
                         io:format("bad file name ~ts", [FileName]),
                         Acc
@@ -71,9 +70,7 @@ main(["compile", XlsxDir0, ExportDir0]) ->
             _ ->
                 ok
         end
-                  end, ModuleList),
-    
-    dets:close(?DETS_XLSX2ERL);
+                  end, ModuleList);
 main(["clean", XlsxDir0, ExportDir0]) ->
     ExportDir = filename:absname(ExportDir0),
     XlsxDir = filename:absname(XlsxDir0),
@@ -106,7 +103,12 @@ main(["clean", XlsxDir0, ExportDir0]) ->
 %% @doc 获取excel
 -spec get_excel(atom()) -> undefined|#excel{}.
 get_excel(Module) ->
-    case dets:lookup(?DETS_XLSX2ERL, Module) of
+    case dets:info(?DETS_XLSX2ERL1(Module)) of
+        undefined ->
+            {ok, ?DETS_XLSX2ERL1(Module)} = dets:open_file(?DETS_XLSX2ERL1(Module), [{file, ?DETS_PATH ++ "/" ++ atom_to_list(Module)}, {keypos, #excel.name}]);
+        _ -> ok
+    end,
+    case dets:lookup(?DETS_XLSX2ERL1(Module), Module) of
         [Excel] -> Excel;
         _ -> undefined
     end.

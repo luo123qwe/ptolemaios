@@ -21,8 +21,8 @@ update_dets(FileName) ->
             %% 转换成erlang数据, 同时可以检查数据是否正确
             SheetList1 = update_dets_convert(SheetList),
             Now = erlang:localtime(),
-            dets:insert(?DETS_XLSX2ERL, #excel{name = ?MODULE, sheet_list = SheetList1}),
-            dets:insert(?DETS_XLSX2ERL, ?XLSX2ERL_DETS_EXCEL_UPDATE2(?MODULE, Now));
+            dets:insert(?DETS_XLSX2ERL1(?MODULE), #excel{name = ?MODULE, sheet_list = SheetList1}),
+            dets:insert(?DETS_XLSX2ERL1(?MODULE), ?XLSX2ERL_DETS_EXCEL_UPDATE2(?MODULE, Now));
         _ ->
             error
     end.
