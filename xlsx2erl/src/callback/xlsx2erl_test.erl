@@ -4,7 +4,7 @@
 
 -include("xlsx2erl.hrl").
 
-%%%%%%%%%%%xlsx2erl_test record define start%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%xlsx2erl_test record define start%%%%%%%%%%%%%%%%%
 -record(goods, {id, type, name, price, resolve_reward}).
 -record(equip, {id, attr}).
 %%%%%%%%%%%xlsx2erl_test record define end%%%%%%%%%%%%%%%%%%%
@@ -21,7 +21,7 @@ update_dets(FileName) ->
             %% 转换成erlang数据, 同时可以检查数据是否正确
             SheetList1 = update_dets_convert(SheetList),
             Now = erlang:localtime(),
-            dets:insert(?DETS_XLSX2ERL1(?MODULE), #excel{name = ?MODULE, sheet_list = SheetList1}),
+            dets:insert(?DETS_XLSX2ERL1(?MODULE), #xlsx2erl_excel{name = ?MODULE, sheet_list = SheetList1}),
             dets:insert(?DETS_XLSX2ERL1(?MODULE), ?XLSX2ERL_DETS_EXCEL_UPDATE2(?MODULE, Now));
         _ ->
             error
@@ -29,45 +29,51 @@ update_dets(FileName) ->
 
 update_dets_convert([]) ->
     [];
-update_dets_convert([#sheet{row_list = RowList} = H | T]) ->
+update_dets_convert([#xlsx2erl_sheet{name = goods, row_list = RowList} = H | T]) ->
+    RowList1 = update_dets_convert_record_goods(RowList, H, record_info(fields, goods), []),
+    [H#xlsx2erl_sheet{row_list = RowList1} | update_dets_convert(T)];
+update_dets_convert([#xlsx2erl_sheet{name = equip, row_list = RowList} = H | T]) ->
+    RowList1 = update_dets_convert_record_equip(RowList, H, record_info(fields, equip), []),
+    [H#xlsx2erl_sheet{row_list = RowList1} | update_dets_convert(T)].
+
+%% todo 选择转换类型
+update_dets_convert_record_goods([], _Sheet, _RecordDef, RowList) ->
+    RowList;
+update_dets_convert_record_goods([H | T], Sheet, RecordDef, RowList) ->
     RowList1 =
-        lists:foldl(fun(Row, Acc) ->
-            xlsx2erl_util:set_row(Row),
-            Acc1 = [Row#row{record = update_dets_convert_record(Row#row.record)} | Acc],
-            xlsx2erl_util:clean_row(),
-            Acc1
-                    end, [], RowList),
-    [H#sheet{row_list = RowList1} | update_dets_convert(T)].
+        [H#xlsx2erl_row{record = #goods{
+            id = xlsx2erl_util:convert_int(#goods.id, RecordDef, H, Sheet),
+            type = xlsx2erl_util:convert_int(#goods.type, RecordDef, H, Sheet),
+            name = xlsx2erl_util:convert_bin(#goods.name, RecordDef, H, Sheet),
+            price = xlsx2erl_util:convert_float(#goods.price, RecordDef, H, Sheet),
+            resolve_reward = xlsx2erl_util:convert_json(#goods.resolve_reward, RecordDef, H, Sheet)
+        }} | RowList],
+    update_dets_convert_record_goods(T, Sheet, RecordDef, RowList1).
 
-%% todo 在这里添加数据转换代码
-update_dets_convert_record(#goods{}) ->
-    #goods{
-        id = xlsx2erl_util:convert_int(#goods.id),
-        type = xlsx2erl_util:convert_int(#goods.type),
-        name = xlsx2erl_util:convert_bin(#goods.name),
-        price = xlsx2erl_util:convert_float(#goods.price),
-        resolve_reward = xlsx2erl_util:convert_json(#goods.resolve_reward)
-    };
-update_dets_convert_record(#equip{}) ->
-    #equip{
-        id = xlsx2erl_util:convert_bin(#equip.id),
-        attr = xlsx2erl_util:convert_json(#equip.attr)
-    }.
+update_dets_convert_record_equip([], _Sheet, _RecordDef, RowList) ->
+    RowList;
+update_dets_convert_record_equip([H | T], Sheet, RecordDef, RowList) ->
+    RowList1 =
+        [H#xlsx2erl_row{record = #equip{
+            id = xlsx2erl_util:convert_bin(#equip.id, RecordDef, H, Sheet),
+            attr = xlsx2erl_util:convert_json(#equip.attr, RecordDef, H, Sheet)
+        }} | RowList],
+    update_dets_convert_record_equip(T, Sheet, RecordDef, RowList1).
 
-compile(#callback_args{export_path = ExportPath} = Args) ->
-    #excel{sheet_list = SheetList} = xlsx2erl:get_excel(?MODULE),
-    xlsx2erl:copy_mask_body(?MODULE, ExportPath ++ "/xlsx2erl_test.hrl"),
+compile(#xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
+    #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl:get_excel(?MODULE),
+    xlsx2erl:copy_mask_body(?MODULE, ExportPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
     do_compile(SheetList, Args).
 
 do_compile([], _Args) ->
     ok;
-do_compile([#sheet{name = goods, row_list = RowList} = Sheet | T], #callback_args{export_path = ExportPath} = Args) ->
+do_compile([#xlsx2erl_sheet{name = goods, row_list = RowList} = Sheet | T], #xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
     Head =
-        "-module(data_goods).\n\n"
-        "-include(\"xlsx2erl_test.hrl\").\n\n"
-        "-export([get/1]).\n\n",
+        "-module(" ++ ?XLSX2ERL_DEFAULT_DATA_MODULE(goods) ++ ").\n\n"
+    "-include(\"" ++ ?XLSX2ERL_DEFAULT_HRL ++ "\").\n\n"
+    "-export([get/1]).\n\n",
     Body =
-        lists:map(fun(#row{record = Record} = Row) ->
+        lists:map(fun(#xlsx2erl_row{record = Record} = Row) ->
             %% 转换成[{物品id, 数量}]
             ResolveReward =
                 lists:foldl(fun(Map, Acc) ->
@@ -76,7 +82,7 @@ do_compile([#sheet{name = goods, row_list = RowList} = Sheet | T], #callback_arg
                         [{Gid, Num} | Acc]
                     catch
                         _:_ ->
-                            ?XLSX2ERL_ERROR(Sheet, Row, "resolve_reward: ~ts~n", [jsx:encode(Map)]),
+                            ?XLSX2ERL_ERROR4(Sheet, Row, "resolve_reward: ~ts", [jsx:encode(Map)]),
                             exit(badarg)
                     end
                             end, [], Record#goods.resolve_reward),
@@ -93,20 +99,20 @@ do_compile([#sheet{name = goods, row_list = RowList} = Sheet | T], #callback_arg
         "get(_) -> undefined.",
     file:write_file(ExportPath ++ "/data_goods.erl", [Head, Body, Tail]),
     do_compile(T, Args);
-do_compile([#sheet{name = equip, row_list = RowList} = Sheet | T], #callback_args{export_path = ExportPath} = Args) ->
+do_compile([#xlsx2erl_sheet{name = equip, row_list = RowList} = Sheet | T], #xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
     Head =
-        "-module(data_equip).\n\n"
-        "-include(\"xlsx2erl_test.hrl\").\n\n"
-        "-export([get/1]).\n\n",
+        "-module(" ++ ?XLSX2ERL_DEFAULT_DATA_MODULE(equip) ++ ").\n\n"
+    "-include(\"" ++ ?XLSX2ERL_DEFAULT_HRL ++ "\").\n\n"
+    "-export([get/1]).\n\n",
     Body =
-        lists:map(fun(#row{record = Record} = Row) ->
+        lists:map(fun(#xlsx2erl_row{record = Record} = Row) ->
             %% 转换成 [{属性名(atom), 属性值}]
             Attr =
                 try
                     [{binary_to_atom(K), V} || {K, V} <- maps:to_list(Record#equip.attr)]
                 catch
                     _:_ ->
-                        ?XLSX2ERL_ERROR(Sheet, Row, "attr: ~ts~n", [jsx:encode(Record#equip.attr)]),
+                        ?XLSX2ERL_ERROR4(Sheet, Row, "attr: ~ts", [jsx:encode(Record#equip.attr)]),
                         exit(badarg)
                 end,
             [
@@ -122,7 +128,9 @@ do_compile([#sheet{name = equip, row_list = RowList} = Sheet | T], #callback_arg
     file:write_file(ExportPath ++ "/data_equip.erl", [Head, Body, Tail]),
     do_compile(T, Args).
 
-clean(#callback_args{export_path = ExportPath}) ->
-    file:delete(ExportPath ++ "/xlsx2erl_test.hrl"),
+clean(#xlsx2erl_callback_args{export_path = ExportPath}) ->
+    file:delete(ExportPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
+    catch dets:close(?DETS_XLSX2ERL1(?MODULE)),
+    file:delete(?DETS_PATH ++ "/" ++ ?MODULE_STRING),
     file:delete(ExportPath ++ "/data_goods.erl"),
     file:delete(ExportPath ++ "/data_equip.erl").
