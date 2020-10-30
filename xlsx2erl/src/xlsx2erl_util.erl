@@ -92,6 +92,7 @@ eval_fix_string([H | T]) ->
 
 %% @doc 转换成IOList, 文本请传入binary
 to_iolist(Binary) when is_binary(Binary) ->
-    ["<<\"", unicode:characters_to_list(Binary), "\"/utf8>>"];
+    %% 文本中含有 " 需要转换成 \"
+    ["<<\"", re:replace(unicode:characters_to_list(Binary), "\"", "\\\\\"", [global]), "\"/utf8>>"];
 to_iolist(Term) ->
     io_lib:format("~w", [Term]).
