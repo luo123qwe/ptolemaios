@@ -9,6 +9,9 @@
 -define(XLSX2ERL_RECORD_START_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define start%%%%%%%%%%%%%%%%%").
 -define(XLSX2ERL_RECORD_END_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define end%%%%%%%%%%%%%%%%%%%").
 
+-define(XLSX2ERL_KEY_MASK, "KEY").% 工作表标识哪一行是key
+-define(XLSX2ERL_DATA_MASK, "DATA").% 工作表标识哪一行是data
+
 %% 打印错误信息, 精确到哪一行
 -define(XLSX2ERL_ERROR4(Sheet, Row, Format, Args),
     io:format("配错了!!!!!,工作簿 ~ts 数据表 ~ts 第 ~p 行~n" ++ Format ++ "~n",

@@ -92,18 +92,18 @@ update_dets_convert_record_equip([H | T], Sheet, RecordDef, RowList, Dict) ->
 
 %% todo 对应的获取自定义数据方法, 默认获取dict
 get_goods() ->
-    xlsx2erl:ensure_dets(?DETS_XLSX2ERL1(?MODULE)),
+    xlsx2erl_util:ensure_dets(?DETS_XLSX2ERL1(?MODULE)),
     [#xlsx2erl_dets{v = V}] = dets:lookup(?DETS_XLSX2ERL1(?MODULE), ?DETS_DICT1(goods)),
     V.
 
 get_equip() ->
-    xlsx2erl:ensure_dets(?DETS_XLSX2ERL1(?MODULE)),
+    xlsx2erl_util:ensure_dets(?DETS_XLSX2ERL1(?MODULE)),
     [#xlsx2erl_dets{v = V}] = dets:lookup(?DETS_XLSX2ERL1(?MODULE), ?DETS_DICT1(equip)),
     V.
 
 compile(#xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
-    #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl:get_excel(?MODULE),
-    xlsx2erl:copy_mask_body(?MODULE, ExportPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
+    #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl_util:get_excel(?MODULE),
+    xlsx2erl_util:copy_mask_body(?MODULE, ExportPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
     do_compile(SheetList, Args).
 
 do_compile([], _Args) ->
@@ -139,7 +139,7 @@ do_compile([#xlsx2erl_sheet{name = goods, row_list = RowList} = Sheet | T], #xls
                   end, RowList),
     Tail =
         "get(_) -> undefined.",
-    file:write_file(ExportPath ++ "/data_goods.erl", [Head, Body, Tail]),
+    ok = file:write_file(ExportPath ++ "/data_goods.erl", [Head, Body, Tail]),
     do_compile(T, Args);
 do_compile([#xlsx2erl_sheet{name = equip, row_list = RowList} = Sheet | T], #xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
     Head =
@@ -167,7 +167,7 @@ do_compile([#xlsx2erl_sheet{name = equip, row_list = RowList} = Sheet | T], #xls
                   end, RowList),
     Tail =
         "get(_) -> undefined.",
-    file:write_file(ExportPath ++ "/data_equip.erl", [Head, Body, Tail]),
+    ok = file:write_file(ExportPath ++ "/data_equip.erl", [Head, Body, Tail]),
     do_compile(T, Args).
 
 clean(#xlsx2erl_callback_args{export_path = ExportPath}) ->
