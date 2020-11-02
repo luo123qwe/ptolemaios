@@ -30,13 +30,13 @@ init([]) ->
         [AChild]}
     }.
 
-%% @doc 开启一个新的客户端进程, 使用配置的port和例子模块
-%% @equiv start_child({127,0,0,1}, ConfigPort, example_gw_c, [])
+%% @doc 开启一个新的客户端进程, 使用配置的port和gw_c_echo
+%% @equiv start_child({127,0,0,1}, ConfigPort, gw_c_echo, [])
 -spec start_child() -> supervisor:startchild_ret().
 start_child() ->
     {ok, Config} = application:get_env(ptolemaios, gateway),
     Port = proplists:get_value(port, Config),
-    start_child({127, 0, 0, 1}, Port, example_gw_c, []).
+    start_child({127, 0, 0, 1}, Port, gw_c_echo, []).
 
 %% @doc 开启一个新的客户端进程, Module为回调函数, 实现gw_c_svr behaviour, Args为init回调的参数
 -spec start_child(inet:socket_address() | inet:hostname(), inet:port_number(), atom(), term()) -> supervisor:startchild_ret().

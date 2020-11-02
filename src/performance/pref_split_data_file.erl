@@ -30,7 +30,7 @@ run(#performance_split_data_file{file_num = FileNum, avg_size = AvgSize, lookup_
     c:c(test_0),
     io:format("~200p~n~200p~n~200p~n", [
         lists:zip(record_info(fields, performance_split_data_file), tl(tuple_to_list(Performan))),
-        {compile, test_0:test_0:compile()}, {lookup, test_0:run(Times)}
+        {compile, test_0:compile()}, {lookup, test_0:run(Times)}
     ]).
 
 make_file(FileNum, AvgSize) ->

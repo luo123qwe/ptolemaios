@@ -127,4 +127,4 @@ static ErlNifFunc nif_funcs[] =
     {"past_ptr", 1, past_ptr}
 };
 
-ERL_NIF_INIT(example_enif,nif_funcs,NULL,NULL,NULL,NULL)
+ERL_NIF_INIT(template_enif,nif_funcs,NULL,NULL,NULL,NULL)

@@ -87,6 +87,7 @@ update_dets_convert_record_equip([H | T], Sheet, RecordDef, RowList, Dict) ->
         attr = xlsx2erl_util:convert_json(#equip.attr, RecordDef, H, Sheet)
     },
     RowList1 = [H#xlsx2erl_row{record = Record1} | RowList],
+    %% todo 构造数据索引
     Dict1 = dict:store(element(2, Record1), Record1, Dict),
     update_dets_convert_record_equip(T, Sheet, RecordDef, RowList1, Dict1).
 

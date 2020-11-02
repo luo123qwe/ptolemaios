@@ -1,9 +1,12 @@
-%% @private
+%%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
+%%% @doc enif模板
+%%%
+%%% @end
 %%%-------------------------------------------------------------------
--module(example_enif).
+-module(template_enif).
 -author("dominic").
 
 %% API

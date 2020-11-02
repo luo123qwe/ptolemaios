@@ -5,7 +5,7 @@
 %%% Description :
 %%% Created :
 %%%-------------------------------------------------------------------
--module(example_SUITE).
+-module(template_SUITE).
 
 %% Note: This directive should only be used in test suites.
 -compile(nowarn_export_all).

@@ -2,25 +2,19 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc 客户端例子
-%%% 打印收到的协议
+%%% @doc exia模板
+%%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(example_gw_c).
+-module(template_exia).
 -author("dominic").
 
--behaviour(gw_c_svr).
+-behaviour(exia).
 
 -include("util.hrl").
--include("gw.hrl").
 
 %% API
--export([handle_msg/2, init/1, handle_call/3, handle_cast/2, handle_info/2]).
-
-
-handle_msg(Msg, State) ->
-    ?LOG_NOTICE("client receive ~p", [Msg]),
-    {noreply, State}.
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
 init(_Args) ->
     {ok, undefined}.

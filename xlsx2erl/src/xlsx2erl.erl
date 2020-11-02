@@ -391,6 +391,7 @@ make_template(XlsxFileName, OutDir) ->
                         || Field <- FieldList], ",\n") ++ "\n"
                 "    },\n"
                 "    RowList1 = [H#xlsx2erl_row{record = Record1} | RowList],\n"
+                "    %% todo 构造数据索引"
                 "    Dict1 = dict:store(element(2, Record1), Record1, Dict),\n"
                 "    update_dets_convert_record_" ++ RecordName ++ "(T, Sheet, RecordDef, RowList1, Dict1).\n\n"
                     || [RecordName | FieldList] <- RecordDefList],

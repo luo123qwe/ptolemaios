@@ -20,7 +20,7 @@
 
 %% 首次执行
 -callback fix() -> term().
-%% fix()报错, 再次执行
+%% fix()报错, 再次执行, 中间可能有一些数据修复了一半, 为了区分开所以分开两个函数
 -callback fix_again() -> term().
 
 %% @private 系统初始化

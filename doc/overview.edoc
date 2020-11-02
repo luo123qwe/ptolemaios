@@ -18,7 +18,6 @@
   <li>{@section 网关(gateway)}</li>
   <li>{@section 修复(fix)}</li>
   <li>{@section 发布(release)}</li>
-  <li>{@section 例子(example)}</li>
   <li>{@section 性能(performance)}</li>
   <li>{@section 结构(struct)}</li>
   <li>{@section 行为树(behaviac)}</li>
@@ -242,10 +241,6 @@ tar_a -> tar_ebin_a1    -> tar_ebin_a2  -> tar_b -> tar_ebin_b2
     <dt>update_backup</dt>
     <dd>使用当前的lib更新backup文件夹里某个版本以后所有tar.gz里的beam文件</dd>
 </dl>
-
-== 例子(example) ==
-
-各式各样的例子和模板, 这些文件都是作为参考用, 实际生产中并不使用, 文件不会生产文档, 详情查看src/example/*.erl.
 
 == 性能(performance) ==
 
