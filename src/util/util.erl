@@ -12,6 +12,8 @@
 
 -export([eval/1]).
 
+-export([is_list_intersect/2, is_list_contain/2]).
+
 
 %% @doc 执行一条erlang语句
 -spec eval(string()) -> term().
@@ -29,3 +31,18 @@ eval_fix_string([$.]) ->
     [$.];
 eval_fix_string([H | T]) ->
     [H | eval_fix_string(T)].
+
+%% @doc 列表1与列表2是否有交集
+is_list_intersect(List1, List2) ->
+    lists:any(fun(H1) ->
+        lists:member(H1, List1)
+              end, List2).
+
+%% @doc 列表1是否包含列表2
+is_list_contain(List1, List2) ->
+    lists:all(fun(H1) ->
+        lists:member(H1, List1)
+              end, List2).
+
+
+
