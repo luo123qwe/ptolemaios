@@ -3,6 +3,9 @@
 %% behaviac是否debug模式
 BehaviacDebug = true,
 
+Millisecond = erlang:system_time(millisecond),
+MillisecondStr = integer_to_list(Millisecond),
+
 [
     {rebar_packages_cdn, "https://hexpm.upyun.com"},
 
@@ -65,19 +68,17 @@ BehaviacDebug = true,
 
     %% 钩子escript
     %% clean分两步Verifying dependencies和Cleaning out ptolemaios, 所以每个脚本都会触发两次
-    %% 按照顺序 (ptolemaios -> ptolemaios_pre) -> (ptolemaios -> ptolemaios_pre) -> (ptolemaios_post) -> (ptolemaios_post)
-    %% 所以, clean使用dets记录执行次数, (count rem 2) == 0, 保证ptolemaios_pre和ptolemaios_post只执行一次
+    %% 按照顺序 ptolemaios_pre -> ptolemaios_pre -> ptolemaios_post -> ptolemaios_post
+    %% 其他命令可能也会有类似的设定, 所以传入一个时间戳标识保证一次命令只执行一次脚本
     %% 在clean/0和compile/0方法添加代码即可
     {pre_hooks, [
-        {compile, "escript hooks_escript/ptolemaios.escript compile"},
-        {clean, "escript hooks_escript/ptolemaios.escript clean"},
-        {compile, "escript hooks_escript/ptolemaios_pre.escript compile"},
-        {clean, "escript hooks_escript/ptolemaios_pre.escript clean"}
+        {compile, "escript hooks_escript/ptolemaios_pre_escript.erl " ++ MillisecondStr ++ " compile"},
+        {clean, "escript hooks_escript/ptolemaios_pre_escript.erl " ++ MillisecondStr ++ " clean"}
     ]},
 
     {post_hooks, [
-        {compile, "escript hooks_escript/ptolemaios_post.escript compile"},
-        {clean, "escript hooks_escript/ptolemaios_post.escript clean"}
+        {compile, "escript hooks_escript/ptolemaios_post_escript.erl " ++ MillisecondStr ++ " compile"},
+        {clean, "escript hooks_escript/ptolemaios_post_escript.erl " ++ MillisecondStr ++ " clean"}
     ]},
 
     {profiles, [
@@ -121,8 +122,8 @@ BehaviacDebug = true,
     %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
     %% "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
     {port_specs, [
-        {"priv/example_enif.so", [
-            "c_src/example_enif.c"
+        {"priv/template_enif.so", [
+            "c_src/template_enif.c"
         ]},
         {"priv/behaviac_enif.so", [
             "c_src/behaviac/behaviac_enif.cpp",

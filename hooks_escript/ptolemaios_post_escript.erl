@@ -11,28 +11,21 @@
 %% API
 -export([main/1]).
 
-%% ========private_split_str==========
-
-main(["clean"]) ->
-    case is_clean() of
-        true -> clean();
-        _ -> ok
-    end;
-main(["compile"]) ->
-    compile().
-
-%% rebar3 clean 命令会执行两次
-is_clean() ->
+main([Millisecond | Args]) ->
     {ok, hooks_escript} = dets:open_file(hooks_escript, [{file, "hooks_escript/hooks_escript.dets"}]),
-    case dets:lookup(hooks_escript, ptolemaios_post_escript) of
-        [{ptolemaios_post_escript, OldCount}] ->
-            Count = OldCount + 1;
+    case dets:lookup(hooks_escript, ?MODULE) of
+        [{_, ExecuteTime}] when ExecuteTime == Millisecond ->
+            skip;
         _ ->
-            Count = 1
-    end,
-    dets:insert(hooks_escript, {ptolemaios_post_escript, Count}),
-    dets:close(hooks_escript),
-    (Count rem 2) == 0.
+            dets:insert(hooks_escript, {?MODULE, Millisecond}),
+            dets:close(hooks_escript),
+            main_1(Args)
+    end.
+
+main_1(["clean"]) ->
+    clean();
+main_1(["compile"]) ->
+    compile().
 
 compile() ->
     io:format("post_hooks compile start~n"),

@@ -15,26 +15,27 @@
 
 -include_lib("kernel/include/file.hrl").
 
-main(["clean"]) ->
-    case is_clean() of
-        true -> clean();
-        _ -> ok
-    end;
-main(["compile"]) ->
+main([Millisecond | Args]) ->
+    {ok, hooks_escript} = dets:open_file(hooks_escript, [{file, "hooks_escript/hooks_escript.dets"}]),
+    case dets:lookup(hooks_escript, ?MODULE) of
+        [{_, ExecuteTime}] when ExecuteTime == Millisecond ->
+            skip;
+        _ ->
+            dets:insert(hooks_escript, {?MODULE, Millisecond}),
+            dets:close(hooks_escript),
+            main_1(Args)
+    end.
+
+main_1(["clean"]) ->
+    clean_config(),
+    clean();
+main_1(["compile"]) ->
+    compile_config(),
     compile().
 
-%% rebar3 clean 命令会执行两次
-is_clean() ->
-    {ok, hooks_escript} = dets:open_file(hooks_escript, [{file, "hooks_escript/hooks_escript.dets"}]),
-    case dets:lookup(hooks_escript, ptolemaios_pre_escript) of
-        [{ptolemaios_pre_escript, OldCount}] ->
-            Count = OldCount + 1;
-        _ ->
-            Count = 1
-    end,
-    dets:insert(hooks_escript, {ptolemaios_pre_escript, Count}),
-    dets:close(hooks_escript),
-    (Count rem 2) == 0.
+clean_config() ->
+    file:delete("config/sys.config"),
+    file:delete("config/vm.args").
 
 clean() ->
     io:format("pre_hooks clean start~n"),
@@ -42,6 +43,33 @@ clean() ->
     {ok, RebarConfig} = file:script("rebar.config.script"),
     clean_proto(RebarConfig),
     io:format("pre_hooks clean end~n").
+
+
+%% 创建sys.config和vm.args
+compile_config() ->
+    {ok, #file_info{mtime = SysConfigScriptMTime}} = file:read_file_info("config/sys.config.script"),
+    case file:read_file_info("config/sys.config") of
+        {ok, #file_info{mtime = SysConfigMTime}} when SysConfigMTime > SysConfigScriptMTime ->
+            skip;
+        _ ->
+            {ok, SysConfig} = file:script("config/sys.config.script"),
+            file:write_file("config/sys.config", io_lib:format("~p.", [SysConfig]))
+    end,
+    
+    {ok, #file_info{mtime = VmArgsScriptMTime}} = file:read_file_info("config/vm.args.script"),
+    case file:read_file_info("config/vm.args") of
+        {ok, #file_info{mtime = VmArgstMTime}} when VmArgstMTime > VmArgsScriptMTime ->
+            skip;
+        _ ->
+            {ok, VmArgs} = file:script("config/vm.args.script"),
+            VmArgs1 =
+                lists:map(fun(Element) ->
+                    case Element of
+                        {K, V} -> [K, $ , V, $\n, $\n];
+                        _ -> [Element, $\n]
+                    end end, VmArgs),
+            file:write_file("config/vm.args", io_lib:format("~s", [VmArgs1]))
+    end.
 
 compile() ->
     io:format("pre_hooks compile start~n"),
@@ -132,7 +160,7 @@ compile_proto(RebarConfig) ->
                             io:format("warning no proto in ~s~n", [FileName]),
                             Acc
                     end
-                                                                        end, {[], [], [], []}),
+                                                                end, {[], [], [], []}),
             LoadTail = "    ok.\n\n",
             ProtoTail = "proto(_) -> error.\n\n",
             Encode =

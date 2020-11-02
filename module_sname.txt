@@ -21,6 +21,7 @@ performance                         |perf               |性能测试用文件
 template                            |                   |模板文件
 fractal_tree                        |                   |分型树
 hash_tuple                          |                   |哈希tuple(数组)
+xlsx2erl                            |                   |excel生成erl配置文件
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 业务功能 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 player                              |                   |玩家
 

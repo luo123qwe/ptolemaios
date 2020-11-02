@@ -2,8 +2,8 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc
-%%% release.escript
+%%% @doc 发布脚本
+%%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(release).
@@ -20,37 +20,28 @@
 -define(UPDATE_MFA, {fix_hot, fix, []}).
 -define(REUSE_DIR, ["log", "fix_dets", "vt_sql_dets"]).
 
-main(Args) ->
-    case make_escript() of
-        true ->
-            %% 新代码再执行一次
-            escript:start();
-        _ ->
-            do_main(Args)
-    end.
-
 %% 打包机用
-do_main(["tar" | Opt]) ->
+main(["tar" | Opt]) ->
     tar(make_opt(Opt));
-do_main(["tar_backup" | Opt]) ->
+main(["tar_backup" | Opt]) ->
     tar_backup(make_opt(Opt));
-do_main(["tar_ebin" | Opt]) ->
+main(["tar_ebin" | Opt]) ->
     tar_ebin(make_opt(Opt));
-do_main(["backup_tree" | Opt]) ->
+main(["backup_tree" | Opt]) ->
     backup_tree(make_opt(Opt));
 %% 发布机用
-do_main(["replace_tar" | Opt]) ->
+main(["replace_tar" | Opt]) ->
     replace_tar(make_opt(Opt));
-do_main(["restart" | Opt]) ->
+main(["restart" | Opt]) ->
     stop(make_opt(Opt)),
     start();
-do_main(["stop" | Opt]) ->
+main(["stop" | Opt]) ->
     stop(make_opt(Opt));
-do_main(["update_ebin" | Opt]) ->
+main(["update_ebin" | Opt]) ->
     update_ebin(make_opt(Opt));
-do_main(["update_backup" | Opt]) ->
+main(["update_backup" | Opt]) ->
     update_backup(make_opt(Opt));
-do_main(_) ->
+main(_) ->
     usage().
 
 make_opt([]) ->
@@ -101,7 +92,7 @@ tar(Opt) ->
     file:copy(BuildPath, "tmp.tar.gz"),
     %% 再套一层打包tar
     ReleaseName = AppName ++ ".tar.gz",
-    erl_tar:create(ReleaseName, [{TarName, "tmp.tar.gz"}, "release.escript"]),
+    erl_tar:create(ReleaseName, [{TarName, "tmp.tar.gz"}, "release.erl"]),
     file:delete("tmp.tar.gz"),
     io:format("create tar ~s~n", [ReleaseName]),
     %% 备份
@@ -114,7 +105,7 @@ tar_backup(Opt) ->
     Tree = make_backup_tree(Backup),
     {_, EBinTarList} = lists:keyfind(Tar, 1, Tree),
     ReleaseName = AppName ++ ".tar.gz",
-    erl_tar:create(ReleaseName, [{EBinTar, Backup ++ "/" ++ EBinTar} || EBinTar <- EBinTarList] ++ [{Tar, Backup ++ "/" ++ Tar}, "release.escript"]),
+    erl_tar:create(ReleaseName, [{EBinTar, Backup ++ "/" ++ EBinTar} || EBinTar <- EBinTarList] ++ [{Tar, Backup ++ "/" ++ Tar}, "release.erl"]),
     io:format("tar backup:~n~s~n", [[Tar, $\n, [[EBinTar, $\n] || EBinTar <- EBinTarList]]]).
 
 tar_ebin(Opt) ->
@@ -296,7 +287,7 @@ replace_tar(Opt) ->
             case filelib:is_file("replace_escript_mask") of
                 false ->
                     io:format("replace escript~n"),
-                    ok = erl_tar:extract(Tar, [{cwd, "."}, {files, ["release.escript"]}, compressed]),
+                    ok = erl_tar:extract(Tar, [{cwd, "."}, {files, ["release.erl"]}, compressed]),
                     file:write_file("replace_escript_mask", []),
                     escript:start();
                 _ ->
@@ -322,7 +313,7 @@ replace_tar(Opt) ->
                                   end, SaveDirList),
                     file:del_dir_r(Dir),
                     {ok, TarListDir} = erl_tar:table(Tar, [compressed]),
-                    OverwriteList = TarListDir -- ["release.escript"],
+                    OverwriteList = TarListDir -- ["release.erl"],
                     ok = erl_tar:extract(Tar, [{cwd, "."}, {files, OverwriteList}, compressed]),
                     file:delete(Tar),
                     io:format("extract:~n~s~n", [string:join(OverwriteList, "~n")]),
@@ -350,7 +341,7 @@ init_tar(Opt) ->
             ok = erl_tar:extract(AppTar, [{cwd, App}, compressed]);
         _ ->% {app_name}_{date}
             io:format("init tar_backup: ~s~n", [AppTar]),
-            [AppTar1] = element(2, erl_tar:table(AppTar)) -- ["release.escript"],
+            [AppTar1] = element(2, erl_tar:table(AppTar)) -- ["release.erl"],
             ok = erl_tar:extract(AppTar, [{cwd, "."}, {files, [AppTar1]}, compressed]),
             App = filename:rootname(AppTar1, ".tar.gz"),
             ok = erl_tar:extract(AppTar1, [{cwd, App}, compressed]),
@@ -459,7 +450,7 @@ update_backup(Opt) ->
                 "ebin" ++ _ ->
                     {true, FNPath};
                 _ ->
-                    [AppTar] = element(2, file:list_dir(FNPath))--["release.escript"],
+                    [AppTar] = element(2, file:list_dir(FNPath))--["release.erl"],
                     App = filename:rootname(filename:rootname(AppTar)),
                     FNPath1 = FNPath ++ "/" ++ App,
                     ok = erl_tar:extract(FNPath ++ "/" ++ AppTar, [{cwd, FNPath1}, compressed]),
@@ -638,24 +629,6 @@ get_dir() ->
             _ -> Acc
         end end, undefined, FileList).
 
-make_escript() ->
-    {ok, #file_info{mtime = ScriptMTime}} = file:read_file_info("release.escript"),
-    IsMake =
-        case file:read_file_info("release.erl") of
-            {ok, #file_info{mtime = ErlMTime}} when ErlMTime > ScriptMTime -> true;
-            _ -> false
-        end,
-    case IsMake of
-        true ->
-            {ok, Bin} = file:read_file("release.erl"),
-            [_, EscriptBody] = re:split(Bin, <<"%% ========private_split_str==========">>, [{parts, 2}]),
-            file:write_file("release.escript", ["#!/usr/bin/env escript", EscriptBody]),
-            io:format("make ~s~n", ["release.escript"]);
-        _ ->
-            skip
-    end,
-    IsMake.
-
 %% 命令行支持中文好难弄, 写着凑合
 %% tar: 打包一个版本, 根据rebar3.config.script获取app名字和版本
 %% tar_backup:  打包一个backup树的分支
@@ -667,7 +640,7 @@ make_escript() ->
 usage() ->
     io:format("
 release tool
-use:    escript release.escript [cmd] [-option value]
+use:    escript release.erl [cmd] [-option value]
 notice: release name must equip app name, unless i can't find out with app to update ebin!!!
 
 cmd:
