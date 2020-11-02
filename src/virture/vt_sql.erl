@@ -114,7 +114,7 @@ system_init(Before, Fun, After) ->
 %% @private 保存定义
 -spec save_defined() -> any().
 save_defined() ->
-    {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, get_dets_path() ++ "/" ++ atom_to_list(?DETS_VT_SQL)}, {keypos, #vt_sql.table}]),
+    {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, get_dets_path() ++ "/" ++ atom_to_list(?DETS_VT_SQL) ++ ".dets"}, {keypos, #vt_sql.table}]),
     lists:foreach(fun(Virture) ->
         dets:insert(?DETS_VT_SQL, Virture)
                   end, vt:all(mysql)),
@@ -419,7 +419,7 @@ do_sync_to_db(ReplaceSql, ReplaceIOList, DeleteIOList) ->
 %% mysql失败的数据保存到dets
 %% 因为失败的是一个个数据段, 所以保存的内容也可能有对有错
 sync_dets(#vt_sql{table = Table, data = Data, private_key_pos = PKPos}) ->
-    case dets:open_file(Table, [{file, get_dets_path() ++ "/" ++ atom_to_list(Table)}, {keypos, PKPos}]) of
+    case dets:open_file(Table, [{file, get_dets_path() ++ "/" ++ atom_to_list(Table) ++ ".dets"}, {keypos, PKPos}]) of
         {ok, Table} ->
             maps:fold(fun(_K, V, _) ->
                 dets:insert(Table, V)
@@ -433,10 +433,10 @@ sync_dets(#vt_sql{table = Table, data = Data, private_key_pos = PKPos}) ->
 %% @doc 检查dets是否存在数据
 check_dets() ->
     DetsPath = get_dets_path(),
-    {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, DetsPath ++ "/" ++ atom_to_list(?DETS_VT_SQL)}, {keypos, #vt_sql.table}]),
-    filelib:fold_files(DetsPath, ".*", false,
+    {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, DetsPath ++ "/" ++ atom_to_list(?DETS_VT_SQL) ++ ".dets"}, {keypos, #vt_sql.table}]),
+    filelib:fold_files(DetsPath, ".*\.dets", false,
         fun(FileName, _Acc) ->
-            Table = list_to_atom(filename:basename(FileName)),
+            Table = list_to_atom(filename:rootname(filename:basename(FileName))),
             case Table of
                 ?DETS_VT_SQL ->
                     skip;
@@ -479,11 +479,11 @@ fix_dets(Before, Fun, After) ->
         spawn_link(fun() ->
             process_init(),
             DetsPath = get_dets_path(),
-            {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, DetsPath ++ "/" ++ atom_to_list(?DETS_VT_SQL)}, {keypos, #vt_sql.table}]),
+            {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, DetsPath ++ "/" ++ atom_to_list(?DETS_VT_SQL) ++ ".dets"}, {keypos, #vt_sql.table}]),
             ?DO_IF(is_function(Before), Before()),
-            filelib:fold_files(DetsPath, ".*", false,
+            filelib:fold_files(DetsPath, ".*\.dets", false,
                 fun(FileName, _Acc) ->
-                    Table = list_to_atom(filename:basename(FileName)),
+                    Table = list_to_atom(filename:rootname(filename:basename(FileName))),
                     case Table of
                         ?DETS_VT_SQL ->
                             skip;
@@ -617,7 +617,7 @@ hotfix(Table, Fun) ->
     end.
 
 do_hotfix(Fun, #vt_sql{table = Table, use_ets = UseEts, state_pos = StatePos, private_key_pos = PKPos, data = Data} = OldVirture, VtSql) ->
-    {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, get_dets_path() ++ "/" ++ atom_to_list(?DETS_VT_SQL)}, {keypos, #vt_sql.table}]),
+    {ok, ?DETS_VT_SQL} = dets:open_file(?DETS_VT_SQL, [{file, get_dets_path() ++ "/" ++ atom_to_list(?DETS_VT_SQL) ++ ".dets"}, {keypos, #vt_sql.table}]),
     case vt:get(mysql, Table) of
         #vt_sql{} = NewConfig ->
             case UseEts == NewConfig#vt_sql.use_ets andalso PKPos == NewConfig#vt_sql.private_key_pos of

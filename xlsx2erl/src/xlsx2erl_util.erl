@@ -202,7 +202,7 @@ copy_mask_body_is_mask(_Data, _Mask) ->
 ensure_dets(Module) ->
     case dets:info(?DETS_XLSX2ERL1(Module)) of
         undefined ->
-            {ok, ?DETS_XLSX2ERL1(Module)} = dets:open_file(?DETS_XLSX2ERL1(Module), [{file, ?DETS_PATH ++ "/" ++ atom_to_list(Module)}, {keypos, 2}]);
+            {ok, ?DETS_XLSX2ERL1(Module)} = dets:open_file(?DETS_XLSX2ERL1(Module), [{file, ?DETS_PATH ++ "/" ++ atom_to_list(Module) ++ ".dets"}, {keypos, 2}]);
         _ -> ok
     end.
 

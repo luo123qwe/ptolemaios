@@ -29,7 +29,7 @@ system_init(Module) ->
     {ok, Config} = application:get_env(ptolemaios, fix),
     {_, DetsDir} = lists:keyfind(dets_dir, 1, Config),
     file:make_dir(DetsDir),
-    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, DetsDir ++ "/" ++ atom_to_list(?DETS_FIX)}]),
+    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, DetsDir ++ "/" ++ atom_to_list(?DETS_FIX) ++ ".dets"}]),
     case dets:lookup(?DETS_FIX, Module) of
         [{_, _Index, _IsSuccess}] -> skip;
         _ -> system_init(Module, 1)
@@ -59,7 +59,7 @@ fix(Module, DefaultIndex) ->
     {ok, Config} = application:get_env(ptolemaios, fix),
     {_, DetsDir} = lists:keyfind(dets_dir, 1, Config),
     file:make_dir(DetsDir),
-    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, DetsDir ++ "/" ++ atom_to_list(?DETS_FIX)}]),
+    {ok, ?DETS_FIX} = dets:open_file(?DETS_FIX, [{file, DetsDir ++ "/" ++ atom_to_list(?DETS_FIX) ++ ".dets"}]),
     %% 获取执行下标
     case dets:lookup(?DETS_FIX, Module) of
         [{_, Index0, true}] ->
