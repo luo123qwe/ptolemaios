@@ -1,6 +1,8 @@
 -define(DYM_DYNAMES_UNIT3(M, F, A), apply(M, F, A)).
 
--define(MSG_DYNAMES_NEXT_FRAME, dynames_next_frame).
+-define(MSG_DYNAMES_NEXT_FRAME, dynames_next_frame).% 执行下一帧
+
+-define(PD_DYNAMES_ID1(Type), {dynames_id, Type}).% 唯一id
 
 %% 排序id
 -define(DYNAMES_SORT2(Frame, Priority), -Frame * 10000 + Priority).
@@ -8,9 +10,13 @@
 %% 事件
 -define(DYNAMES_EVENT_TEST, test).% 测试
 
+%% 唯一id类型
+-define(DYNAMES_ID_TYPE_GLOBAL, global).
+
 %% 帧
 -record(dynames_event, {
     sort :: integer(),% 方便排序, 从大到小. ?DYNAMES_SORT
+    id :: integer(),% 唯一id
     frame :: integer(),%% 帧
     priority :: integer(),%% 优先级
     event :: any(),%% 事件
@@ -26,7 +32,7 @@
 
 -record(dynames, {
     frame = 0 :: integer(),
-    stream_event = [] :: [#dynames_event{}],% 流事件
+    stream_event = [] :: map(),% 流事件, #{frame => [#dynames_event{}]}
     trigger_event = #{} :: map(),% 触发型事件, {type => [#dynames_event{}]}
     unit_map = maps:new() :: map()
 }).

@@ -32,12 +32,12 @@ filter_event_target(_Unit, Event, #dynames{unit_map = UnitMap}) ->
     end.
 
 execute_event(TargetList, Unit, Event, #dynames{frame = Frame, stream_event = StreamEvent} = State) ->
-    ?debugFmt("~n~p ~p ~p~n", [TargetList, Unit, Event]),
+    io:format("~n~p ~p ~p~n", [TargetList, Unit, Event]),
     case Event#dynames_event.stream of
         stop ->
             %% 下一帧执行一个事件, 模拟事件延时触发
-            NewEvent = Event#dynames_event{frame = Frame + 1, stream = undefined},
-            {ok, State#dynames{stream_event = dynames_event:insert_first(NewEvent, StreamEvent)}};
+            NewEvent = dynames_event:copy(Frame, Event#dynames_event.priority, Event),
+            {ok, State#dynames{stream_event = dynames_event:insert_first(NewEvent#dynames_event{stream = undefined}, StreamEvent)}};
         _ ->
             %% 换成target发起, 模拟A事件触发B事件
             [TargetId | _] = TargetList,
@@ -50,21 +50,28 @@ execute_event(TargetList, Unit, Event, #dynames{frame = Frame, stream_event = St
 base_test_() ->
     {setup,
         fun() ->
-            {ok, State} = dynames_svr:init([]),
-            State#dynames{
-                stream_event = [
-                    #dynames_event{frame = 1, priority = 1, sort = ?DYNAMES_SORT2(1, 1), user = 1, event = ?DYNAMES_EVENT_TEST},
-                    %% 这个事件不会执行
-                    #dynames_event{frame = 3, priority = 1, sort = ?DYNAMES_SORT2(3, 1), user = 1, event = ?DYNAMES_EVENT_TEST}
-                ],
-                unit_map = #{1 => #dynames_unit{id = 1, module = dynames_test}, 2 => #dynames_unit{id = 1, module = dynames_test}}
-            }
+            {ok, Pid} = dynames_svr:start([test], []),
+            sys:replace_state(Pid, fun(_) ->
+                BaseEvent1 = dynames_event:new(1, 1),
+                Event1 = BaseEvent1#dynames_event{user = 1, event = ?DYNAMES_EVENT_TEST},
+                BaseEvent2 = dynames_event:new(2, 1),
+                Event2 = BaseEvent2#dynames_event{user = 2, event = ?DYNAMES_EVENT_TEST},
+                #dynames{
+                    stream_event = #{
+                        1 => [Event1],
+                        %% 这个事件不会执行
+                        3 => [Event2]
+                    },
+                    unit_map = #{1 => #dynames_unit{id = 1, module = dynames_test}, 2 => #dynames_unit{id = 1, module = dynames_test}}
+                }
+                                   end),
+            Pid
         end,
-        fun(_State) -> ok end,
-        fun(State) ->
+        fun(_) -> ok end,
+        fun(Pid) ->
             ?_test(begin
-                       State1 = dynames_svr:next_frame(State),
-                       dynames_svr:next_frame(State1)
+                       Pid ! ?MSG_DYNAMES_NEXT_FRAME,
+                       Pid ! ?MSG_DYNAMES_NEXT_FRAME
                    end)
         end
     }.

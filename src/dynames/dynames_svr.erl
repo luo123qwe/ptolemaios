@@ -59,9 +59,10 @@ next_frame(State) ->
 %% @doc 执行一帧
 -spec execute_frame(#dynames{}) -> #dynames{}.
 execute_frame(#dynames{frame = Frame, stream_event = StreamEvent} = State) ->
-    case StreamEvent of
-        [#dynames_event{frame = ExecuteFrame} = H | T] when ExecuteFrame =< Frame ->
-            State1 = State#dynames{stream_event = T},
+    case kv_op:lookup(Frame, StreamEvent, []) of
+        [H | T] ->
+            StreamEvent1 = ?IF(T =/= [], kv_op:store(Frame, StreamEvent, T), StreamEvent),
+            State1 = State#dynames{stream_event = StreamEvent1},
             %% 释放对象
             State2 = execute_event(H, State1),
             %% 执行效果
