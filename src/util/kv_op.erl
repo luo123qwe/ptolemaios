@@ -89,9 +89,9 @@
 
 
 %% @doc 查找一个值
--spec lookup(key()|[key()], struct(), value()) -> error|{ok, value()}.
+-spec lookup(key()|[key()], struct(), value()) -> error|value().
 lookup([], Struct, _Default) ->
-    {ok, Struct};
+    Struct;
 lookup([{Key, Pos} | T], Struct, Default) ->%% 这个是特别的
     case lists:keyfind(Key, Pos, Struct) of
         false -> Default;
@@ -542,7 +542,7 @@ base_test_() ->
             fun(_) ->
                 %% list, tuple_list, tuple, map, dict, ets
                 [
-                    ?_assertEqual({ok, {ets, ok}},
+                    ?_assertEqual({ets, ok},
                         kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
                     ?_assertEqual(undefined,
                         kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, error], Struct, undefined)),

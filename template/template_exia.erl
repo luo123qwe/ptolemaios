@@ -14,7 +14,21 @@
 -include("util.hrl").
 
 %% API
+-export([start/2, start/3, start_link/2, start_link/3]).
+
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+
+start(Args, Options) ->
+    exia:start(?MODULE, Args, Options).
+
+start(Name, Args, Options) ->
+    exia:start(Name, ?MODULE, Args, Options).
+
+start_link(Args, Options) ->
+    exia:start_link(?MODULE, Args, Options).
+
+start_link(Name, Args, Options) ->
+    exia:start_link(Name, ?MODULE, Args, Options).
 
 init(_Args) ->
     {ok, undefined}.
