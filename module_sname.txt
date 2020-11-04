@@ -22,6 +22,7 @@ template                            |                   |模板文件
 fractal_tree                        |                   |分型树
 hash_tuple                          |                   |哈希tuple(数组)
 xlsx2erl                            |                   |excel生成erl配置文件
+dynames                             |                   |战斗框架
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 业务功能 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 player                              |                   |玩家
 

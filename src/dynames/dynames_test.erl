@@ -32,7 +32,7 @@ filter_event_target(_Unit, Event, #dynames{unit_map = UnitMap}) ->
     end.
 
 execute_event(TargetList, Unit, Event, #dynames{frame = Frame, stream_event = StreamEvent} = State) ->
-    ?debugFmt("~n~p ~p ~p~n", [TargetList, Unit, Event]),
+    ?debugFmt("~n~p ~p ~p ~p~n", [TargetList, Unit#dynames_unit.id, Event, dynames:rand()]),
     case Event#dynames_event.stream of
         stop ->
             %% 下一帧执行一个事件, 模拟事件延时触发
@@ -52,6 +52,7 @@ base_test_() ->
         fun() ->
             {ok, Pid} = dynames_svr:start([test], []),
             sys:replace_state(Pid, fun(_) ->
+                dynames:init_rand_seed({1, 1, 1}),
                 BaseEvent1 = dynames_event:new(1, 1),
                 Event1 = BaseEvent1#dynames_event{user = 1, event = ?DYNAMES_EVENT_TEST},
                 BaseEvent2 = dynames_event:new(3, 1),

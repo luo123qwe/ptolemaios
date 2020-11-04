@@ -3,6 +3,7 @@
 -define(MSG_DYNAMES_NEXT_FRAME, dynames_next_frame).% 执行下一帧
 
 -define(PD_DYNAMES_ID1(Type), {dynames_id, Type}).% 唯一id
+-define(PD_DYNAMES_RAND_STATE, rand_seed).% 随机种子
 
 %% 排序id
 -define(DYNAMES_SORT2(Frame, Priority), -Frame * 10000 + Priority).
@@ -26,7 +27,8 @@
 
 %% 战斗单位
 -record(dynames_unit, {
-    id :: any(),
+    id :: any(),% 唯一id
+    actor_id :: integer(),% 配置表的角色id
     module :: atom()% 回调模块
 }).
 
@@ -34,5 +36,5 @@
     frame = 0 :: integer(),
     stream_event = [] :: map(),% 流事件, #{frame => [#dynames_event{}]}
     trigger_event = #{} :: map(),% 触发型事件, {type => [#dynames_event{}]}
-    unit_map = maps:new() :: map()
+    unit_map = maps:new() :: map()% 所有unit, #{id => #dynames_unit{}}
 }).

@@ -3,6 +3,12 @@
 %%% @copyright (C) 2020, <COMPANY>
 %%% @doc 一个帧战斗框架
 %%%
+%%% 每帧处理一个事件列表
+%%%
+%%% 每个事件都有发起者和具体事件内容
+%%%
+%%% 事件处理流程: 筛选目标 -> 对每个目标执行该事件
+%%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(dynames_svr).
@@ -33,6 +39,7 @@ start_link(Name, Args, Options) ->
     exia:start_link(Name, ?MODULE, Args, Options).
 
 init(_Args) ->
+    dynames:init_rand_seed(),
     {ok, #dynames{}}.
 
 handle_call(Request, From, State) ->
