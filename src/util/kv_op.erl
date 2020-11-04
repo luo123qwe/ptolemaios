@@ -51,7 +51,7 @@
 %% k + tuple -> element(k, tuple)
 %% k + dict -> v
 %% k + ets -> tuple
--export([lookup/3, store/3]).
+-export([lookup/3, store/3, delete/2]).
 
 %% {k,v}结构数学运算, 从左到右
 %% 支持 [{k,v}], map, dict, ets, 结构不能嵌套
@@ -67,9 +67,17 @@
 
 %% 从dict.erl复制过来, erl版本变化时可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
 -record(dict, {size, n, maxn, bso, exp_size, con_size, empty, segs}).
+
 %% 如果使用list作为key, 外面必须再套一层[]
-%% 特别支持key+pos, 非{k,v}元组
--type key() :: integer()|{Key :: term(), Pos :: non_neg_integer()}|term().
+%% 支持key+pos, 非{k,v}元组, 对应lists+record的操作
+%% 支持ets+pos, 对应ets:lookup/update_element, store时ets的值不存在则使用default插入一条新数据
+-type key() ::
+integer()|
+ets:tab()|
+{Key :: term(), Pos :: non_neg_integer()}|
+{ets:tab(), Pos :: integer()}|
+term().
+
 -type value() :: term().
 %% ets仅支持set和ordered_set, 不要(正常也不会)定义dict的record
 -type struct() :: tuple()| [{key(), value()}|tuple()]|map()|dict:dict()|ets:tab().
@@ -92,7 +100,7 @@
 -spec lookup(key()|[key()], struct(), value()) -> error|value().
 lookup([], Struct, _Default) ->
     Struct;
-lookup([{Key, Pos} | T], Struct, Default) ->%% 这个是特别的
+lookup([{Key, Pos} | T], Struct, Default) when is_list(Struct) ->%% 这个是特别的
     case lists:keyfind(Key, Pos, Struct) of
         false -> Default;
         Tuple -> lookup(T, Tuple, Default)
@@ -115,6 +123,16 @@ lookup([H | T], Struct, Default) when is_map(Struct) ->
         #{H := Value} -> lookup(T, Value, Default);
         _ -> Default
     end;
+lookup([{Key, Pos} | T], Struct, Default) when is_atom(Struct);is_reference(Struct) ->
+    Value =
+        try ets:lookup_element(Struct, Key, Pos)
+        catch
+            _:_ -> undefined
+        end,
+    case Value of
+        undefined -> Default;
+        _ -> lookup(T, Value, Default)
+    end;
 lookup([H | T], Struct, Default) when is_atom(Struct);is_reference(Struct) ->
     case ets:lookup(Struct, H) of
         [Value] -> lookup(T, Value, Default);
@@ -129,7 +147,7 @@ lookup(Key, Struct, Default) ->
 %%
 %% 所以当直接传入key时可以不写default ^ ^
 -spec store(key()|[{key(), default()}], value(), struct()) -> struct().
-store([{{Key, Pos} = SKey, Default} | T], Value, Struct) ->
+store([{{Key, Pos} = SKey, Default} | T], Value, Struct) when is_list(Struct) ->
     case T of
         [] ->
             lists:keystore(Key, Pos, Struct, Value);
@@ -186,6 +204,27 @@ store([{Key, Default} | T], Value, Struct) when is_map(Struct) ->
             SValue1 = store(T, Value, SValue),
             Struct#{Key => SValue1}
     end;
+store([{{Key, Pos}, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
+    case T of
+        [] ->
+            try ets:update_element(Struct, Key, {Pos, Value})
+            catch
+                _:_ ->
+                    ets:insert(Struct, Default)
+            end;
+        _ ->
+            SValue1 =
+                try ets:lookup_element(Struct, Key, Pos)
+                catch
+                    _:_ ->
+                        ets:insert(Struct, Default),
+                        element(Pos, Default)
+                end,
+            SValue2 = store(T, Value, SValue1),
+            ets:update_element(Struct, Key, {Pos, SValue2})
+    end,
+    %% ets 不会变
+    Struct;
 store([{Key, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
     case T of
         [] ->
@@ -202,6 +241,100 @@ store([{Key, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Str
     Struct;
 store(Key, Value, Struct) ->
     store([{Key, undefined}], Value, Struct).
+
+%% @doc 删除一个值
+-spec delete(key()|[key()], struct()) -> struct().
+delete([{Key, Pos} | T], Struct) when is_list(Struct) ->
+    case T of
+        [] ->
+            lists:keydelete(Key, Pos, Struct);
+        _ ->
+            case lists:keyfind(Key, Pos, Struct) of
+                false ->
+                    Struct;
+                SValue ->
+                    SValue1 = delete(T, SValue),
+                    lists:keystore(Key, Pos, Struct, SValue1)
+            end
+    end;
+delete([Key | T], Struct) when is_list(Struct) ->
+    case T of
+        [] ->
+            lists:keydelete(Key, 1, Struct);
+        _ ->
+            case lists:keyfind(Key, 1, Struct) of
+                false ->
+                    Struct;
+                {_, SValue} ->
+                    SValue1 = delete(T, SValue),
+                    lists:keystore(Key, 1, Struct, {Key, SValue1})
+            end
+    end;
+delete([Key | T], Struct) when is_record(Struct, dict) ->
+    case T of
+        [] ->
+            dict:erase(Key, Struct);
+        _ ->
+            case dict:find(Key, Struct) of
+                error ->
+                    Struct;
+                {_, SValue} ->
+                    SValue1 = delete(T, SValue),
+                    dict:store(Key, SValue1, Struct)
+            end
+    end;
+delete([Key | T], Struct) when is_map(Struct) ->
+    case T of
+        [] ->
+            maps:remove(Key, Struct);
+        _ ->
+            case Struct of
+                #{Key := SValue} ->
+                    SValue1 = delete(T, SValue),
+                    Struct#{Key => SValue1};
+                _ ->
+                    Struct
+            end
+    end;
+delete([{Key, Pos} | T], Struct) when is_atom(Struct);is_reference(Struct) ->
+    case T of
+        [] ->
+            %% 元组没有delete操作
+            throw(badarg);
+        _ ->
+            SValue =
+                try ets:lookup_element(Struct, Key, Pos)
+                catch _:_ ->
+                    undefined
+                end,
+            %% 保证其他代码报错直接报错
+            case SValue of
+                undefined ->
+                    skip;
+                _ ->
+                    SValue1 = delete(T, SValue),
+                    ets:insert(Struct, SValue1)
+            end
+    end,
+    %% ets 不会变
+    Struct;
+delete([Key | T], Struct) when is_atom(Struct);is_reference(Struct) ->
+    case T of
+        [] ->
+            ets:delete(Struct, Key);
+        _ ->
+            case ets:lookup(Struct, Key) of
+                [SValue] ->
+                    SValue1 = delete(T, SValue),
+                    ets:insert(Struct, SValue1);
+                _ ->
+                    ok
+            end
+    end,
+    %% ets 不会变
+    Struct;
+delete(Key, Struct) ->
+    delete([Key], Struct).
 
 make_default(?KV_OP_DEF(M, F), _Key) when is_atom(M), is_atom(F) ->
     apply(M, F, []);
@@ -308,7 +441,7 @@ math_op(divide, V1, V2) -> V1 / V2.
     key()|[key()], struct(), term()) -> error| struct().
 apply_if_exist(_F, [], _Struct, _DeleteMask) ->
     error;
-apply_if_exist(F, [{Key, Pos} | T], Struct, DeleteMask) ->%% 这个是特别的
+apply_if_exist(F, [{Key, Pos} | T], Struct, DeleteMask) when is_list(Struct) ->%% 这个是特别的
     case lists:keyfind(Key, Pos, Struct) of
         false -> error;
         Tuple ->
@@ -391,6 +524,27 @@ apply_if_exist(F, [H | T], Struct, DeleteMask) when is_map(Struct) ->
             end;
         _ -> error
     end;
+apply_if_exist(F, [{Key, Pos} = H | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
+    try
+        Value = ets:lookup_element(Struct, Key, Pos),
+        case T of
+            [] ->
+                case F(H, Value) of
+                    DeleteMask -> ets:delete(Struct, Key);
+                    Value1 -> ets:update_element(Struct, Key, {Pos, Value1})
+                end,
+                Struct;
+            _ ->
+                case apply_if_exist(F, T, Value, DeleteMask) of
+                    error -> error;
+                    Value1 ->
+                        ets:update_element(Struct, Key, {Pos, Value1}),
+                        Struct
+                end
+        end
+    catch
+        _:_ -> error
+    end;
 apply_if_exist(F, [H | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
     case ets:lookup(Struct, H) of
         [Value] ->
@@ -419,7 +573,7 @@ apply_if_exist(F, Key, Struct, DeleteMask) ->
 %% 若函数返回DeleteMask, 则删除该值
 -spec apply(fun((K :: key(), V :: value()) -> V1 :: value()),
     {key(), default()}|[{key(), default()}], struct(), term()) -> struct().
-apply(F, [{{Key, Pos}, Default} | T], Struct, DeleteMask) ->%% 这个是特别的
+apply(F, [{{Key, Pos}, Default} | T], Struct, DeleteMask) when is_list(Struct) ->%% 这个是特别的
     case lists:keyfind(Key, Pos, Struct) of
         false -> Tuple = make_default(Default, Key);
         Tuple -> ok
@@ -502,6 +656,29 @@ apply(F, [{H, Default} | T], Struct, DeleteMask) when is_map(Struct) ->
                 Value1 -> Struct#{H => Value1}
             end
     end;
+apply(F, [{{Key, Pos} = H, Default} | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
+    Value =
+        try ets:lookup_element(Struct, Key, Pos)
+        catch
+            _:_ ->
+                ets:insert(Struct, Default),
+                make_default(Default, H)
+        end,
+    case T of
+        [] ->
+            case F(H, Value) of
+                DeleteMask -> ets:delete(Struct, Key);
+                Value1 -> ets:update_element(Struct, Key, {Pos, Value1})
+            end,
+            Struct;
+        _ ->
+            case apply(F, T, Value, DeleteMask) of
+                error -> error;
+                Value1 ->
+                    ets:update_element(Struct, Key, {Pos, Value1}),
+                    Struct
+            end
+    end;
 apply(F, [{H, Default} | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
     case ets:lookup(Struct, H) of
         [Value] -> ok;
@@ -559,6 +736,18 @@ base_test_() ->
                             {lookup, {lookup, default}}
                         ], {lookup, ok}, [])),
                     ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup)),
+                    ?_assertEqual(Struct,
+                        kv_op:store([
+                            {list, []},
+                            {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
+                            {3, '_'},
+                            {2, '_'},
+                            {map, ?KV_OP_DEF(dict, new)},
+                            {dict, ?MODULE},
+                            {{lookup, 2}, {lookup, undefined}}
+                        ], update_element, [])),
+                    ?_assertEqual(update_element,
+                        kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, {lookup, 2}], Struct, undefined)),
                     ?_assertEqual([{1, 1}], kv_op:store(1, 1, [])),
                     
                     ?_test(ets:delete_all_objects(?MODULE)),
@@ -610,7 +799,21 @@ base_test_() ->
                                 {dict, ?MODULE},
                                 {lookup, {lookup, default}}
                             ], [], undefined)),
-                    ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup))
+                    ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup)),
+                    ?_assertEqual(Struct,
+                        kv_op:apply(fun({lookup, 2}, ok) ->
+                            update_element
+                                    end,
+                            [
+                                {list, []},
+                                {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
+                                {3, '_'},
+                                {2, '_'},
+                                {map, ?KV_OP_DEF(dict, new)},
+                                {dict, ?MODULE},
+                                {{lookup, 2}, {lookup, default}}
+                            ], [], undefined)),
+                    ?_assertEqual([{lookup, update_element}], ets:lookup(?MODULE, lookup))
                 ]
             end}
     ].

@@ -32,11 +32,11 @@ filter_event_target(_Unit, Event, #dynames{unit_map = UnitMap}) ->
     end.
 
 execute_event(TargetList, Unit, Event, #dynames{frame = Frame, stream_event = StreamEvent} = State) ->
-    io:format("~n~p ~p ~p~n", [TargetList, Unit, Event]),
+    ?debugFmt("~n~p ~p ~p~n", [TargetList, Unit, Event]),
     case Event#dynames_event.stream of
         stop ->
             %% 下一帧执行一个事件, 模拟事件延时触发
-            NewEvent = dynames_event:copy(Frame, Event#dynames_event.priority, Event),
+            NewEvent = dynames_event:copy(Frame + 1, Event#dynames_event.priority, Event),
             {ok, State#dynames{stream_event = dynames_event:insert_first(NewEvent#dynames_event{stream = undefined}, StreamEvent)}};
         _ ->
             %% 换成target发起, 模拟A事件触发B事件
@@ -54,7 +54,7 @@ base_test_() ->
             sys:replace_state(Pid, fun(_) ->
                 BaseEvent1 = dynames_event:new(1, 1),
                 Event1 = BaseEvent1#dynames_event{user = 1, event = ?DYNAMES_EVENT_TEST},
-                BaseEvent2 = dynames_event:new(2, 1),
+                BaseEvent2 = dynames_event:new(3, 1),
                 Event2 = BaseEvent2#dynames_event{user = 2, event = ?DYNAMES_EVENT_TEST},
                 #dynames{
                     stream_event = #{

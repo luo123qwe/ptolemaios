@@ -61,7 +61,7 @@ next_frame(State) ->
 execute_frame(#dynames{frame = Frame, stream_event = StreamEvent} = State) ->
     case kv_op:lookup(Frame, StreamEvent, []) of
         [H | T] ->
-            StreamEvent1 = ?IF(T =/= [], kv_op:store(Frame, StreamEvent, T), StreamEvent),
+            StreamEvent1 = ?IF(T =/= [], kv_op:store(Frame, T, StreamEvent), kv_op:delete(Frame, StreamEvent)),
             State1 = State#dynames{stream_event = StreamEvent1},
             %% 释放对象
             State2 = execute_event(H, State1),
