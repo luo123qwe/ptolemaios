@@ -40,9 +40,10 @@ MillisecondStr = integer_to_list(Millisecond),
 
     {relx, [
         %% 第一, 对于一个上线的项目, 只会更改项目的app, 如果要改其他app那必须跟着一个'大版本'走才合理
-        %% 第二, release名字可以通过version区别不同的release
-        %% 第三, 根据第一, 实际上热更只会更新项目的app
-        %% 所以这里release的名字必须和app的名字一致
+        %% 第二, 实际中不同的version使用时间, 文件夹, svn路径等区分, 甚至不需要这个区分
+        %% 第三, rebar3对window支持不太好, 还是自己得写脚本执行热更才行
+        %% 所以, app的版本和release的版本是不需要改变的
+        %% 所以, release的名字和版本保持默认就行, release脚本会直接写死
         {release, {ptolemaios, "0.1.0"}, [ptolemaios, sasl]},
 
         {sys_config, "./config/sys.config"},
