@@ -18,7 +18,7 @@
 -define(RELEASE_TAG, "prod").
 -define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {fix_hot, fix, []}).
--define(REUSE_DIR, ["log", "fix_dets", "vt_sql_dets"]).
+-define(REUSE_DIR, ["log", "fix_dets", "virture_mysql_dets"]).
 
 %% 打包机用
 main(["tar" | Opt]) ->

@@ -27,9 +27,9 @@ fix() ->
         %% 重载代码
         fix_hot:reload_release(),
         %% 修改数据库
-        vt_sql:query("update template_fix set a=1 where a=2"),
+        virture_mysql:query("update template_fix set a=1 where a=2"),
         %% 修改ets数据
-        Ets = vt_sql:make_ets_name(template_fix),
+        Ets = virture_mysql:make_ets_name(template_fix),
         ets:foldl(fun(Record, []) ->
             case Record#template_fix.a of
                 2 -> ets:insert(Ets, Record#template_fix{a = 1});
@@ -43,9 +43,9 @@ fix() ->
                 {template_fix_sup} ->
                     S;
                 {template_fix_child} ->
-                    vt_sql:fold_cache(fun(Record, []) ->
+                    virture_mysql:fold_cache(fun(Record, []) ->
                         case Record#template_fix.a of
-                            2 -> vt_sql:insert(Record#template_fix{a = 1});
+                            2 -> virture_mysql:insert(Record#template_fix{a = 1});
                             _ -> skip
                         end
                                       end, [], template_fix),
@@ -76,9 +76,9 @@ fix_again() ->
                 {template_fix_sup} ->
                     S;
                 {template_fix_child} ->
-                    vt_sql:fold_cache(fun(Record, []) ->
+                    virture_mysql:fold_cache(fun(Record, []) ->
                         case Record#template_fix.a of
-                            2 -> vt_sql:insert(Record#template_fix{a = 1});
+                            2 -> virture_mysql:insert(Record#template_fix{a = 1});
                             _ -> skip
                         end
                                       end, [], template_fix),

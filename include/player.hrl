@@ -1,10 +1,10 @@
 %% message
--define(MSG_PLAYER_GW_MSG1(Msg), {player_gw_msg, Msg}).
--define(MSG_PLAYER_GW_DISCONNECT, player_gw_disconnect).
+-define(MSG_PLAYER_GATEWAY_MSG1(Msg), {player_gateway_msg, Msg}).
+-define(MSG_PLAYER_GATEWAY_DISCONNECT, player_gateway_disconnect).
 
 -record(player, {
-    vt_sql_key,
-    vt_sql_state,
+    virture_mysql_key,
+    virture_mysql_state,
     id :: integer(),
     account :: binary(),
     name :: binary()

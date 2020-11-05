@@ -5,10 +5,10 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(gw_c_echo).
+-module(gateway_c_echo).
 -author("dominic").
 
--behaviour(gw_c_svr).
+-behaviour(gateway_c_svr).
 
 -include("util.hrl").
 

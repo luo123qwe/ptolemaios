@@ -5,11 +5,11 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(gw).
+-module(gateway).
 -author("dominic").
 
 -include("util.hrl").
--include("gw.hrl").
+-include("gateway.hrl").
 
 %% API
 -export([

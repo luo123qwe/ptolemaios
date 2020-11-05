@@ -48,6 +48,7 @@ rand() ->
     exia:eput(?PD_DYNAMES_RAND_STATE, State),
     Rand.
 
+
 %% @doc 获取随机数, 1-N
 rand(N) ->
     {Rand, State} = rand:uniform_s(N, exia:eget(?PD_DYNAMES_RAND_STATE)),

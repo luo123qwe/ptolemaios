@@ -40,9 +40,9 @@ init([]) ->
     proto_mapping:load(),
     
     %% 子进程
-    ChildSpecs = vt:get_sup_spec() ++
+    ChildSpecs = virture:get_sup_spec() ++
         [
-            #{id => gw_sup, start => {gw_sup, start_link, []}, type => supervisor},
+            #{id => gateway_sup, start => {gateway_sup, start_link, []}, type => supervisor},
             #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor}
         ],
     

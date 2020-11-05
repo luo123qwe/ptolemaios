@@ -31,11 +31,11 @@ handle_call(Request, From, State) ->
     ?LOG_ERROR("~w ~w", [Request, From]),
     {reply, error, State}.
 
-handle_cast(?MSG_PLAYER_GW_MSG1(Msg), State) ->
+handle_cast(?MSG_PLAYER_GATEWAY_MSG1(Msg), State) ->
     State1 = proto_mapping:route(Msg, State),
     {noreply, State1};
 
-handle_cast(?MSG_PLAYER_GW_DISCONNECT, State) ->
+handle_cast(?MSG_PLAYER_GATEWAY_DISCONNECT, State) ->
     ?LOG_NOTICE("gateway disconnect"),
     {noreply, State};
 handle_cast(Request, State) ->
