@@ -15,6 +15,7 @@ exia                                |                   |gen_server的修改版
 proto                               |                   |协议
 gateway                             |                   |网关
 gateway_client                      |gateway_c          |客户端
+error_code                          |                   |错误码, 仅头文件
 fix                                 |                   |数据, 代码修复
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 框架补充 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 performance                         |perf               |性能测试用文件

@@ -8,7 +8,7 @@
 %%% 结论
 %%%     仅find(element/2)时效率高
 %%%     空间效率极低
-%%%     更新效率极低, 这里引出了performance_element
+%%%     更新效率极低, 这里引出了perf_element
 %%%     该实现不能使用
 %%% @end
 %%%-------------------------------------------------------------------
@@ -38,15 +38,15 @@ prof() ->
     eprof:analyze(),
     eprof:stop().
 
-run(#performance_hash_tuple{} = Performan) ->
+run(#perf_hash_tuple{} = Performan) ->
     io:format("~200p~n~200p~n~200p~n~200p~n", [
-        lists:zip(record_info(fields, performance_hash_tuple), tl(tuple_to_list(Performan))),
+        lists:zip(record_info(fields, perf_hash_tuple), tl(tuple_to_list(Performan))),
         dict(Performan),
         hash_tuple(Performan),
         list(Performan)
     ]).
 
-dict(#performance_hash_tuple{
+dict(#perf_hash_tuple{
     size = Size,
     build_times = BuildTimes,
     lookup_times = LookupTimes,
@@ -94,7 +94,7 @@ dict_fold(N, Dict) ->
     dict:fold(fun(K, V, Acc) -> [{K, V} | Acc] end, [], Dict),
     dict_fold(N - 1, Dict).
 
-hash_tuple(#performance_hash_tuple{
+hash_tuple(#perf_hash_tuple{
     size = Size,
     build_times = BuildTimes,
     lookup_times = LookupTimes,
@@ -142,7 +142,7 @@ hash_tuple_fold(N, Dict) ->
     hash_tuple:fold(fun(K, V, Acc) -> [{K, V} | Acc] end, [], Dict),
     hash_tuple_fold(N - 1, Dict).
 
-list(#performance_hash_tuple{
+list(#perf_hash_tuple{
     size = Size,
     build_times = BuildTimes,
     lookup_times = LookupTimes,
@@ -192,7 +192,7 @@ list_fold(N, Dict) ->
 
 
 get_rand_kv_list(N) ->
-    case get(?PD_PERFORMANCE_HASH_TUPLE_RAND_LIST) of
+    case get(?PD_PERF_HASH_TUPLE_RAND_LIST) of
         {N, List} ->
             List;
         _ ->
@@ -200,7 +200,7 @@ get_rand_kv_list(N) ->
     end.
 
 get_rand_kv_list(0, Size, List) ->
-    put(?PD_PERFORMANCE_HASH_TUPLE_RAND_LIST, {Size, List}),
+    put(?PD_PERF_HASH_TUPLE_RAND_LIST, {Size, List}),
     List;
 get_rand_kv_list(N, Size, List) ->
     get_rand_kv_list(N - 1, Size, [{rand:uniform(1 bsl 32 - 1), N} | List]).

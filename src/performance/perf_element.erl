@@ -22,14 +22,14 @@
     run/1
 ]).
 
-run(#performance_element{} = Performan) ->
+run(#perf_element{} = Performan) ->
     io:format("~200p~n~200p~n~200p~n", [
-        lists:zip(record_info(fields, performance_element), tl(tuple_to_list(Performan))),
-        run(Performan#performance_element.size1, Performan),
-        run(Performan#performance_element.size2, Performan)
+        lists:zip(record_info(fields, perf_element), tl(tuple_to_list(Performan))),
+        run(Performan#perf_element.size1, Performan),
+        run(Performan#perf_element.size2, Performan)
     ]).
 
-run(Size, #performance_element{
+run(Size, #perf_element{
     lookup_times = LookupTimes,
     store_times = StoreTimes
 }) ->

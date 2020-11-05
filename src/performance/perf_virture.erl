@@ -19,17 +19,17 @@
 ]).
 
 run() ->
-    run(#performance_virture{size = 100, lookup_times = 10000, store_times = 10000, fold_times = 10000}).
+    run(#perf_virture{size = 100, lookup_times = 10000, store_times = 10000, fold_times = 10000}).
 
-run(#performance_virture{} = Performan) ->
+run(#perf_virture{} = Performan) ->
     io:format("~200p~n~200p~n~200p~n", [
-        lists:zip(record_info(fields, performance_virture), tl(tuple_to_list(Performan))),
+        lists:zip(record_info(fields, perf_virture), tl(tuple_to_list(Performan))),
         run_virture(Performan),
         run_dict(Performan)
     ]).
 
 
-run_dict(#performance_virture{
+run_dict(#perf_virture{
     size = Size,
     lookup_times = LookupTimes,
     store_times = StoreTimes,
@@ -69,7 +69,7 @@ dict_fold(N, Dict) ->
     _ = dict:fold(fun(K, V, Acc) -> [{K, V} | Acc] end, [], Dict),
     dict_fold(N - 1, Dict).
 
-run_virture(#performance_virture{
+run_virture(#perf_virture{
     size = Size,
     lookup_times = LookupTimes,
     store_times = StoreTimes,

@@ -31,7 +31,10 @@
 -export([query/1]).
 
 -type json_def() :: term().% ?VIRTURE_JSON[_XXXX]
--type field_type() :: ?VIRTURE_INT32|?VIRTURE_INT64|?VIRTURE_UINT32|?VIRTURE_UINT64|?VIRTURE_FLOAT|?VIRTURE_STRING|?VIRTURE_TO_STRING|?VIRTURE_BINARY|?VIRTURE_TO_BINARY|json_def().
+-type field_type() ::
+?VIRTURE_INT32|?VIRTURE_INT64|?VIRTURE_UINT32|?VIRTURE_UINT64|?VIRTURE_FLOAT
+|?VIRTURE_STRING1(Length ::integer())|?VIRTURE_TO_STRING|?VIRTURE_BINARY|?VIRTURE_TO_BINARY
+|json_def().
 -export_type([field_type/0]).
 
 %% @private 自动创建数据表
@@ -43,13 +46,19 @@ build_table() ->
 -spec build_table([#virture_mysql{}]) -> [{Table :: atom(), Error :: term()|exists|ok}].
 build_table(VirtureList) ->
     lists:map(fun(Virture) ->
-        Fields = [[atom_to_list(Field), $ , convert_type(Type), " NOT NULL,"]
-            || #virture_mysql_field{name = Field, type = Type} <- Virture#virture_mysql.all_fields],
+        {Fields, AUTO_INCREMENT} =
+            lists:foldr(fun(#virture_mysql_field{name = Field, type = Type, auto_incremental = AutoIncr}, {F, _}) ->
+                {
+                    [[atom_to_list(Field), $ , convert_type(Type), ?IF(is_integer(AutoIncr), " AUTO_INCREMENT", ""), " NOT NULL,"] | F],
+                    ?IF(is_integer(AutoIncr), "AUTO_INCREMENT=" ++ integer_to_list(AutoIncr), "")
+                }
+                        end, {[], ""}, Virture#virture_mysql.all_fields),
         Index = [[",index(", string:join([atom_to_list(Field) || Field <- IndexField], ","), ")"] || IndexField <- Virture#virture_mysql.index],
+        UniqueIndex = [[",unique key(", string:join([atom_to_list(Field) || Field <- IndexField], ","), ")"] || IndexField <- Virture#virture_mysql.unique_index],
         PrivateKey = ["primary key(", string:join([atom_to_list(Field) || Field <- Virture#virture_mysql.private_key], ","), $)],
-        Sql = ["create table ", atom_to_list(Virture#virture_mysql.table), "(", Fields, PrivateKey, Index, ")ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
+        Sql = ["create table ", atom_to_list(Virture#virture_mysql.table), "(", Fields, PrivateKey, UniqueIndex, Index, ")ENGINE=InnoDB ", AUTO_INCREMENT, " DEFAULT CHARSET=utf8mb4;"],
 %%        io:format("~s~n", [Sql]),
-        case query(Sql) of
+        case query(Sql, false) of
             {error, {1050, _, _}} ->% 表已经存在
                 {Virture#virture_mysql.table, exists};
             {error, Error} ->
@@ -69,8 +78,8 @@ convert_type(?VIRTURE_UINT64) ->
     "bigint unsigned";
 convert_type(?VIRTURE_FLOAT) ->
     "float";
-convert_type(?VIRTURE_STRING) ->
-    "text";
+convert_type(?VIRTURE_STRING1(Length)) ->
+    "varchar(" ++ integer_to_list(Length) ++ ")";
 convert_type(?VIRTURE_TO_STRING) ->
     "text";
 convert_type(?VIRTURE_BINARY) ->
@@ -671,11 +680,15 @@ is_same_def(Old, New) ->
         andalso Old#virture_mysql.all_fields == New#virture_mysql.all_fields
         andalso Old#virture_mysql.record_size == New#virture_mysql.record_size.
 
-%% @doc 数据库查询
+%% @equiv query(IOList, true)
 query(IOList) ->
+    query(IOList, true).
+%% @doc 数据库查询
+-spec query(iolist(), boolean()) -> mysql:query_result().
+query(IOList, IsWarning) ->
     case mysql_poolboy:query(?VIRTURE_MYSQL_POOL, IOList) of
         {error, Error} = E ->
-            ?LOG_WARNING("~p", [Error]),
+            ?DO_IF(IsWarning, ?LOG_WARNING("~p", [Error])),
             E;
         Ok ->
             Ok
@@ -1061,7 +1074,7 @@ base_test_() ->
             virture_mysql:fix_dets(undefined, fun(R) ->
                 R1 = R#virture_mysql_test_player{to_json = [{1, {2, 3}}, {11, {22, 33}}]},
                 virture_mysql:insert(R1)
-                                       end, undefined),
+                                              end, undefined),
             [#virture_mysql_test_player{}] = ets:lookup(virture_mysql:make_ets_name(virture_mysql_test_player), [4]),
             virture_mysql:clean_pd([virture_mysql_test_player]),
             virture_mysql:clean_ets([virture_mysql_test_player]),

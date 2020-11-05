@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+// 网关
+
+// 账号登录
+message gateway_c_login {// 101
+    string account = 1;
+}
+
+// 玩家信息
+message gateway_p_role_info {
+    uint32 id = 1;
+    string name = 2;
+}
+
+message gateway_s_login {// 102
+    repeated gateway_p_role_info role_list = 1;
+}
+
+// 选择角色
+message gateway_c_select_role {// 103
+    uint32 id = 1;
+}
+
+message gateway_s_select_role {// 104
+    uint32 id = 1;
+}
+
+// 创建角色
+message gateway_c_create_role {// 105
+    string name = 1;
+}
+
+message gateway_s_create_role {// 106
+    repeated gateway_p_role_info role_list = 1;
+}
+
+// 心跳包
+message gateway_c_heart {// 107
+}
+
+message gateway_s_heart {// 108
+}
+
+// 错误码
+message gateway_s_error {// 110
+    uint32 proto = 1;
+    uint32 code = 2;
+}

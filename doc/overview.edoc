@@ -39,7 +39,7 @@
     |--业务子子模块N
         ...'''
 
-有时名字会非常非常长, 所以引入缩写的设定, 例如:  virture_mysql => vt_sql, abcdef_ghijklmn_opq => ago
+有时名字会非常非常长, 所以引入缩写的设定, 例如:  gateway_client_svr => gateway_c_svr, abcdef_ghijklmn_opq => ago
 
 这里使用 module_sname.txt 人工维护业务系统标识(必须写)和名字缩写, 保证里面所有名字(包括缩写)唯一, 简单来说就是全词搜索新名字直到找不到匹配, 那么这个名字就是可用的
 
@@ -94,6 +94,13 @@
     -define(?DYM_HERO_MODULE(Id), list_to_atom("hero_" ++ integer_to_list(Id))).% xxx英雄模块
 
      -define(?DYM_HERO_CALLBACK, [hero_1, hero_2]).% 英雄回调模块
+    '''</dd>
+    <dt>数据库语句</dt>
+    <dd>使用?SQL_{MODULE}_{TAG}[参数个数]的宏包装, 例如
+    ```
+    -define(?SQL_ALL_HERO(Id), io_lib:format("select * from hero where id=~p", [Id])).% 查找所有英雄的sql
+
+    -define(?SQL_NEW_HERO(Id), io_lib:format("insert into hero set id=~p", [Id])).% 插入一个英雄的sql
     '''</dd>
 </dl>
 
@@ -154,11 +161,11 @@ util文件夹下均为工具类模块, 每个模块等效于一个系统, 会记
 
 === 脏读 ===
 
-参考vt_sql:dirty_lookup/2, 直接从ets获取数据, 但是需要保证想要的数据已经加载到ets
+参考virture_mysql:dirty_lookup/2, 直接从ets获取数据, 但是需要保证想要的数据已经加载到ets
 
-=== vt_sql ===
+=== virture_mysql ===
 
-使用mysql作为数据库, 详情查看{@link vt_sql}.
+使用mysql作为数据库, 详情查看{@link virture_mysql}.
 
 == 进程(exia) ==
 

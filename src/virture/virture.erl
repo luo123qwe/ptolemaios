@@ -12,6 +12,7 @@
 
 -include("util.hrl").
 -include("virture.hrl").
+-include("gateway.hrl").
 -include("player.hrl").
 
 %% API
@@ -61,7 +62,7 @@ all(mysql) ->
             private_key = [player_id],
             all_fields = [
                 #virture_mysql_field{name = player_id, pos = #virture_mysql_test_player.player_id, type = ?VIRTURE_UINT32},
-                #virture_mysql_field{name = str, pos = #virture_mysql_test_player.str, type = ?VIRTURE_STRING},
+                #virture_mysql_field{name = str, pos = #virture_mysql_test_player.str, type = ?VIRTURE_STRING1(100)},
                 #virture_mysql_field{name = to_str, pos = #virture_mysql_test_player.to_str, type = ?VIRTURE_TO_STRING},
                 #virture_mysql_field{name = to_bin, pos = #virture_mysql_test_player.to_bin, type = ?VIRTURE_TO_BINARY},
                 #virture_mysql_field{name = to_json, pos = #virture_mysql_test_player.to_json, type = ?VIRTURE_JSON_OBJ_LIST([<<"a">>, ?VIRTURE_JSON_OBJ(<<"b">>, [<<"c">>, <<"d">>])])}
@@ -77,7 +78,7 @@ all(mysql) ->
             all_fields = [
                 #virture_mysql_field{name = player_id, pos = #virture_mysql_test_goods.player_id, type = ?VIRTURE_UINT32},
                 #virture_mysql_field{name = goods_id, pos = #virture_mysql_test_goods.goods_id, type = ?VIRTURE_UINT32},
-                #virture_mysql_field{name = str, pos = #virture_mysql_test_goods.str, type = ?VIRTURE_STRING},
+                #virture_mysql_field{name = str, pos = #virture_mysql_test_goods.str, type = ?VIRTURE_STRING1(100)},
                 #virture_mysql_field{name = to_str, pos = #virture_mysql_test_goods.to_str, type = ?VIRTURE_TO_STRING},
                 #virture_mysql_field{name = to_bin, pos = #virture_mysql_test_goods.to_bin, type = ?VIRTURE_TO_BINARY}
             ],
@@ -104,10 +105,12 @@ all(mysql) ->
             select_key = [id],
             private_key = [id],
             all_fields = [
-                #virture_mysql_field{name = id, pos = #player.id, type = ?VIRTURE_UINT64},
-                #virture_mysql_field{name = account, pos = #player.account, type = ?VIRTURE_STRING},
-                #virture_mysql_field{name = name, pos = #player.name, type = ?VIRTURE_STRING}
+                #virture_mysql_field{name = id, pos = #player.id, type = ?VIRTURE_UINT64, auto_incremental = 1},
+                #virture_mysql_field{name = account, pos = #player.account, type = ?VIRTURE_STRING1(100)},
+                #virture_mysql_field{name = name, pos = #player.name, type = ?VIRTURE_STRING1(100)}
             ],
+            index = [[account]],
+            unique_index = [[name]],
             record_size = record_info(size, player)
         }
     ].

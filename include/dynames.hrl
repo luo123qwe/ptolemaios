@@ -1,3 +1,6 @@
+-ifndef(DYNAMES_HRL).
+-define(DYNAMES_HRL, true).
+
 -define(DYM_DYNAMES_UNIT3(M, F, A), apply(M, F, A)).
 
 -define(MSG_DYNAMES_NEXT_FRAME, dynames_next_frame).% 执行下一帧
@@ -38,3 +41,6 @@
     trigger_event = #{} :: map(),% 触发型事件, {type => [#dynames_event{}]}
     unit_map = maps:new() :: map()% 所有unit, #{id => #dynames_unit{}}
 }).
+
+
+-endif.

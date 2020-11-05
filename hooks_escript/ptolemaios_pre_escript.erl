@@ -130,17 +130,22 @@ compile_proto(RebarConfig) ->
                     %% 匹配所有, message name{// 12345
                     case re:run(B, "message\s*([A-z0-9_]*)\s*{//\s*([0-9]*)", [global, multiline, {capture, [1, 2], binary}]) of
                         {match, MatchList} ->
-                            Name = filename:basename(FileName, ".proto") ++ Suffix,
-                            Route = filename:basename(FileName, ".proto") ++ "_handle",
+                            BaseName = filename:basename(FileName, ".proto"),
+                            Name = BaseName ++ Suffix,
+                            [ModuleName | _] = string:split(BaseName, "_"),
+                            Route = BaseName ++ "_handle",
                             RouteFile = OutHandlePath ++ "/" ++ Route ++ ".erl",
                             case filelib:is_file(RouteFile) of
                                 true -> skip;
                                 false -> file:write_file(RouteFile, [
-                                    "%% @private\n"
+                                    "%% @private auto create\n"
                                     "-module(", Route, ").\n\n"
                                     "-include(\"util.hrl\").\n"
-                                    "-include(\"" ++ Name ++ ".hrl\").\n\n"
+                                    "-include(\"error_code.hrl\").\n"
+                                    "-include(\"" ++ Name ++ ".hrl\").\n"
+                                    "-include(\"" ++ ModuleName ++ ".hrl\").\n\n"
                                     "-export([handle/2]).\n\n"
+                                    "-spec handle(proto:msg(), #" ++ ModuleName ++ "{}) -> #" ++ ModuleName ++ "{}.\n"
                                     "handle(Msg, Acc) ->\n"
                                     "    ?LOG_WARNING(\"unknow msg ~w\", [Msg]),\n"
                                     "    Acc.\n\n"

@@ -23,13 +23,13 @@
 %% API
 -export([run/1]).
 
-run(#performance_split_data_file{file_num = FileNum, avg_size = AvgSize, lookup_times = Times} = Performan) ->
+run(#perf_split_data_file{file_num = FileNum, avg_size = AvgSize, lookup_times = Times} = Performan) ->
     %% 生成文件
     make_file(FileNum, AvgSize),
     %% 编译主文件
     c:c(test_0),
     io:format("~200p~n~200p~n~200p~n", [
-        lists:zip(record_info(fields, performance_split_data_file), tl(tuple_to_list(Performan))),
+        lists:zip(record_info(fields, perf_split_data_file), tl(tuple_to_list(Performan))),
         {compile, test_0:compile()}, {lookup, test_0:run(Times)}
     ]).
 

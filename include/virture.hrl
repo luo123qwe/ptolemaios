@@ -13,7 +13,7 @@
 -define(VIRTURE_INT64, int64).
 -define(VIRTURE_UINT64, uint64).
 -define(VIRTURE_FLOAT, float).
--define(VIRTURE_STRING, string).
+-define(VIRTURE_STRING1(Length), {varchar, Length}).
 -define(VIRTURE_TO_STRING, to_string).
 -define(VIRTURE_BINARY, binary).
 -define(VIRTURE_TO_BINARY, to_binary).
@@ -47,7 +47,8 @@
 -record(virture_mysql_field, {
     name :: atom(),% 对应数据库字段名
     type :: virture_mysql:field_type(),% 数据类型, 自动建表用
-    pos :: integer()% 对应record的下标
+    pos :: integer(),% 对应record的下标
+    auto_incremental = false :: integer()|any()% 自增id
 }).
 
 %% table
@@ -61,6 +62,7 @@
     private_key = error({require, private_key}) :: [],% 数据的主键, 至少要有一个字段
     all_fields = error({require, all_fields}) :: [#virture_mysql_field{}],% 所有列的定义
     index = [] :: [[Key :: atom()]],%  自动创建数据库的时候加索引
+    unique_index = [] :: [[Key :: atom()]],% 自动创建数据库的时候加unique索引
     record_size = error({require, record_size}) :: integer(),% record的定义, 因为record的字段不一定全都是数据库里面的
     init_fun :: undefined|{M :: atom(), F :: atom()},% fun((Record) -> Record1), 初始化缓存变量
     ets_opt = [public, named_table, {write_concurrency, true}] :: list(),% ets参数

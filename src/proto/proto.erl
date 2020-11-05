@@ -38,6 +38,9 @@
 %% API
 -export([]).
 
+-type msg() :: tuple().
+-export_type([msg/0]).
+
 -ifdef(TEST).
 
 -include_lib("eunit/include/eunit.hrl").

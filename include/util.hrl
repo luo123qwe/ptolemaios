@@ -1,3 +1,6 @@
+-ifndef(UTIL_HRL).
+-define(UTIL_HRL, true).
+
 %% break循环, 支持的函数才能用
 -define(FOLD_BREAK, fold_break).
 -define(FOLD_BREAK1(Acc), {fold_break, Acc}).
@@ -60,3 +63,5 @@
 -define(KV_OP_DEF(MOrF, FOrA), {kv_op_def, MOrF, FOrA}).
 -define(KV_OP_DEF(M, F, A), {kv_op_def, M, F, A}).
 -define(KV_OP_DEF, '_').
+
+-endif.

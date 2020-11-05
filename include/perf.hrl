@@ -1,6 +1,6 @@
 %% 一般情况增删改, 总次数 = Size * XXXTimes
 
--record(performance_fractal_tree, {
+-record(perf_fractal_tree, {
     size,
     record_size,
     build_times,
@@ -20,9 +20,9 @@
     sub :: {Start :: integer(), Len :: integer(), Times :: integer()}
 }).
 
--define(PD_PERFORMANCE_HASH_TUPLE_RAND_LIST, pd_performance_hash_tuple_rand_list).
+-define(PD_PERF_HASH_TUPLE_RAND_LIST, pd_perf_hash_tuple_rand_list).
 
--record(performance_hash_tuple, {
+-record(perf_hash_tuple, {
     size,
     build_times,
     lookup_times,
@@ -30,21 +30,21 @@
     fold_times% 遍历所有数据, to_list
 }).
 
--record(performance_element, {
+-record(perf_element, {
     size1,% 两个不同size跑同一份代码
     size2,
     lookup_times,
     store_times
 }).
 
--record(performance_virture, {
+-record(perf_virture, {
     size,
     lookup_times,
     store_times,
     fold_times
 }).
 
--record(performance_split_data_file, {
+-record(perf_split_data_file, {
     file_num,
     avg_size,
     lookup_times% 等效于get(N)

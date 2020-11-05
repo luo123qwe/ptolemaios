@@ -19,15 +19,15 @@
 %% API
 -export([run/1]).
 
-run(#performance_fractal_tree{} = Performan) ->
+run(#perf_fractal_tree{} = Performan) ->
     io:format("~200p~n~200p~n~200p~n", [
-        lists:zip(record_info(fields, performance_fractal_tree), tl(tuple_to_list(Performan))),
+        lists:zip(record_info(fields, perf_fractal_tree), tl(tuple_to_list(Performan))),
         gb_trees(Performan),
         %% 分形树会有各种额外消耗, 优化后效率可以大幅提高
         fractal_tree(Performan)
     ]).
 
-gb_trees(#performance_fractal_tree{
+gb_trees(#perf_fractal_tree{
     size = Size,
     record_size = RecordSize,
     build_times = BuildTimes,
@@ -134,7 +134,7 @@ gb_trees_sub2(Len, Itor) ->
     end.
 
 
-fractal_tree(#performance_fractal_tree{
+fractal_tree(#perf_fractal_tree{
     size = Size,
     record_size = RecordSize,
     build_times = BuildTimes,

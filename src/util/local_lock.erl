@@ -13,8 +13,7 @@
 %% API
 -export([
     init_ets/0,
-    is_lock/1,
-    is_lock/2,
+    get_owner/1,
     lock/1,
     lock/2,
     lock/3,
@@ -33,14 +32,13 @@ init_ets() ->
     ?ETS_LOCAL_LOCK = ets:new(?ETS_LOCAL_LOCK, [public, named_table, {keypos, #local_lock.key}]),
     ok.
 
-%% @equiv is_lock(Key, self())
-is_lock(Key) ->
-    is_lock(Key, self()).
-
-%% @doc 是否已经上锁
--spec is_lock(term(), term()) -> boolean().
-is_lock(Key, Owner) ->
-    (catch ets:lookup_element(?ETS_LOCAL_LOCK, Key, #local_lock.owner)) == Owner.
+%% @doc 获取锁的拥有者
+-spec get_owner(term()) -> undefined|any().
+get_owner(Key) ->
+    try ets:lookup_element(?ETS_LOCAL_LOCK, Key, #local_lock.owner)
+    catch
+        _:_ -> undefined
+    end.
 
 %% @equiv lock(Key, self())
 lock(Key) ->
@@ -79,10 +77,13 @@ lock(Key, Owner, Interval, Times) ->
 release(Key) ->
     release(Key, self()).
 
+%% @doc 释放锁, 如果不是owner会报错
 -spec release(term(), term()) -> release.
 release(Key, Owner) ->
-    case is_lock(Key, Owner) of
-        true ->
+    case get_owner(Key) of
+        undefined ->
+            release;
+        Owner ->
             ets:delete(?ETS_LOCAL_LOCK, Key),
             release;
         false ->
@@ -120,11 +121,13 @@ force_release(Key) ->
 %% @doc 强制释放锁
 -spec force_release(term(), term()) -> force_release|release.
 force_release(Key, Owner) ->
-    case is_lock(Key, Owner) of
-        true ->
+    case get_owner(Key) of
+        undefined ->
+            release;
+        Owner ->
             ets:delete(?ETS_LOCAL_LOCK, Key),
             release;
-        false ->
+        _ ->
             ets:delete(?ETS_LOCAL_LOCK, Key),
             force_release
     end.
@@ -141,7 +144,7 @@ base_test_() ->
             fun(_X) ->
                 [
                     ?_assertEqual(lock, local_lock:lock(a)),
-                    ?_assertEqual(true, local_lock:is_lock(a)),
+                    ?_assertEqual(self(), local_lock:get_owner(a)),
                     ?_assertEqual(fail, local_lock:lock(a)),
                     ?_assertEqual(release, local_lock:release(a)),
                     ?_assertError(not_owner, local_lock:release(a)),
@@ -149,9 +152,9 @@ base_test_() ->
                     ?_assertEqual(fail, local_lock:lock(b)),
                     ?_assertError(not_owner, local_lock:release(b)),
                     ?_assertEqual(force_release, local_lock:force_release(b)),
-                    ?_assertEqual(false, local_lock:is_lock(b)),
+                    ?_assertEqual(undefined, local_lock:get_owner(b)),
                     ?_assertEqual(lock, local_lock:lock(b)),
-                    ?_assertEqual(true, local_lock:is_lock(b))
+                    ?_assertEqual(self(), local_lock:get_owner(b))
                 ]
             end}
     ].
