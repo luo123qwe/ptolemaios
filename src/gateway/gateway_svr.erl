@@ -42,7 +42,7 @@ handle_call(Request, From, State) ->
     {reply, error, State}.
 
 %% @private
-handle_cast(?MSG_GATEWAY_SEND_MSG1(Msg), #gateway{socket = Socket} = State) ->
+handle_cast(?MSG_GATEWAY_SEND_MSG1(Msg), #gateway_state{socket = Socket} = State) ->
     Bin = gateway:pack(Msg),
     ranch_tcp:send(Socket, Bin),
     {noreply, State};
@@ -54,31 +54,40 @@ handle_cast(Request, State) ->
 handle_info({handshake, Ref}, _) ->
     {ok, Socket} = ranch:handshake(Ref),
     ok = ranch_tcp:setopts(Socket, [{active, true}]),
-    {noreply, #gateway{socket = Socket}};
-handle_info({tcp, Socket, Data}, #gateway{socket = Socket, bin = OldBin} = State) ->
-    decode_bin(State#gateway{bin = <<Data/binary, OldBin/binary>>});
+    {noreply, #gateway_state{socket = Socket}};
+handle_info({tcp, Socket, Data}, #gateway_state{socket = Socket, bin = OldBin} = State) ->
+    decode_bin(State#gateway_state{bin = <<Data/binary, OldBin/binary>>});
 handle_info({tcp_closed, _}, State) ->
     State1 = close(State),
     {stop, normal, State1};
 handle_info({tcp_error, _, Reason}, State) ->
     State1 = close(State),
     {stop, Reason, State1};
+handle_info({'DOWN', _Ref, process, Pid, _Reason}, #gateway_state{player_pid = Pid} = State) ->
+    State1 = close(State),
+    {stop, normal, State1};
 handle_info(Info, State) ->
     ?LOG_ERROR("~w", [Info]),
     {noreply, State}.
 
 terminate(_, State) ->
-    case State#gateway.account of
+    case State#gateway_state.account of
         undefined -> skip;
-        Account -> local_lock:release(Account)
+        Account -> local_lock:release(?LOCAL_LOCK_ACCOUNT1(Account))
+    end,
+    case State#gateway_state.player_id of
+        undefined -> skip;
+        PlayerId ->
+            local_lock:release(?LOCAL_LOCK_PLAYER_ID1(PlayerId)),
+            exia:cast(State#gateway_state.player_pid, ?MSG_PLAYER_GATEWAY_DISCONNECT)
     end,
     ok.
 
-decode_bin(#gateway{bin = Bin, socket = Socket, player_pid = PlayerPid} = State) ->
+decode_bin(#gateway_state{bin = Bin, socket = Socket, player_pid = PlayerPid} = State) ->
     case Bin of
         <<Len:?GATEWAY_LEN, Proto:?GATEWAY_PROTO, ProtoBin:Len/binary, Remain/binary>> ->
             ProtoHead = ?GATEWAY_PROTO_HEAD1(Proto),
-            State1 = State#gateway{bin = Remain},
+            State1 = State#gateway_state{bin = Remain},
             try
                 case proto_mapping:decode(Proto, ProtoBin) of
                     {error, Error} ->
@@ -92,7 +101,7 @@ decode_bin(#gateway{bin = Bin, socket = Socket, player_pid = PlayerPid} = State)
                                 CBin = gateway:pack(#gateway_s_error{proto = Proto, code = ErrorCode}),
                                 ranch_tcp:send(Socket, CBin),
                                 decode_bin(State1);
-                            {MsgList, #gateway{} = State2} ->
+                            {MsgList, #gateway_state{} = State2} ->
                                 lists:foreach(fun(CMsg) ->
                                     CMsg1 = ?MATCH(CMsg, #gateway_s_error{}, CMsg#gateway_s_error{proto = Proto}, CMsg),
                                     CBin = gateway:pack(CMsg1),
@@ -115,11 +124,10 @@ decode_bin(#gateway{bin = Bin, socket = Socket, player_pid = PlayerPid} = State)
                     {stop, normal, ErrorState}
             end;
         _ ->
-            {noreply, State#gateway{bin = Bin}}
+            {noreply, State#gateway_state{bin = Bin}}
     end.
 
 
-close(#gateway{socket = Socket, player_pid = Player} = State) ->
+close(#gateway_state{socket = Socket} = State) ->
     catch ranch_tcp:close(Socket),
-    ?DO_IF(is_pid(Player), exia:cast(Player, ?MSG_PLAYER_GATEWAY_DISCONNECT)),
     State.

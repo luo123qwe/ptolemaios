@@ -19,27 +19,35 @@
 %% API
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
--export([start_link/1]).
+-export([start_link/1, get_pid/1]).
 
 start_link([Id, Gateway]) ->
     exia:start_link({local, name(Id)}, ?MODULE, [Id, Gateway], []).
+
+%% @doc 根据玩家id获取pid
+-spec get_pid(non_neg_integer()) -> undefined|pid().
+get_pid(Id) ->
+    whereis(name(Id)).
 
 name(Id) ->
     list_to_atom("player_" ++ integer_to_list(Id)).
 
 init([Id, Gateway]) ->
+    ?LOG_ERROR("~w ~w", [Id, Gateway]),
     virture_mysql:load(player, [Id]),
-    #player{name = Name} = virture_mysql:lookup(player, [Id]),
-    {ok, #player{id = Id, name = Name, gateway = Gateway}}.
+    {ok, #player_state{id = Id, gateway = Gateway}}.
+
+handle_call(?MSG_PLAYER_GATEWAY_RECONNECT1(Gateway), _From, State) ->
+    {reply, ok, State#player_state{gateway = Gateway}};
 
 handle_call(Request, From, State) ->
     ?LOG_ERROR("~w ~w", [Request, From]),
     {reply, error, State}.
 
-handle_cast(?MSG_PLAYER_GATEWAY_PROTO1(Msg), #player{gateway = Gateway} = State) ->
+handle_cast(?MSG_PLAYER_GATEWAY_PROTO1(Msg), #player_state{gateway = Gateway} = State) ->
     Rollback = exia:hold(State),
     try proto_mapping:route(Msg, State) of
-        #player{} = State1 ->
+        #player_state{} = State1 ->
             {noreply, State1};
         UnKnow ->%% ????
             ?LOG_ERROR("unknown return ~w", [UnKnow]),

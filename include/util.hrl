@@ -64,4 +64,7 @@
 -define(KV_OP_DEF(M, F, A), {kv_op_def, M, F, A}).
 -define(KV_OP_DEF, '_').
 
+-define(LOCAL_LOCK_ACCOUNT1(Account), {account, Account}).% 账号
+-define(LOCAL_LOCK_PLAYER_ID1(Account), {player_id, Account}).% 账号
+
 -endif.

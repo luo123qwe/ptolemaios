@@ -15,7 +15,7 @@
 -define(DYM_GATEWAY_C_CB3(M, F, A), erlang:apply(M, F, A)).
 
 %% gateway进程状态
--record(gateway, {
+-record(gateway_state, {
     socket,
     bin = <<>>,
     account,

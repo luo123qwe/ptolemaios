@@ -17,11 +17,11 @@ start_link() ->
 %% @private
 init([]) ->
     AChild = #{id => player,
-        start => {player_server, start_link, []},
-        restart => transient,
+        start => {player_svr, start_link, []},
+        restart => temporary,
         shutdown => 2000,
         type => worker,
-        modules => [player_server]},
+        modules => [player_svr]},
     
     {ok, {#{strategy => simple_one_for_one,
         intensity => 5,
@@ -30,6 +30,6 @@ init([]) ->
     }.
 
 %% @doc 开启一个玩家进程
--spec start_child(non_neg_integer()) -> supervisor:startchild_ret().
-start_child(PlayerId) ->
-    supervisor:start_child(player_sup, [PlayerId]).
+-spec start_child(list()) -> supervisor:startchild_ret().
+start_child(Args) ->
+    supervisor:start_child(player_sup, [Args]).
