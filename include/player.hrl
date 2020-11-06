@@ -1,5 +1,5 @@
 %% message
--define(MSG_PLAYER_GATEWAY_MSG1(Msg), {player_gateway_msg, Msg}).
+-define(MSG_PLAYER_GATEWAY_PROTO1(Msg), {player_gateway_msg, Msg}).
 -define(MSG_PLAYER_GATEWAY_DISCONNECT, player_gateway_disconnect).
 
 %% sql
@@ -11,5 +11,6 @@
     virture_mysql_state,
     id :: integer(),
     account :: binary(),
-    name :: binary()
+    name :: binary(),
+    gateway :: pid()
 }).

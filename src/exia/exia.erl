@@ -52,7 +52,8 @@
     cast_immediately/2, cast_after_immediately/3, cast_at_immediately/3,
     flush/1, return/1, get_return/1,
     get_millisecond/0, set_millisecond/1, get_second/0, set_second/1,
-    eget/1, eget/2, eput/2
+    eget/1, eget/2, eput/2,
+    hold/1, rollback/1
 ]).
 
 -export([system_continue/3,
@@ -1106,7 +1107,7 @@ system_replace_state(StateFun, [Name, State, Mod, Time, HibernateAfterTimeout]) 
         after_msg(),
         {ok, NewState, [Name, NewState, Mod, Time, HibernateAfterTimeout]}
     catch
-        throw:?EXIA_RETURN1(NState)  ->
+        throw:?EXIA_RETURN1(NState) ->
             after_msg(),
             {ok, NState, [Name, NState, Mod, Time, HibernateAfterTimeout]};
         Class:Reason:Stacktrace ->

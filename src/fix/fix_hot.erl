@@ -138,6 +138,7 @@ reload_shell(Profile, AppList) ->
     {ok, Prepared} = code:prepare_loading(Modules),
     [code:purge(M) || M <- Modules],
     code:finish_loading(Prepared),
+    proto_mapping:load(),
     ?LOG_NOTICE("load: ~w", [Modules]).
 
 %% @equiv  reload_release([ptolemaios])
@@ -159,6 +160,8 @@ reload_release(AppList) ->
     {ok, Prepared} = code:prepare_loading(Modules),
     [code:purge(M) || M <- Modules],
     code:finish_loading(Prepared),
+    enif_protobuf:purge_cache(),
+    proto_mapping:load(),
     ?LOG_NOTICE("load: ~w", [Modules]).
 
 get_app_modules(EBinDir) ->

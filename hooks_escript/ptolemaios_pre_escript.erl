@@ -117,7 +117,8 @@ compile_proto(RebarConfig) ->
                 "-export([load/0, proto/1, encode/1, decode/2, route/2]).\n\n",
             LoadHead =
                 "-spec load() -> ok.\n"
-                "load() ->\n",
+                "load() ->\n"
+                "    DefList =\n",
             ProtoHead =
                 "-spec proto(tuple()) -> error|integer().\n",
             DecodeHead =
@@ -151,7 +152,7 @@ compile_proto(RebarConfig) ->
                                     "    Acc.\n\n"
                                 ])
                             end,
-                            L1 = ["    enif_protobuf:load_cache(", Name, ":get_msg_defs()),\n" | L],
+                            L1 = ["        ", Name, ":get_msg_defs()" | L],
                             {PB1, D1, R1} =
                                 lists:foldr(fun([PName, Proto], {PB_1, D_1, R_1}) ->
                                     {
@@ -166,7 +167,10 @@ compile_proto(RebarConfig) ->
                             Acc
                     end
                                                                 end, {[], [], [], []}),
-            LoadTail = "    ok.\n\n",
+            Load1 = string:join(Load, " ++\n") ++ ",",
+            LoadTail =
+                "    enif_protobuf:load_cache(DefList),\n"
+                "    ok.\n\n",
             ProtoTail = "proto(_) -> error.\n\n",
             Encode =
                 "-spec encode(tuple()) -> {error, atom()} | binary().\n"
@@ -181,7 +185,7 @@ compile_proto(RebarConfig) ->
                 "    Acc.\n\n",
             file:write_file(MappingFile, [
                 Head,
-                LoadHead, Load, LoadTail,
+                LoadHead, Load1, LoadTail,
                 ProtoHead, ProtoBody, ProtoTail,
                 Encode,
                 DecodeHead, Decode, DecodeTail,

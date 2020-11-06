@@ -35,10 +35,10 @@ handle(#gateway_c_select_role{id = MsgPlayerId}, #gateway{account = Account, pla
     ?ERROR_CODE_IF2(PlayerId =/= undefined, ?ERROR_CODE_HAD_LOGIN),
     virture_mysql:ensure_load_ets(player, [MsgPlayerId]),
     %% 角色是否存在
-    ?ERROR_CODE_NOT_MATCH3(virture_mysql:lookup(player, [MsgPlayerId]),
+    ?ERROR_CODE_NOT_MATCH3(virture_mysql:lookup_ets(player, [MsgPlayerId]),
         #player{}, ?ERROR_CODE_NO_ROLE),
-    %% todo 开进程
-    {[#gateway_s_select_role{id = MsgPlayerId}], GateWay#gateway{player_id = MsgPlayerId}};
+    {ok, Pid} = player_svr:start_link([MsgPlayerId, self()]),
+    {[#gateway_s_select_role{id = MsgPlayerId}], GateWay#gateway{player_id = MsgPlayerId, player_pid = Pid}};
 
 %% 心跳包
 handle(#gateway_c_heart{}, Gateway) ->
@@ -53,8 +53,8 @@ pkg_role_list(#gateway{account = Account}) ->
     case virture_mysql:query(?SQL_PLAYER_SELECT_ID(Account)) of
         {ok, _, Rows} ->
             lists:map(fun([PlayerId]) ->
-                virture_mysql:load(player, [PlayerId]),
-                #player{name = Name} = virture_mysql:lookup(player, [PlayerId]),
+                virture_mysql:ensure_load_ets(player, [PlayerId]),
+                #player{name = Name} = virture_mysql:lookup_ets(player, [PlayerId]),
                 #gateway_p_role_info{id = PlayerId, name = Name}
                       end, Rows);
         _ ->% 失败了
