@@ -19,10 +19,12 @@
 
 -define(APP_NAME, "ptolemaios").
 -define(APP_VERSION, "0.1.0").
+-define(APP_FULL_NAME, ?APP_NAME ++ "-"?APP_VERSION).
 -define(RELEASE_TAG, "prod").
 -define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {fix_hot, fix, []}).
 -define(REUSE_DIR, ["log", "fix_dets", "virture_mysql_dets"]).
+-define(PD_RELEASE_DATE_STR, pd_release_date_str).
 
 %% 打包机用
 main(["tar" | Opt]) ->
@@ -43,8 +45,6 @@ main(["stop" | Opt]) ->
     stop(make_opt(Opt));
 main(["update_app" | Opt]) ->
     update_app(make_opt(Opt));
-main(["update_backup" | Opt]) ->
-    update_backup(make_opt(Opt));
 main(_) ->
     usage().
 
@@ -81,11 +81,11 @@ make_opt_multiple_args([H | T] = L, SaveDirList) ->
 %% 打包一个版本
 tar(Opt) ->
     Profile = proplists:get_value("-profile", Opt, ?RELEASE_TAG),
-    io:format("tar ~s-~s~n", [?APP_NAME, ?APP_VERSION]),
+    io:format("tar ~s~n", [?APP_FULL_NAME]),
     %% 先打包
     Cmd = "cd .. && \"./rebar3\" as " ++ Profile ++ " tar",
     os:cmd(Cmd),
-    TarName = ?APP_NAME ++ "-" ++ ?APP_VERSION ++ ".tar.gz",
+    TarName = ?APP_FULL_NAME ++ ".tar.gz",
     BuildPath = "../_build/" ++ Profile ++ "/rel/" ++ ?APP_NAME ++ "/" ++ TarName,
     case filelib:is_file(BuildPath) of
         true -> skip;
@@ -95,7 +95,8 @@ tar(Opt) ->
     file:copy(BuildPath, "tmp.tar.gz"),
     %% 再套一层打包tar
     ReleaseName = ?APP_NAME ++ ".tar.gz",
-    erl_tar:create(ReleaseName, [{TarName, "tmp.tar.gz"}, "release.erl"]),
+    write_rebar3_config(["%% tar at ", date_str(), $\n]),
+    erl_tar:create(ReleaseName, [{TarName, "tmp.tar.gz"}, "release.erl", "rebar.config.script"]),
     file:delete("tmp.tar.gz"),
     io:format("create tar ~s~n", [ReleaseName]),
     %% 备份
@@ -103,18 +104,52 @@ tar(Opt) ->
 
 tar_backup(Opt) ->
     {_, Backup} = lists:keyfind("-backup", 1, Opt),
-    {_, Tar} = lists:keyfind("-tar", 1, Opt),
-    [TagName, _Date] = string:split(Tar, "_"),
+    {_, Date} = lists:keyfind("-date", 1, Opt),
     Tree = make_backup_tree(Backup),
     %% 找到打包的tar
-    {_, UpdateTarList} = lists:keyfind(Tar, 1, Tree),
-    %% 把所有update.tar.gz丢进去
-    erl_tar:create(TagName++ ".tar.gz", [{UpdateTar, Backup ++ "/" ++ UpdateTar} || UpdateTar <- UpdateTarList] ++ [{Tar, Backup ++ "/" ++ Tar}, "release.erl"]),
-    io:format("tar backup:~n~s~n", [[Tar, $\n, [[UpdateTar, $\n] || UpdateTar <- UpdateTarList]]]).
+    MainTarName = ?APP_NAME ++ "_" ++ Date,
+    MainTar = MainTarName ++ ".tar.gz",
+    TmpPath = Backup ++ "/" ++ MainTarName,
+    case lists:keyfind(MainTar, 1, Tree) of
+        false ->
+            io:format("no tar ~s~n", [MainTar]);
+        {_, []} ->% 没有update
+            %% 解包
+            erl_tar:extract(Backup ++ "/" ++ MainTar, [{cwd, TmpPath}, compressed]),
+            {ok, Bin} = file:read_file(TmpPath ++ "/rebar.config.script"),
+            ok = file:write_file("rebar.config.script", ["%% tar backup at ", date_str(), $\n, "%% ", MainTar, $\n, Bin]),
+            file:delete(TmpPath ++ "/rebar.config.script"),
+            erl_tar:create(?APP_NAME ++ ".tar.gz", ["rebar.config.script" | [{FN, TmpPath ++ "/" ++ FN} || FN <- element(2, file:list_dir(TmpPath))]]),
+            file:del_dir_r(TmpPath),
+            io:format("tar backup: ~s~n", [MainTar]);
+        {_, [UpdateTar | _]} ->
+            %% 解包
+            erl_tar:extract(Backup ++ "/" ++ MainTar, [{cwd, TmpPath}, compressed]),
+            erl_tar:extract(TmpPath ++ "/" ++ ?APP_FULL_NAME ++ ".tar.gz", [{cwd, TmpPath ++ "/" ++ ?APP_FULL_NAME}, compressed]),
+            erl_tar:extract(Backup ++ "/" ++ UpdateTar, [{cwd, TmpPath ++ "/update"}, compressed]),
+            %% 替换文件
+            LibPath = TmpPath ++ "/" ++ ?APP_FULL_NAME ++ "/lib/" ++ ?APP_FULL_NAME,
+            file:del_dir_r(LibPath),
+            file:make_dir(LibPath),
+            file:copy(TmpPath ++ "/update/release.erl", TmpPath ++ "/release.erl"),
+            file:delete(TmpPath ++ "/update/release.erl"),
+            file:delete(TmpPath ++ "/update/rebar.config.script"),
+            copy_dir(TmpPath ++ "/update", LibPath),
+            file:del_dir_r(TmpPath ++ "/update"),
+            {ok, Bin} = file:read_file(TmpPath ++ "/rebar.config.script"),
+            ok = file:write_file("rebar.config.script", ["%% tar backup at ", date_str(), $\n, "%% ", MainTar, $\n, Bin]),
+            file:delete(TmpPath ++ "/rebar.config.script"),
+            %% 重新打包
+            erl_tar:create(TmpPath ++ "/" ++ ?APP_FULL_NAME ++ ".tar.gz", [{FN, TmpPath ++ "/" ++ ?APP_FULL_NAME ++ "/" ++ FN} || FN <- element(2, file:list_dir(TmpPath ++ "/" ++ ?APP_FULL_NAME))]),
+            file:del_dir_r(TmpPath ++ "/" ++ ?APP_FULL_NAME),
+            erl_tar:create(?APP_NAME ++ ".tar.gz", ["rebar.config.script" | [{FN, TmpPath ++ "/" ++ FN} || FN <- element(2, file:list_dir(TmpPath))]]),
+            file:del_dir_r(TmpPath),
+            io:format("tar backup: ~s with ~s~n", [MainTar, UpdateTar])
+    end.
 
 tar_update(Opt) ->
     Profile = proplists:get_value("-profile", Opt, ?RELEASE_TAG),
-    io:format("tar ~s-~s~n", [?APP_NAME, ?APP_VERSION]),
+    io:format("tar update ~s~n", [?APP_FULL_NAME]),
     %% 先编译
     Cmd = "cd .. && \"./rebar3\" as " ++ Profile ++ " compile",
     os:cmd(Cmd),
@@ -122,7 +157,8 @@ tar_update(Opt) ->
     %% 打压缩包
     case filelib:is_dir(EBinPath) of
         true ->
-            erl_tar:create("update.tar.gz", [{"ebin", EBinPath}, {"src", "../src"}, {"priv", "../priv"}, {"include", "../include"}]),
+            write_rebar3_config(["tar update at ", date_str(), $\n]),
+            erl_tar:create("update.tar.gz", [{"ebin", EBinPath}, {"src", "../src"}, {"priv", "../priv"}, {"include", "../include"}, "release.erl", "rebar.config.script"]),
             io:format("create tar update.tar.gz~n", []),
             backup("update.tar.gz", Opt);
         _ ->
@@ -187,9 +223,15 @@ make_backup_tree([{_, FileName} | T], MainName, EBinList, Tree) ->
             end
     end.
 
+%% 保证同一次操作用相同的时间戳
 date_str() ->
-    {{Y, M, D}, {H, Min, S}} = erlang:localtime(),
-    [date_str_add_zero(Int) || Int <- [Y, M, D, H, Min, S]].
+    case get(?PD_RELEASE_DATE_STR) of
+        undefined ->
+            {{Y, M, D}, {H, Min, S}} = erlang:localtime(),
+            [date_str_add_zero(Int) || Int <- [Y, M, D, H, Min, S]];
+        DateStr ->
+            DateStr
+    end.
 
 date_str_add_zero(Int) when Int > 9 ->
     integer_to_list(Int);
@@ -197,22 +239,11 @@ date_str_add_zero(Int) ->
     [$0, integer_to_list(Int)].
 
 init_node() ->
-    Dir = get_dir(),
-    ReleaseDir = Dir ++ "/releases",
+    ReleaseDir = ?APP_NAME ++ "-" ++ ?APP_VERSION ++ "/releases",
     %% 在vm.args中找到节点信息
-    {NodeStr, CookieStr} =
-        lists:foldl(fun(FN, Acc) ->
-            FP = ReleaseDir ++ "/" ++ FN,
-            case filelib:is_dir(FP) of
-                true ->
-                    {ok, Bin} = file:read_file(FP ++ "/vm.args"),
-                    {match, ["-name " ++ NS]} = re:run(Bin, "-name .*", [{capture, first, list}]),
-                    {match, ["-setcookie " ++ CS]} = re:run(Bin, "-setcookie .*", [{capture, first, list}]),
-                    {NS, CS};
-                _ ->
-                    Acc
-            end
-                    end, undefined, element(2, file:list_dir(ReleaseDir))),
+    {ok, Bin} = file:read_file(ReleaseDir ++ "/" ++ ?APP_VERSION ++ "/vm.args"),
+    {match, ["-name " ++ NodeStr]} = re:run(Bin, "-name .*", [{capture, first, list}]),
+    {match, ["-setcookie " ++ CookieStr]} = re:run(Bin, "-setcookie .*", [{capture, first, list}]),
     Node = list_to_atom(NodeStr),
     case node() of
         'nonode@nohost' ->
@@ -226,13 +257,11 @@ init_node() ->
     end.
 
 start() ->
-    Dir = get_dir(),
-    [Name, _Version] = string:split(Dir, "-"),
     case os:type() of
         {unix, _} ->
-            os:cmd("cd " ++ Dir ++ " && nohup ./bin/" ++ Name ++ " console &");
+            os:cmd("cd " ++ ?APP_FULL_NAME ++ " && nohup ./bin/" ++ ?APP_NAME ++ " console &");
         {win32, _} ->
-            spawn(fun() -> os:cmd("cd " ++ Dir ++ " && call ./bin/" ++ Name ++ " console") end)
+            spawn(fun() -> os:cmd("cd " ++ ?APP_FULL_NAME ++ " && call ./bin/" ++ ?APP_NAME ++ " console") end)
     end,
     Node = init_node(),
     case lists:any(fun(_) ->
@@ -256,30 +285,17 @@ stop(Opt) ->
         Error -> throw({stop, Error})
     end.
 
+%% 只有两种情况, 第一新部署, 第二替换旧的tar
 replace_tar(Opt) ->
-    {ok, ListDir} = file:list_dir("."),
-    %% 一, escript+N个tar
-    %% 二, escript+Dir+1一个tar
-    {Dir, Tar} =
-        lists:foldl(fun(FN, {D, T} = Acc) ->
-            case filelib:is_dir(FN) of
-                true ->
-                    {FN, T};
-                _ ->
-                    case filename:extension(FN) of
-                        ".gz" -> {D, FN};
-                        _ -> Acc
-                    end
-            end end, {undefined, undefined}, ListDir),
-    case Dir of
-        undefined ->
+    case filelib:is_dir(?APP_FULL_NAME) of
+        false ->
             io:format("install tar~n"),
             init_tar(Opt);
         _ ->
             case filelib:is_file("replace_escript_mask") of
-                false ->
+                false ->% 使用新的escript
                     io:format("replace escript~n"),
-                    ok = erl_tar:extract(Tar, [{cwd, "."}, {files, ["release.erl"]}, compressed]),
+                    ok = erl_tar:extract(?APP_NAME ++ ".tar.gz", [{cwd, "."}, {files, ["release.erl"]}, compressed]),
                     file:write_file("replace_escript_mask", []),
                     escript:start();
                 _ ->
@@ -292,9 +308,9 @@ replace_tar(Opt) ->
                         _ -> skip
                     end,
                     file:make_dir("replace_tar_tmp"),
-                    SaveDirList = proplists:get_value("-reuse_dir", Opt, ?REUSE_DIR),
+                    SaveDirList = lists:usort(proplists:get_value("-reuse_dir", Opt, []) ++ ?REUSE_DIR),
                     lists:foreach(fun(FN) ->
-                        SaveDir = Dir ++ "/" ++ FN,
+                        SaveDir = ?APP_FULL_NAME ++ "/" ++ FN,
                         case filelib:is_dir(SaveDir) of
                             true ->
                                 io:format("backup dir ~s~n", [SaveDir]),
@@ -303,42 +319,17 @@ replace_tar(Opt) ->
                                 skip
                         end
                                   end, SaveDirList),
-                    file:del_dir_r(Dir),
-                    {ok, TarListDir} = erl_tar:table(Tar, [compressed]),
-                    OverwriteList = TarListDir -- ["release.erl"],
-                    ok = erl_tar:extract(Tar, [{cwd, "."}, {files, OverwriteList}, compressed]),
-                    file:delete(Tar),
-                    io:format("extract:~n~s~n", [string:join(OverwriteList, "~n")]),
+                    file:del_dir_r(?APP_FULL_NAME),
+                    ok = erl_tar:extract(?APP_NAME ++ ".tar.gz", [{cwd, "."}, compressed]),
+                    file:delete(?APP_NAME ++ ".tar.gz"),
+                    io:format("extract: ~s~n", [?APP_NAME ++ ".tar.gz"]),
                     init_tar(Opt)
             end
     end.
 
 init_tar(Opt) ->
-    %% 找到app tar 和 update tar
-    {AppTar, EBinTarList} =
-        lists:foldl(fun(FN, {A, EL} = Acc) ->
-            case filename:extension(FN) of
-                ".gz" ->
-                    case FN of
-                        "update" ++ _ -> {A, [FN | EL]};
-                        _ -> {FN, EL}
-                    end;
-                _ -> Acc
-            end end, {undefined, []}, element(2, file:list_dir("."))),
     %% 解压启动app
-    case lists:member($-, AppTar) of
-        true ->% {app_name}-{version}
-            io:format("init tar: ~s~n", [AppTar]),
-            App = filename:rootname(AppTar, ".tar.gz"),
-            ok = erl_tar:extract(AppTar, [{cwd, App}, compressed]);
-        _ ->% {app_name}_{date}
-            io:format("init tar_backup: ~s~n", [AppTar]),
-            [AppTar1] = element(2, erl_tar:table(AppTar)) -- ["release.erl"],
-            ok = erl_tar:extract(AppTar, [{cwd, "."}, {files, [AppTar1]}, compressed]),
-            App = filename:rootname(AppTar1, ".tar.gz"),
-            ok = erl_tar:extract(AppTar1, [{cwd, App}, compressed]),
-            file:delete(AppTar1)
-    end,
+    ok = erl_tar:extract(?APP_FULL_NAME ++ ".tar.gz", [{cwd, ?APP_FULL_NAME}, compressed]),
     %% 复制保存的文件夹
     case filelib:is_dir("replace_tar_tmp") of
         true ->
@@ -346,8 +337,8 @@ init_tar(Opt) ->
             lists:foreach(fun(FN) ->
                 case filelib:is_dir("replace_tar_tmp/" ++ FN) of
                     true ->
-                        io:format("recover dir ~s~n", [App ++ "/" ++ FN]),
-                        copy_dir("replace_tar_tmp/" ++ FN, App ++ "/" ++ FN);
+                        io:format("recover dir ~s~n", [?APP_FULL_NAME ++ "/" ++ FN]),
+                        copy_dir("replace_tar_tmp/" ++ FN, ?APP_FULL_NAME ++ "/" ++ FN);
                     _ -> skip
                 end
                           end, SaveDirList),
@@ -359,50 +350,44 @@ init_tar(Opt) ->
     Wait = proplists:get_value("-wait", Opt, 1000),
     io:format("wait: ~w~n", [Wait]),
     timer:sleep(Wait),
-    %% 更新 update tar
-    EBinTarList1 = lists:sort(EBinTarList),
-    lists:foreach(fun(FN) ->
-        update_app(FN, Opt)
-                  end, EBinTarList1),
     %% 清理文件
-    lists:foreach(fun(FN) ->
-        file:delete(FN)
-                  end, [AppTar | EBinTarList]).
+    file:delete(?APP_FULL_NAME ++ ".tar.gz").
 
 update_app(Opt) ->
     update_app("update.tar.gz", Opt).
 
 update_app(Tar, Opt) ->
-    {M, F, A} = get_mfa(Opt, ?UPDATE_MFA),
-    %% 找到app name
-    Dir = get_dir(),
-    [Name, _] = string:split(Dir, "-"),
-    %% 解压
-    ok = erl_tar:extract(Tar, [{cwd, "update"}, compressed]),
-    io:format("update: ~s~n", [Tar]),
-    %% 移动文件到lib对应的app
-    lists:any(fun(App) ->
-        case App -- Name of
-            "-" ++ _Version ->
-                AppPath = Dir ++ "/lib/" ++ App,
-                file:del_dir_r(AppPath),
-                file:make_dir(AppPath),
-                copy_dir("update", AppPath),
-                true;
-            _ ->
-                false
-        end
-              end, element(2, file:list_dir(Dir ++ "/lib"))),
-    %% 删除更新相关的文件
-    file:del_dir_r("update"),
-    file:delete(Tar),
-    Node = init_node(),
-    %% 游戏节点更新或者开启
-    case net_kernel:connect_node(Node) of
-        true ->
-            io:format("~w~n", [rpc:call(Node, M, F, A)]);
+    case filelib:is_file("replace_escript_mask") of
+        false ->% 使用新的escript
+            io:format("replace escript~n"),
+            ok = erl_tar:extract(Tar, [{cwd, "."}, {files, ["release.erl"]}, compressed]),
+            file:write_file("replace_escript_mask", []),
+            escript:start();
         _ ->
-            io:format("node not start~n")
+            file:delete("replace_escript_mask"),
+            {M, F, A} = get_mfa(Opt, ?UPDATE_MFA),
+            %% 解压
+            ok = erl_tar:extract(Tar, [{cwd, "update"}, compressed]),
+            io:format("update: ~s~n", [Tar]),
+            %% 移动文件到lib对应的app
+            AppPath = ?APP_FULL_NAME ++ "/lib/" ++ ?APP_FULL_NAME,
+            file:del_dir_r(AppPath),
+            file:make_dir(AppPath),
+            file:delete("update/release.erl"),
+            file:copy("update/rebar.config.script", "rebar.config.script"),
+            file:delete("update/rebar.config.script"),
+            copy_dir("update", AppPath),
+            %% 删除更新相关的文件
+            file:del_dir_r("update"),
+            file:delete(Tar),
+            Node = init_node(),
+            %% 游戏节点更新或者开启
+            case net_kernel:connect_node(Node) of
+                true ->
+                    io:format("~w~n", [rpc:call(Node, M, F, A)]);
+                _ ->
+                    io:format("node not start~n")
+            end
     end.
 
 get_mfa(Opt, Default) ->
@@ -416,181 +401,6 @@ get_mfa(Opt, Default) ->
             Default
     end.
 
-update_backup(Opt) ->
-    {_, BackupDir} = lists:keyfind("-backup", 1, Opt),
-    Tree = make_backup_tree(BackupDir),
-    Tag = proplists:get_value("-profile", Opt, ?RELEASE_TAG),
-    {Name, _Version} = get_name_version(Tag),
-    %% 从小到大排序tar
-    TarList =
-        lists:foldl(fun({Main, Ebin}, Acc) ->
-            [Main | lists:reverse(Ebin)] ++ Acc
-                    end, [], Tree),
-    TarList1 =
-        case lists:keyfind("-start", 1, Opt) of
-            {_, StartTar} ->
-                update_beam_split_tar_list(TarList, StartTar);
-            _ ->
-                TarList
-        end,
-    %% 解压所有tar, 收集路径信息
-    PathList =
-        lists:map(fun(FN) ->
-            FNPath = BackupDir ++ "/" ++ filename:rootname(filename:rootname(FN)),
-            ok = erl_tar:extract(BackupDir ++ "/" ++ FN, [{cwd, FNPath}, compressed]),
-            case FN of
-                "ebin" ++ _ ->
-                    {true, FNPath};
-                _ ->
-                    [AppTar] = element(2, file:list_dir(FNPath))--["release.erl"],
-                    App = filename:rootname(filename:rootname(AppTar)),
-                    FNPath1 = FNPath ++ "/" ++ App,
-                    ok = erl_tar:extract(FNPath ++ "/" ++ AppTar, [{cwd, FNPath1}, compressed]),
-                    %% 找到app的lib
-                    AppLib =
-                        lists:foldl(fun(Lib, Acc) ->
-                            case Lib -- Name of
-                                "-" ++ _Version ->
-                                    Lib;
-                                _ -> Acc
-                            end
-                                    end, undefined, element(2, file:list_dir(FNPath1 ++ "/lib"))),
-                    {false, FNPath1 ++ "/lib/" ++ AppLib}
-            end end, TarList1),
-    
-    Tag = proplists:get_value("-profile", Opt, ?RELEASE_TAG),
-    %% 更新tar
-    try
-        ReplaceList = update_beam_std_beam_list(proplists:get_value("-replace", Opt, []), Tag, Name),
-        lists:foreach(fun({BeamPath, Beam, ErlPath, ErlSrcPath}) ->
-            lists:foreach(fun({IsEbin, Path}) ->
-                case IsEbin of
-                    false ->
-                        file:copy(BeamPath, Path ++ "/ebin/" ++ Beam),
-                        file:copy(ErlPath, Path ++ ErlSrcPath);
-                    _ ->
-                        file:copy(BeamPath, Path ++ "/" ++ Beam)
-                end
-                          end, PathList)
-                      end, ReplaceList),
-        DeleteList = update_beam_std_beam_list(proplists:get_value("-delete", Opt, []), Tag, Name),
-        lists:foreach(fun({_BeamPath, Beam, _ErlPath, ErlSrcPath}) ->
-            lists:foreach(fun({IsEbin, Path}) ->
-                case IsEbin of
-                    false ->
-                        file:delete(Path ++ "/ebin/" ++ Beam),
-                        file:delete(Path ++ ErlSrcPath);
-                    _ ->
-                        file:delete(Path ++ "/" ++ Beam)
-                end
-                          end, PathList)
-                      end, DeleteList),
-        ReplaceIfExistList = update_beam_std_beam_list(proplists:get_value("-replace_if_exist", Opt, []), Tag, Name),
-        lists:foreach(fun({BeamPath, Beam, ErlPath, ErlSrcPath}) ->
-            lists:foreach(fun({IsEbin, Path}) ->
-                case filelib:is_file(Path ++ "/ebin/" ++ Beam) of
-                    true ->
-                        case IsEbin of
-                            false ->
-                                file:copy(BeamPath, Path ++ "/ebin/" ++ Beam),
-                                file:copy(ErlPath, Path ++ ErlSrcPath);
-                            _ ->
-                                file:copy(BeamPath, Path ++ "/" ++ Beam)
-                        end;
-                    _ ->
-                        skip
-                end
-                          end, PathList)
-                      end, ReplaceIfExistList),
-        ReplaceIfNotExistList = update_beam_std_beam_list(proplists:get_value("-replace_if_not_exist", Opt, []), Tag, Name),
-        lists:foreach(fun({BeamPath, Beam, ErlPath, ErlSrcPath}) ->
-            lists:foreach(fun({IsEbin, Path}) ->
-                case filelib:is_file(Path ++ "/ebin/" ++ Beam) of
-                    false ->
-                        case IsEbin of
-                            false ->
-                                file:copy(BeamPath, Path ++ "/ebin/" ++ Beam),
-                                file:copy(ErlPath, Path ++ ErlSrcPath);
-                            _ ->
-                                file:copy(BeamPath, Path ++ "/" ++ Beam)
-                        end;
-                    _ ->
-                        skip
-                end
-                          end, PathList)
-                      end, ReplaceIfNotExistList),
-        %% 重新打包
-        lists:foreach(fun({IsEbin, PNPath}) ->
-            case IsEbin of
-                true ->
-                    erl_tar:create(PNPath ++ ".tar.gz", [{".", PNPath}]),
-                    file:del_dir_r(PNPath);
-                _ ->
-                    %% app-version/lib/app-version/
-                    PNPath1 = filename:dirname(filename:dirname(PNPath)),
-                    erl_tar:create(PNPath1 ++ ".tar.gz", [{".", PNPath1}]),
-                    file:del_dir_r(PNPath1),
-                    PNPath2 = filename:dirname(PNPath1),
-                    erl_tar:create(PNPath2 ++ ".tar.gz", [{".", PNPath2}]),
-                    file:del_dir_r(PNPath2)
-            end
-                      end, PathList)
-    catch
-        C:E:S ->
-            io:format("update fail ~w:~w~n~p", [C, E, S]),
-            %% 删除所有解压的文件夹
-            filelib:fold_files(BackupDir, "", false, fun(FN, _) ->
-                case filelib:is_dir(FN) of
-                    true -> file:del_dir_r(FN);
-                    _ -> skip
-                end
-                                                     end, [])
-    end.
-
-update_beam_split_tar_list([H | T], H) ->
-    [H | T];
-update_beam_split_tar_list([_ | T], StartTar) ->
-    update_beam_split_tar_list(T, StartTar).
-
-update_beam_std_beam_list([], _Tag, _AppName) ->
-    [];
-update_beam_std_beam_list([Module | T], Tag, AppName) ->
-    Beam = Module ++ ".beam",
-    BeamPath = "../_build/" ++ Tag ++ "/lib/" ++ AppName ++ "/ebin/" ++ Beam,
-    case filelib:is_file(BeamPath) of
-        false -> io:format("no beam file ~s in ~s~n", [Module, BeamPath]);
-        _ -> skip
-    end,
-    Erl = Module ++ ".erl",
-    BuildSrcPath = "../_build/" ++ Tag ++ "/lib/" ++ AppName ++ "/src",
-    ErlPath = search_file(BuildSrcPath, Erl),
-    case ErlPath of
-        [] -> io:format("no src file ~s in ~s~n", [Module, BuildSrcPath]);
-        _ -> skip
-    end,
-    [{BeamPath, Beam, ErlPath, ((((ErlPath -- "../_build/") -- Tag) -- "/lib/") -- AppName)} | update_beam_std_beam_list(T, Tag, AppName)].
-
-search_file(Dir, Name) ->
-    lists:foldl(fun(FN, Acc) ->
-        case Acc of
-            [] ->
-                FN1 = Dir ++ "/" ++ FN,
-                case FN of
-                    Name ->
-                        FN1;
-                    _ ->
-                        case filelib:is_dir(FN1) of
-                            true ->
-                                search_file(FN1, Name);
-                            false ->
-                                Acc
-                        end
-                end;
-            _ ->
-                Acc
-        end
-                end, [], element(2, file:list_dir(Dir))).
-
 copy_dir(From, To) ->
     copy_file(From, To, element(2, file:list_dir(From))).
 
@@ -602,7 +412,7 @@ copy_file(From, To, CopyList) ->
     lists:foldl(fun(N, {F, T} = Acc) ->
         FromFilePath = F ++ "/" ++ N,
         CopyFilePath = T ++ "/" ++ N,
-        case filelib:is_dir(N) of
+        case filelib:is_dir(FromFilePath) of
             true ->
                 file:del_dir_r(CopyFilePath),
                 file:make_dir(CopyFilePath),
@@ -613,33 +423,38 @@ copy_file(From, To, CopyList) ->
                 Acc
         end end, {From, To}, CopyList).
 
+%% 保留打包时的信息
+write_rebar3_config(Head) ->
+    {ok, Bin} = file:read_file("../rebar.config.script"),
+    ok = file:write_file("rebar.config.script", [Head, Bin]).
+
 %% 命令行支持中文好难弄, 写着凑合
-%% tar: 打包一个版本, 根据rebar3.config.script获取app名字和版本
+%% tar: 打包一个版本
 %% tar_backup:  打包一个backup树的分支
 %% tar_update:    打包app相关文件, 用于更新
 %% backup_tree: 显示backup树
 %% replace_tar: 部署或更新一个tar
+%% restart: 重启
+%% stop: 关闭
 %% update_app: 更新上面打出来的update包, 仅替换文件
-%% update_backup: 更新backup中的tar, 仅替换文件
 usage() ->
     io:format("
 release tool
 use:    escript release.erl [cmd] [-option value]
 
 cmd:
-tar:    create a {app_name}.tar.gz
-        read app name and version from rebar3.config.script => {release, {Name, Version}, _}
-    -profile [tag], tag define in rebar3.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
-    -backup [dir], backup tar to dir like {app_name}_yyyymmddhhmmss.tar.gz
+tar:    create a " ++ ?APP_NAME ++ ".tar.gz
+    -profile [tag], tag define in rebar.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
+    -backup [dir], backup tar to dir like " ++ ?APP_NAME ++ "_yyyymmddhhmmss.tar.gz
     
-tar_backup:   create a {app_name}.tar.gz
-        read app and update from backup dir and pack a 'date version' like backup tree show
-    -backup [dir], backup tar to dir like {app_name}_yyyymmddhhmmss.tar.gz
-    -tar [app_tar], {app_name}_yyyymmddhhmmss.tar.gz
+tar_backup:   create a " ++ ?APP_NAME ++ ".tar.gz
+        read app.tar.gz and update.tar.gz from backup dir
+        pack newest update.tar.gz into app.tar.gz
+    -backup [dir], backup tar to dir like " ++ ?APP_NAME ++ "_yyyymmddhhmmss.tar.gz
+    -date [yyyymmddhhmmss]
     
 tar_update:   tar app for update release
-            read app name and version from rebar3.config.script => {release, {Name, Version}, _}
-    -profile [tag], tag define in rebar3.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
+    -profile [tag], tag define in rebar.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
     -backup [dir], backup tar to dir like update_yyyymmddhhmmss.tar.gz
     
 backup_tree:    show 'app tar' and 'update tar' time relation
@@ -660,16 +475,4 @@ stop:   stop, rpc call mfa to stop the node
 update_app:    update 'app's ebin/src/include/priv and rpc call mfa to stop the node or start node
                 this cmd just replace file, if it effect boot, rel, .etc, you have to tar it again
     -mfa [{M,F,A}], default " ++ io_lib:format("~w", [?STOP_MFA]) ++ "
-    
-update_backup:    update all tar erl and beam file in backup dir, mainly design for fix
-                  module's src path must be the same in every {app_name}_yyyymmddhhmmss.tar.gz
-                  this cmd just replace file, if it effect boot, rel, .etc, you have to tar it again
-                  replace -> delete -> replace_if_exist
-    -backup [dir], backup dir
-    -start [tar], which tar start execute, default it's oldest tar
-    -profile [tag], tag define in rebar3.config.script => profiles, default " ++ ?RELEASE_TAG ++ "
-    -replace [module1[ module2]], replace module list
-    -delete [module1[ module2]], delete module list
-    -replace_if_exist [module1[ module2]], repalce module list if module exist
-    -replace_if_not_exist [module1[ module2]], repalce module list if module not exist
 ").

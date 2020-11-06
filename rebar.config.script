@@ -80,24 +80,22 @@ MillisecondStr = integer_to_list(Millisecond),
     {post_hooks, [
         {compile, "escript hooks_escript/ptolemaios_post_escript.erl " ++ MillisecondStr ++ " compile"},
         {clean, "escript hooks_escript/ptolemaios_post_escript.erl " ++ MillisecondStr ++ " clean"}
-    ]},
-
-    {profiles, [
-        %% windows本地, 可以兼容多版本erlang
-        %% 可能出现无法删除erts文件夹, 需要先把empd关掉
-        {local,
-            [{relx, [{dev_mode, false}, {include_erts, true}]}]
-        },
-        %% 打包erts会导致epmd固定使用'第一个启动的包'里的epmd开启(如果未开启)
-        %% 其他包也会依赖该epmd, 导致无法删除'第一个启动的包'
-        %% 实际中单个游戏本身也不会出现依赖多版本erl的情况
-        %% 所以生产环境不打包erts, 使用系统内的erl
-        {prod,
-            [{relx, [{dev_mode, false}, {include_erts, false}]}]
-        }
-    ]},
-
-    {provider_hooks, [
+    ]}]
+    ++
+    case os:type() of
+        {win32, _} ->
+            %% windows本地, 可以兼容多版本erlang
+            %% 可能出现无法删除erts文件夹, 需要先把empd关掉
+            [{profiles, [{prod, [{relx, [{dev_mode, false}, {include_erts, true}]}]}]}];
+        _ ->
+            %% 打包erts会导致epmd固定使用'第一个启动的包'里的epmd开启(如果未开启)
+            %% 其他包也会依赖该epmd, 导致无法删除'第一个启动的包'
+            %% 实际中单个游戏本身也不会出现依赖多版本erl的情况
+            %% 所以生产环境不打包erts, 使用系统内的erl
+            [{profiles, [{prod, [{relx, [{dev_mode, false}, {include_erts, false}]}]}]}]
+    end
+    ++
+    [{provider_hooks, [
         {pre, [
             {compile, {protobuf, compile}},
             {clean, {protobuf, clean}},
