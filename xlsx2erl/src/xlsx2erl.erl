@@ -6,18 +6,19 @@
 -define(RECORD_NAME1(Name), "data_" ++ Name).
 
 %% private
--export([main/1, get_sheet_data/2, make_template/1, make_template/2]).
+-export([main/1, get_sheet_data/2, make_template/1, make_template/3]).
 
 %%====================================================================
 %% API functions
 %%====================================================================
 
 %% @private escript 自动执行export文件下所有的erl文件
-main(["compile", XlsxDir0, ExportDir0]) ->
-    ExportDir = filename:absname(ExportDir0),
+main(["compile", XlsxDir0, ErlPath0, HrlPath0]) ->
+    ErlPath = filename:absname(ErlPath0),
+    HrlPath = filename:absname(HrlPath0),
     XlsxDir = filename:absname(XlsxDir0),
-    file:make_dir(ExportDir),
-    file:make_dir(ExportDir ++ "/include"),
+    file:make_dir(ErlPath),
+    file:make_dir(HrlPath),
     file:make_dir(?DETS_PATH),
     
     %% 需要重新生成的xlsx和模块列表
@@ -72,26 +73,26 @@ main(["compile", XlsxDir0, ExportDir0]) ->
             DependModuleList = compile_make_depend(CallbackFileList, UpdateDetsList, []),
             
             %% 多进程调用对应compile函数
-            CallbackArgs = #xlsx2erl_callback_args{export_path = ExportDir},
+            CallbackArgs = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
             catch compile_do_compile(ErlChangeList ++ DependModuleList, CallbackArgs, [], CpuNum, CpuNum);
         _ ->
             skip
     end,
     %% 关闭所有dets
     close_dets();
-main(["clean", XlsxDir0, ExportDir0]) ->
-    ExportDir = filename:absname(ExportDir0),
+main(["clean", XlsxDir0, ErlPath0, HrlPath0]) ->
+    ErlPath = filename:absname(ErlPath0),
+    HrlPath = filename:absname(HrlPath0),
     XlsxDir = filename:absname(XlsxDir0),
-    file:make_dir(ExportDir),
+    file:make_dir(ErlPath),
+    file:make_dir(HrlPath),
     filelib:fold_files(XlsxDir, ".xlsx", true,
         fun(FileName, _) ->
             BaseName = filename:basename(FileName),
             case string:split(filename:rootname(BaseName), "-") of
                 [_, ModuleStr] ->
                     Module = list_to_atom("xlsx2erl_" ++ ModuleStr),
-                    Args = #xlsx2erl_callback_args{
-                        export_path = ExportDir
-                    },
+                    Args = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
                     Start = erlang:system_time(millisecond),
                     case catch Module:clean(Args) of
                         {'EXIT', Error} ->
@@ -111,12 +112,14 @@ main(["clean", XlsxDir0, ExportDir0]) ->
             end
         end, []),
     close_dets();
-main(["template", FileName, OutFile]) ->
-    make_template(FileName, OutFile);
+main(["template", FileName, ErlPath0, HrlPath0]) ->
+    ErlPath = filename:absname(ErlPath0),
+    HrlPath = filename:absname(HrlPath0),
+    make_template(FileName, ErlPath, HrlPath);
 main(_) ->
     io:format(
-        "compile: \"../rebar3\" escriptize&\"_build/default/bin/xlsx2erl\" compile xlsx export\n"
-        "clean: \"../rebar3\" escriptize&\"_build/default/bin/xlsx2erl\" clean xlsx export\n"
+        "compile: \"../rebar3\" escriptize&\"_build/default/bin/xlsx2erl\" compile xlsx export export/include\n"
+        "clean: \"../rebar3\" escriptize&\"_build/default/bin/xlsx2erl\" clean xlsx export export/include\n"
         "template: \"../rebar3\" escriptize&\"_build/default/bin/xlsx2erl\" template xlsx/T测试-test.xlsx .").
 
 %% 多进程编译
@@ -334,10 +337,10 @@ get_sheet_data_value_1(N, [_ | T]) ->
 
 %% @equiv make_template(XlsxFileName, default)
 make_template(XlsxFileName) ->
-    make_template(XlsxFileName, default).
+    make_template(XlsxFileName, default, default).
 %% @private 生成模板erl
--spec make_template(file:filename_all(), file:filename()) -> any().
-make_template(XlsxFileName, OutDir) ->
+-spec make_template(file:filename_all(), file:filename_all(), file:filename_all()) -> any().
+make_template(XlsxFileName, ErlPath, HrlPath) ->
     BaseName = filename:basename(XlsxFileName),
     case string:split(filename:rootname(BaseName), "-") of
         [_, TagStr] ->
@@ -423,14 +426,14 @@ make_template(XlsxFileName, OutDir) ->
                 "    V.\n\n"
                     || [RecordName | _] <- RecordDefList],
             Compile =
-                "compile(#xlsx2erl_callback_args{export_path = ExportPath} = Args) ->\n"
+                "compile(#xlsx2erl_cb_args{hrl_path = HrlPath} = Args) ->\n"
                 "    #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl_util:get_excel(?MODULE),\n"
-                "    xlsx2erl_util:copy_mask_body(?MODULE, ExportPath ++ \"/include/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
+                "    xlsx2erl_util:copy_mask_body(?MODULE, HrlPath ++ \"/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
                 "    do_compile(SheetList, Args).\n\n"
                 "do_compile([], _Args) ->\n"
                 "    ok;\n" ++
                 string:join([
-                        "do_compile([#xlsx2erl_sheet{name = " ++ RecordName ++ ", row_list = RowList} | T], #xlsx2erl_callback_args{export_path = ExportPath} = Args) ->\n"
+                        "do_compile([#xlsx2erl_sheet{name = " ++ RecordName ++ ", row_list = RowList} | T], #xlsx2erl_cb_args{erl_path = ErlPath} = Args) ->\n"
                     "    Head =\n"
                     "        \"-module(" ++ RecordName ++ ").\\n\\n\"\n"
                     "    \"-include(\\\"\" ++ ?XLSX2ERL_DEFAULT_HRL ++ \"\\\").\\n\\n\"\n"
@@ -447,33 +450,45 @@ make_template(XlsxFileName, OutDir) ->
                     "                  end, RowList),\n"
                     "    Tail =\n"
                     "        \"get(_) -> undefined.\",\n"
-                    "    ok = file:write_file(ExportPath ++ \"/" ++ RecordName ++ ".erl\", [Head, Body, Tail]),\n"
+                    "    ok = file:write_file(ErlPath ++ \"/" ++ RecordName ++ ".erl\", [Head, Body, Tail]),\n"
                     "    do_compile(T, Args)"
                     || [RecordName | FieldList] <- RecordDefList], ";\n") ++ ".\n\n",
             Clean =
-                "clean(#xlsx2erl_callback_args{export_path = ExportPath}) ->\n"
-                "    file:delete(ExportPath ++ \"/include/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
+                "clean(#xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath}) ->\n"
+                "    file:delete(HrlPath ++ \"/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
                 "    catch dets:close(?DETS_XLSX2ERL1(?MODULE)),\n"
                 "    file:delete(?DETS_PATH ++ \"/\" ++ ?MODULE_STRING),\n" ++
                 string:join([
-                        "    file:delete(ExportPath ++ \"/" ++ RecordName ++ ".erl\")"
+                        "    file:delete(ErlPath ++ \"/" ++ RecordName ++ ".erl\")"
                     || [RecordName | _] <- RecordDefList], ",\n") ++
                 ".\n\n",
-            ErlFile =
-                case OutDir of
+            HrlFile =
+                case HrlPath of
                     default ->
-                        ?XLSX2ERL_CALLBACK_PATH ++ "/" ++ ModuleStr ++ ".erl";
+                        ?XLSX2ERL_INCLUDE_PATH ++ "/" ++ ModuleStr ++ ".hrl";
                     _ ->
-                        case filelib:is_dir(OutDir) of
+                        case filelib:is_dir(HrlPath) of
                             true ->
-                                OutDir ++ "/" ++ ModuleStr ++ ".erl";
+                                HrlPath ++ "/" ++ ModuleStr ++ ".erl";
                             _ ->
-                                io:format("~ts not dir!", [OutDir]),
+                                io:format("~ts not dir!", [HrlPath]),
                                 throw(badarg)
                         end
                 end,
-            HrlFile = "include/" ++ ModuleStr ++ ".hrl",
             io:format("write template file " ++ HrlFile ++ "~n"),
+            ErlFile =
+                case ErlPath of
+                    default ->
+                        ?XLSX2ERL_CALLBACK_PATH ++ "/" ++ ModuleStr ++ ".erl";
+                    _ ->
+                        case filelib:is_dir(ErlPath) of
+                            true ->
+                                ErlPath ++ "/" ++ ModuleStr ++ ".erl";
+                            _ ->
+                                io:format("~ts not dir!", [ErlPath]),
+                                throw(badarg)
+                        end
+                end,
             ok = file:write_file(HrlFile, unicode:characters_to_binary([RecordMask])),
             io:format("write template file " ++ ErlFile ++ "~n"),
             ok = file:write_file(ErlFile, unicode:characters_to_binary([Head, ExportDefaultGet, ExportPrivate, UpdateDets, Get, Compile, Clean]));

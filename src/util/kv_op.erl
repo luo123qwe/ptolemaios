@@ -51,7 +51,7 @@
 %% k + tuple -> element(k, tuple)
 %% k + dict -> v
 %% k + ets -> tuple
--export([lookup/3, store/3, delete/2]).
+-export([lookup/3, store/3, delete/2, store_with_default/3]).
 
 %% {k,v}结构数学运算, 从左到右
 %% 支持 [{k,v}], map, dict, ets, 结构不能嵌套
@@ -142,48 +142,47 @@ lookup(Key, Struct, Default) ->
     lookup([Key], Struct, Default).
 
 %% @doc 存储一个值
-%%
-%% 注意最后一个default值是无效果的, 因为value值会直接覆盖
-%%
-%% 所以当直接传入key时可以不写default ^ ^
--spec store(key()|[{key(), default()}], value(), struct()) -> struct().
-store([{{Key, Pos} = SKey, Default} | T], Value, Struct) when is_list(Struct) ->
+-spec store(key()|[key()], value(), struct()) -> struct().
+store([{Key, Pos} | T], Value, Struct) when is_list(Struct) ->
     case T of
         [] ->
             lists:keystore(Key, Pos, Struct, Value);
         _ ->
             case lists:keyfind(Key, Pos, Struct) of
-                false -> SValue = make_default(Default, SKey);
-                SValue -> ok
-            end,
-            SValue1 = store(T, Value, SValue),
-            lists:keystore(Key, Pos, Struct, SValue1)
+                false ->
+                    throw(badarg);
+                SValue ->
+                    SValue1 = store(T, Value, SValue),
+                    lists:keystore(Key, Pos, Struct, SValue1)
+            end
     end;
-store([{Key, Default} | T], Value, Struct) when is_list(Struct) ->
+store([Key | T], Value, Struct) when is_list(Struct) ->
     case T of
         [] ->
             lists:keystore(Key, 1, Struct, {Key, Value});
         _ ->
             case lists:keyfind(Key, 1, Struct) of
-                false -> SValue = make_default(Default, Key);
-                {_, SValue} -> ok
-            end,
-            SValue1 = store(T, Value, SValue),
-            lists:keystore(Key, 1, Struct, {Key, SValue1})
+                false ->
+                    throw(badarg);
+                {_, SValue} ->
+                    SValue1 = store(T, Value, SValue),
+                    lists:keystore(Key, 1, Struct, {Key, SValue1})
+            end
     end;
-store([{Key, Default} | T], Value, Struct) when is_record(Struct, dict) ->
+store([Key | T], Value, Struct) when is_record(Struct, dict) ->
     case T of
         [] ->
             dict:store(Key, Value, Struct);
         _ ->
             case dict:find(Key, Struct) of
-                error -> SValue = make_default(Default, Key);
-                {_, SValue} -> ok
-            end,
-            SValue1 = store(T, Value, SValue),
-            dict:store(Key, SValue1, Struct)
+                error ->
+                    throw(badarg);
+                {_, SValue} ->
+                    SValue1 = store(T, Value, SValue),
+                    dict:store(Key, SValue1, Struct)
+            end
     end;
-store([{Key, _Default} | T], Value, Struct) when is_tuple(Struct) ->
+store([Key | T], Value, Struct) when is_tuple(Struct) ->
     case T of
         [] ->
             setelement(Key, Struct, Value);
@@ -192,7 +191,100 @@ store([{Key, _Default} | T], Value, Struct) when is_tuple(Struct) ->
             SValue1 = store(T, Value, SValue),
             setelement(Key, Struct, SValue1)
     end;
-store([{Key, Default} | T], Value, Struct) when is_map(Struct) ->
+store([Key | T], Value, Struct) when is_map(Struct) ->
+    case T of
+        [] ->
+            Struct#{Key => Value};
+        _ ->
+            case Struct of
+                #{Key := SValue} ->
+                    SValue1 = store(T, Value, SValue),
+                    Struct#{Key => SValue1};
+                _ ->
+                    throw(badarg)
+            end
+    end;
+store([{Key, Pos} | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
+    case T of
+        [] ->
+            ets:update_element(Struct, Key, {Pos, Value});
+        _ ->
+            SValue1 = ets:lookup_element(Struct, Key, Pos),
+            SValue2 = store(T, Value, SValue1),
+            ets:update_element(Struct, Key, {Pos, SValue2})
+    end,
+    %% ets 不会变
+    Struct;
+store([Key | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
+    case T of
+        [] ->
+            ets:insert(Struct, Value);
+        _ ->
+            case ets:lookup(Struct, Key) of
+                [SValue] ->
+                    SValue1 = store(T, Value, SValue),
+                    ets:insert(Struct, SValue1);
+                _ ->
+                    throw(badarg)
+            end
+    end,
+    %% ets 不会变
+    Struct;
+store(Key, Value, Struct) ->
+    store([{Key, undefined}], Value, Struct).
+
+%% @doc 存储一个值, 附带默认值{key, default}
+%%
+%% 注意最后一个default值是无效果的, 因为value值会直接覆盖
+%%
+%% 所以当直接传入key时可以不写default ^ ^
+-spec store_with_default(key()|[{key(), default()}], value(), struct()) -> struct().
+store_with_default([{{Key, Pos} = SKey, Default} | T], Value, Struct) when is_list(Struct) ->
+    case T of
+        [] ->
+            lists:keystore(Key, Pos, Struct, Value);
+        _ ->
+            case lists:keyfind(Key, Pos, Struct) of
+                false -> SValue = make_default(Default, SKey);
+                SValue -> ok
+            end,
+            SValue1 = store_with_default(T, Value, SValue),
+            lists:keystore(Key, Pos, Struct, SValue1)
+    end;
+store_with_default([{Key, Default} | T], Value, Struct) when is_list(Struct) ->
+    case T of
+        [] ->
+            lists:keystore(Key, 1, Struct, {Key, Value});
+        _ ->
+            case lists:keyfind(Key, 1, Struct) of
+                false -> SValue = make_default(Default, Key);
+                {_, SValue} -> ok
+            end,
+            SValue1 = store_with_default(T, Value, SValue),
+            lists:keystore(Key, 1, Struct, {Key, SValue1})
+    end;
+store_with_default([{Key, Default} | T], Value, Struct) when is_record(Struct, dict) ->
+    case T of
+        [] ->
+            dict:store(Key, Value, Struct);
+        _ ->
+            case dict:find(Key, Struct) of
+                error -> SValue = make_default(Default, Key);
+                {_, SValue} -> ok
+            end,
+            SValue1 = store_with_default(T, Value, SValue),
+            dict:store(Key, SValue1, Struct)
+    end;
+store_with_default([{Key, _Default} | T], Value, Struct) when is_tuple(Struct) ->
+    case T of
+        [] ->
+            setelement(Key, Struct, Value);
+        _ ->
+            SValue = element(Key, Struct),
+            SValue1 = store_with_default(T, Value, SValue),
+            setelement(Key, Struct, SValue1)
+    end;
+store_with_default([{Key, Default} | T], Value, Struct) when is_map(Struct) ->
     case T of
         [] ->
             Struct#{Key => Value};
@@ -201,10 +293,10 @@ store([{Key, Default} | T], Value, Struct) when is_map(Struct) ->
                 #{Key := SValue} -> ok;
                 _ -> SValue = make_default(Default, Key)
             end,
-            SValue1 = store(T, Value, SValue),
+            SValue1 = store_with_default(T, Value, SValue),
             Struct#{Key => SValue1}
     end;
-store([{{Key, Pos}, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
+store_with_default([{{Key, Pos}, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
     case T of
         [] ->
             try ets:update_element(Struct, Key, {Pos, Value})
@@ -220,12 +312,12 @@ store([{{Key, Pos}, Default} | T], Value, Struct) when is_atom(Struct);is_refere
                         ets:insert(Struct, Default),
                         element(Pos, Default)
                 end,
-            SValue2 = store(T, Value, SValue1),
+            SValue2 = store_with_default(T, Value, SValue1),
             ets:update_element(Struct, Key, {Pos, SValue2})
     end,
     %% ets 不会变
     Struct;
-store([{Key, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
+store_with_default([{Key, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
     case T of
         [] ->
             ets:insert(Struct, Value);
@@ -234,13 +326,13 @@ store([{Key, Default} | T], Value, Struct) when is_atom(Struct);is_reference(Str
                 [SValue] -> ok;
                 _ -> SValue = make_default(Default, Key)
             end,
-            SValue1 = store(T, Value, SValue),
+            SValue1 = store_with_default(T, Value, SValue),
             ets:insert(Struct, SValue1)
     end,
     %% ets 不会变
     Struct;
-store(Key, Value, Struct) ->
-    store([{Key, undefined}], Value, Struct).
+store_with_default(Key, Value, Struct) ->
+    store_with_default([{Key, undefined}], Value, Struct).
 
 %% @doc 删除一个值
 -spec delete(key()|[key()], struct()) -> struct().
@@ -726,7 +818,7 @@ base_test_() ->
                     ?_assertError(badarg,
                         kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct, undefined)),
                     ?_assertEqual(Struct,
-                        kv_op:store([
+                        kv_op:store_with_default([
                             {list, []},
                             {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
                             {3, '_'},
@@ -737,7 +829,7 @@ base_test_() ->
                         ], {lookup, ok}, [])),
                     ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup)),
                     ?_assertEqual(Struct,
-                        kv_op:store([
+                        kv_op:store_with_default([
                             {list, []},
                             {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
                             {3, '_'},
@@ -748,7 +840,7 @@ base_test_() ->
                         ], update_element, [])),
                     ?_assertEqual(update_element,
                         kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, {lookup, 2}], Struct, undefined)),
-                    ?_assertEqual([{1, 1}], kv_op:store(1, 1, [])),
+                    ?_assertEqual([{1, 1}], kv_op:store_with_default(1, 1, [])),
                     
                     ?_test(ets:delete_all_objects(?MODULE)),
                     ?_test(ets:insert(?MODULE, [{1, 1}, {2, 1}, {3, 1}])),

@@ -1,0 +1,3 @@
+-define(ATTR_ATTACK, 1).%% 攻击
+-define(ATTR_DEFENSE, 2).%% 防御
+-define(ATTR_HP, 3).%% 血量

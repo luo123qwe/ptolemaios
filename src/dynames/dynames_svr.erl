@@ -80,17 +80,29 @@ execute_frame(#dynames{frame = Frame, stream_event = StreamEvent} = State) ->
 
 %% @doc 执行一个事件
 -spec execute_event(#dynames_event{}, #dynames{}) -> #dynames{}.
-execute_event(#dynames_event{user = User} = Event, #dynames{unit_map = UnitMap} = State) ->
+execute_event(#dynames_event{user = User} = Event, #dynames{unit_map = UnitMap, event_deep = Deep} = State) ->
     #dynames_unit{module = Module} = Unit = kv_op:lookup(User, UnitMap, undefined),
+    %% 事件深度
+    %% todo 收集哪些信息?
+    ?DO_IF(Deep > ?DYNAMES_EVENT_MAX_DEEP, exit(event_too_deep)),
     %% 过滤目标
     case filter_event_target(Unit, Event, State) of
         {ok, TargetList, Event1} ->
+            State1 = State#dynames{event_deep = Deep + 1},
             %% 执行事件
-            case ?DYM_DYNAMES_UNIT3(Module, execute_event, [TargetList, Unit, Event1, State]) of
-                {ok, State1} ->
-                    State1;
+            try ?DYM_DYNAMES_UNIT3(Module, execute_event, [TargetList, Unit, Event1, State1]) of
+                {ok, State2} ->
+                    State2#dynames{event_deep = Deep};
                 _ ->
                     State
+            catch
+                throw:?DYNAMES_RETURN1(?DYNAMES_RETURN_SKIP) ->
+                    State;
+                throw:?DYNAMES_RETURN1({ok, #dynames{} = State2}) ->
+                    State2#dynames{event_deep = Deep};
+                C:E:S ->
+                    %% TODO 报错处理方案??
+                    erlang:raise(C, E, S)
             end;
         _ ->
             State

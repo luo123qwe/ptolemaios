@@ -1,3 +1,4 @@
+%% @private
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
@@ -16,7 +17,11 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% API
--export([filter_event_target/3, execute_event/4]).
+-export([init/2, filter_event_target/3, execute_event/4]).
+
+%% 没用到的, 初始化直接赋值
+init(Unit, Dynames) ->
+    {ok, Unit, Dynames}.
 
 filter_event_target(_Unit, Event, #dynames{unit_map = UnitMap}) ->
     %% 除自己以外的unit都是目标
@@ -31,8 +36,8 @@ filter_event_target(_Unit, Event, #dynames{unit_map = UnitMap}) ->
             {ok, TargetList, Event#dynames_event{stream = Stream + 1}}
     end.
 
-execute_event(TargetList, Unit, Event, #dynames{frame = Frame, stream_event = StreamEvent} = State) ->
-    ?debugFmt("~n~p ~p ~p ~p~n", [TargetList, Unit#dynames_unit.id, Event, dynames:rand()]),
+execute_event(Target, Unit, Event, #dynames{frame = Frame, stream_event = StreamEvent} = State) ->
+    ?debugFmt("~n~p ~p ~p ~p~n", [Target#dynames_unit.id, Unit#dynames_unit.id, Event#dynames_event.stream, dynames:rand()]),
     case Event#dynames_event.stream of
         stop ->
             %% 下一帧执行一个事件, 模拟事件延时触发
@@ -40,8 +45,7 @@ execute_event(TargetList, Unit, Event, #dynames{frame = Frame, stream_event = St
             {ok, State#dynames{stream_event = dynames_event:insert_first(NewEvent#dynames_event{stream = undefined}, StreamEvent)}};
         _ ->
             %% 换成target发起, 模拟A事件触发B事件
-            [TargetId | _] = TargetList,
-            {ok, dynames_svr:execute_event(Event#dynames_event{user = TargetId}, State)}
+            {ok, dynames_svr:execute_event(Event#dynames_event{user = Target#dynames_unit.id}, State)}
     end.
 
 

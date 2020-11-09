@@ -16,6 +16,8 @@
 
 -export([insert_last/2, insert_last_list/2, insert_first/2, insert_first_list/2]).
 
+-export([trigger/3]).
+
 %% @doc 初始化部分消息
 new(Frame, Priority) ->
     #dynames_event{
@@ -65,3 +67,25 @@ insert_first_list(Event, [H | _T] = L) when element(#dynames_event.sort, Event) 
 insert_first_list(Event, [H | T]) ->
     [H | insert_first_list(Event, T)].
 
+%% @doc 触发一个事件
+trigger(Type, StreamData, Dynames) ->
+    EventList = kv_op:lookup([#dynames.trigger_event, Type], Dynames, []),
+    do_trigger(EventList, Type, StreamData, Dynames).
+
+
+do_trigger([], _Type, _StreamData, Dynames) ->
+    Dynames;
+do_trigger([H | T], Type, StreamData, Dynames) ->
+    Key = [#dynames.trigger_event, Type],
+    EventList = kv_op:lookup(Key, Dynames, []),
+    %% 事件的回调不一定还在
+    case lists:keytake(H#dynames_event.id, #dynames_event.id, EventList) of
+        false ->
+            do_trigger(T, Type, StreamData, Dynames);
+        {value, _, EventList1} ->
+            Dynames1 = kv_op:store(Key, Dynames, EventList1),
+            Dynames2 = dynames_svr:execute_event(H#dynames_event{stream = StreamData}, Dynames1),
+            do_trigger(T, Type, StreamData, Dynames2)
+    end.
+    
+    

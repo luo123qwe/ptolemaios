@@ -98,14 +98,14 @@ get_equip() ->
     [#xlsx2erl_dets{v = V}] = dets:lookup(?DETS_XLSX2ERL1(?MODULE), ?DETS_DICT1(data_test_equip)),
     V.
 
-compile(#xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
+compile(#xlsx2erl_cb_args{hrl_path = HrlPath} = Args) ->
     #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl_util:get_excel(?MODULE),
-    xlsx2erl_util:copy_mask_body(?MODULE, ExportPath ++ "/include/" ++ ?XLSX2ERL_DEFAULT_HRL),
+    xlsx2erl_util:copy_mask_body(?MODULE, HrlPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
     do_compile(SheetList, Args).
 
 do_compile([], _Args) ->
     ok;
-do_compile([#xlsx2erl_sheet{name = data_test_goods, row_list = RowList} = Sheet | T], #xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
+do_compile([#xlsx2erl_sheet{name = data_test_goods, row_list = RowList} = Sheet | T], #xlsx2erl_cb_args{erl_path = ErlPath} = Args) ->
     Head =
         "-module(data_test_goods).\n\n"
     "-include(\"" ++ ?XLSX2ERL_DEFAULT_HRL ++ "\").\n\n"
@@ -136,9 +136,9 @@ do_compile([#xlsx2erl_sheet{name = data_test_goods, row_list = RowList} = Sheet 
                   end, RowList),
     Tail =
         "get(_) -> undefined.",
-    ok = file:write_file(ExportPath ++ "/data_test_goods.erl", [Head, Body, Tail]),
+    ok = file:write_file(ErlPath ++ "/data_test_goods.erl", [Head, Body, Tail]),
     do_compile(T, Args);
-do_compile([#xlsx2erl_sheet{name = data_test_equip, row_list = RowList} = Sheet | T], #xlsx2erl_callback_args{export_path = ExportPath} = Args) ->
+do_compile([#xlsx2erl_sheet{name = data_test_equip, row_list = RowList} = Sheet | T], #xlsx2erl_cb_args{erl_path = ErlPath} = Args) ->
     Head =
         "-module(data_test_equip).\n\n"
     "-include(\"" ++ ?XLSX2ERL_DEFAULT_HRL ++ "\").\n\n"
@@ -164,12 +164,12 @@ do_compile([#xlsx2erl_sheet{name = data_test_equip, row_list = RowList} = Sheet 
                   end, RowList),
     Tail =
         "get(_) -> undefined.",
-    ok = file:write_file(ExportPath ++ "/data_test_equip.erl", [Head, Body, Tail]),
+    ok = file:write_file(ErlPath ++ "/data_test_equip.erl", [Head, Body, Tail]),
     do_compile(T, Args).
 
-clean(#xlsx2erl_callback_args{export_path = ExportPath}) ->
-    file:delete(ExportPath ++ "/include/" ++ ?XLSX2ERL_DEFAULT_HRL),
+clean(#xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath}) ->
+    file:delete(HrlPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
     catch dets:close(?DETS_XLSX2ERL1(?MODULE)),
     file:delete(?DETS_PATH ++ "/" ++ ?MODULE_STRING),
-    file:delete(ExportPath ++ "/data_test_goods.erl"),
-    file:delete(ExportPath ++ "/data_test_equip.erl").
+    file:delete(ErlPath ++ "/data_test_goods.erl"),
+    file:delete(ErlPath ++ "/data_test_equip.erl").

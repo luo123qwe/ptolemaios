@@ -4,6 +4,7 @@
 -define(XLSX2ERL_EXCEL_UPDATE_TIME, prim_excel_update_time).
 
 -define(XLSX2ERL_CALLBACK_PATH, "src/callback").% callback路径
+-define(XLSX2ERL_INCLUDE_PATH, "include").% include路径
 
 %% mask字符串
 -define(XLSX2ERL_RECORD_START_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define start%%%%%%%%%%%%%%%%%").
@@ -45,6 +46,7 @@
     v
 }).
 
--record(xlsx2erl_callback_args, {
-    export_path
+-record(xlsx2erl_cb_args, {
+    erl_path,
+    hrl_path
 }).

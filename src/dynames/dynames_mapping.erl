@@ -11,6 +11,10 @@
 %% API
 -export([actor_module/1]).
 
-
-actor_module(_) ->
+%% @doc 获取配置表单位id对应的回调模块, 这里修改频率极低, 直接硬编码
+actor_module(1) ->
+    dynames_u_normal;
+actor_module(2) ->
+    dynames_u_normal;
+actor_module(_Id) ->
     undefined.
