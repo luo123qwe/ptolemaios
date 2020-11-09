@@ -92,8 +92,15 @@ eval_fix_string([H | T]) ->
 
 %% @doc 转换成IOList, 文本请传入binary
 to_iolist(Binary) when is_binary(Binary) ->
-    %% 文本中含有 " 需要转换成 \"
-    ["<<\"", re:replace(unicode:characters_to_list(Binary), "\"", "\\\\\"", [global]), "\"/utf8>>"];
+    List = unicode:characters_to_list(Binary),
+    %% 文本中含有 " 需要转换成 \", \ 转换成 \\
+    %% todo 这里不知道会不会卡?
+    case lists:any(fun(Char) -> Char > 255 end, List) of
+        true ->% unicode
+            ["<<\"", re:replace(re:replace(Binary, "\\\\", "\\\\\\\\", [global]), "\"", "\\\\\"", [global]), "\"/utf8>>"];
+        _ ->
+            ["<<\"", re:replace(re:replace(List, "\\\\", "\\\\\\\\", [global]), "\"", "\\\\\"", [global]), "\"/utf8>>"]
+    end;
 to_iolist(Term) ->
     io_lib:format("~w", [Term]).
 
@@ -106,7 +113,7 @@ to_iolist(Term) ->
 %% %%%%mask end%%%%%%
 copy_mask_body(Module, ToFile) ->
     ModuleStr = atom_to_list(Module),
-    copy_mask_body(?XLSX2ERL_RECORD_START_MASK1(ModuleStr), ?XLSX2ERL_RECORD_END_MASK1(ModuleStr), ?XLSX2ERL_CALLBACK_PATH ++ "/" ++ ModuleStr ++ ".erl", ToFile).
+    copy_mask_body(?XLSX2ERL_RECORD_START_MASK1(ModuleStr), ?XLSX2ERL_RECORD_END_MASK1(ModuleStr), "include/" ++ ModuleStr ++ ".hrl", ToFile).
 copy_mask_body(MaskStart, MaskEnd, FromFile, ToFile) ->
     {ok, FromFD} = file:open(FromFile, [read]),
     case copy_mask_body_1(MaskStart, MaskEnd, FromFD, [], false) of

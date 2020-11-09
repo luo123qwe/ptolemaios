@@ -3,6 +3,8 @@
 -include("xlsx2erl.hrl").
 -include_lib("kernel/include/file.hrl").
 
+-define(RECORD_NAME1(Name), "data_" ++ Name).
+
 %% private
 -export([main/1, get_sheet_data/2, make_template/1, make_template/2]).
 
@@ -15,6 +17,7 @@ main(["compile", XlsxDir0, ExportDir0]) ->
     ExportDir = filename:absname(ExportDir0),
     XlsxDir = filename:absname(XlsxDir0),
     file:make_dir(ExportDir),
+    file:make_dir(ExportDir ++ "/include"),
     file:make_dir(?DETS_PATH),
     
     %% 需要重新生成的xlsx和模块列表
@@ -54,15 +57,26 @@ main(["compile", XlsxDir0, ExportDir0]) ->
     %% [{processor, [CoreInfo]}], Cpu数量
     CpuNum = length(element(2, hd(erlang:system_info(cpu_topology)))),
     %% 多进程更新dets
-    compile_update_dets(UpdateDetsList, [], CpuNum, CpuNum),
+    IsContinue =
+        try compile_update_dets(UpdateDetsList, [], CpuNum, CpuNum) of
+            ok -> true;
+            _ -> false
+        catch
+            _:_ -> false
+        end,
     
-    %% 构造依赖关系, 哪些模块(excel表)需要重新生成
-    {ok, CallbackFileList} = file:list_dir(?XLSX2ERL_CALLBACK_PATH),
-    DependModuleList = compile_make_depend(CallbackFileList, UpdateDetsList, []),
-    
-    %% 多进程调用对应compile函数
-    CallbackArgs = #xlsx2erl_callback_args{export_path = ExportDir},
-    compile_do_compile(ErlChangeList ++ DependModuleList, CallbackArgs, [], CpuNum, CpuNum),
+    case IsContinue of
+        true ->
+            %% 构造依赖关系, 哪些模块(excel表)需要重新生成
+            {ok, CallbackFileList} = file:list_dir(?XLSX2ERL_CALLBACK_PATH),
+            DependModuleList = compile_make_depend(CallbackFileList, UpdateDetsList, []),
+            
+            %% 多进程调用对应compile函数
+            CallbackArgs = #xlsx2erl_callback_args{export_path = ExportDir},
+            catch compile_do_compile(ErlChangeList ++ DependModuleList, CallbackArgs, [], CpuNum, CpuNum);
+        _ ->
+            skip
+    end,
     %% 关闭所有dets
     close_dets();
 main(["clean", XlsxDir0, ExportDir0]) ->
@@ -109,7 +123,7 @@ main(_) ->
 compile_update_dets([], [], _, _) ->
     ok;
 compile_update_dets(CompileList, ReceiveList, SpawnNum, ProcessNum) when CompileList == [] orelse SpawnNum == 0 ->
-    compile_receive_spawn(ReceiveList),
+    compile_receive_spawn(?FUNCTION_NAME, ReceiveList),
     compile_update_dets(CompileList, [], ProcessNum, ProcessNum);
 compile_update_dets([{Module, BaseName, FileName} | T], ReceiveList, SpawnNum, ProcessNum) ->
     Pid = spawn_link(fun() ->
@@ -120,24 +134,24 @@ compile_update_dets([{Module, BaseName, FileName} | T], ReceiveList, SpawnNum, P
                 make_template(FileName),
                 io:format("make_template ~p~n", [Module]),
                 close_dets(),
-                throw(error);
+                exit(make_template);
             {'EXIT', Error} ->
                 io:format("update_dets ~p error~n~p~n~n", [Module, Error]),
                 close_dets(),
                 file:delete(?DETS_PATH ++ "/" ++ atom_to_list(Module)),
-                throw(error);
+                exit(make_template);
             _ ->
                 End = erlang:system_time(millisecond),
                 io:format("update dets ~ts, cost ~p ms~n", [BaseName, End - Start])
         end
                      end),
-    compile_update_dets(T, [Pid | ReceiveList], SpawnNum - 1, ProcessNum).
+    compile_update_dets(T, [{Pid, Module} | ReceiveList], SpawnNum - 1, ProcessNum).
 
 %% 多进程编译
 compile_do_compile([], _, [], _, _) ->
     ok;
 compile_do_compile(CompileList, CallbackArgs, ReceiveList, SpawnNum, ProcessNum) when CompileList == [] orelse SpawnNum == 0 ->
-    compile_receive_spawn(ReceiveList),
+    compile_receive_spawn(?FUNCTION_NAME, ReceiveList),
     compile_do_compile(CompileList, CallbackArgs, [], ProcessNum, ProcessNum);
 compile_do_compile([{Module, BaseName} | T], CallbackArgs, ReceiveList, SpawnNum, ProcessNum) ->
     Pid = spawn_link(fun() ->
@@ -150,28 +164,33 @@ compile_do_compile([{Module, BaseName} | T], CallbackArgs, ReceiveList, SpawnNum
                 io:format("compile ~ts success, cost ~p ms~n", [BaseName, End - Start])
         end
                      end),
-    compile_do_compile(T, CallbackArgs, [Pid | ReceiveList], SpawnNum - 1, ProcessNum).
+    compile_do_compile(T, CallbackArgs, [{Pid, Module} | ReceiveList], SpawnNum - 1, ProcessNum).
 
-compile_receive_spawn(ReceiveList) ->
-    AnyError =
-        lists:any(fun(_) ->
+compile_receive_spawn(FunctionName, ReceiveList) ->
+    ErrorList =
+        lists:foldl(fun(_, Acc) ->
             receive
                 {'EXIT', Pid, Reason} ->
-                    case lists:member(Pid, ReceiveList) andalso Reason == normal of
+                    case lists:keymember(Pid, 1, ReceiveList) andalso Reason == normal of
                         true ->
-                            false;
+                            Acc;
                         _ ->
-                            io:format("compile_update_dets unknow exit ~p~n", [Reason]),
-                            true
+                            case lists:keyfind(Pid, 1, ReceiveList) of
+                                false -> Module = undefined;
+                                {_, Module} -> ok
+                            end,
+                            [{Module, Reason} | Acc]
                     end;
-                UnKnow ->
-                    io:format("compile_update_dets unknow ~p~n", [UnKnow]),
-                    true
+                Unknown ->
+                    [{unknown, Unknown} | Acc]
             end
-                  end, ReceiveList),
-    case AnyError of
-        true -> throw(error);
-        _ -> ok
+                    end, [], ReceiveList),
+    case ErrorList of
+        [] ->
+            ok;
+        _ ->
+            io:format("compile error ~w: ~w", [FunctionName, ErrorList]),
+            throw(error)
     end.
 
 %% 定义:'依赖'总是通过 A表的Key==B表的Key 实现, 类似mysql的外键
@@ -233,7 +252,7 @@ get_sheet_data(RecordDefList, XlsxFile) ->
         fun(SheetName, [Line, Key | Row], {NthListList, SheetList} = Acc) ->
             case string:split(SheetName, "-") of
                 [_, RecordNameStr] ->
-                    case catch list_to_atom(RecordNameStr) of
+                    case catch list_to_atom(?RECORD_NAME1(RecordNameStr)) of
                         RecordName when is_atom(RecordName) -> ok;
                         _ -> RecordName = undefined
                     end;
@@ -328,6 +347,7 @@ make_template(XlsxFileName, OutDir) ->
                 "-module(" ++ ModuleStr ++ ").\n\n"
             "-behaviour(xlsx2erl_callback).\n\n"
             "-include(\"xlsx2erl.hrl\").\n\n"
+            "-include(\"" ++ ModuleStr ++ ".hrl\").\n\n"
             "-define(DETS_DICT1(Name), {Name, dict}).\n\n",
             RecordMask =
                 ?XLSX2ERL_RECORD_START_MASK1(ModuleStr) ++ "\n" ++
@@ -391,7 +411,7 @@ make_template(XlsxFileName, OutDir) ->
                         || Field <- FieldList], ",\n") ++ "\n"
                 "    },\n"
                 "    RowList1 = [H#xlsx2erl_row{record = Record1} | RowList],\n"
-                "    %% todo 构造数据索引"
+                "    %% todo 构造数据索引\n"
                 "    Dict1 = dict:store(element(2, Record1), Record1, Dict),\n"
                 "    update_dets_convert_record_" ++ RecordName ++ "(T, Sheet, RecordDef, RowList1, Dict1).\n\n"
                     || [RecordName | FieldList] <- RecordDefList],
@@ -405,14 +425,14 @@ make_template(XlsxFileName, OutDir) ->
             Compile =
                 "compile(#xlsx2erl_callback_args{export_path = ExportPath} = Args) ->\n"
                 "    #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl_util:get_excel(?MODULE),\n"
-                "    xlsx2erl_util:copy_mask_body(?MODULE, ExportPath ++ \"/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
+                "    xlsx2erl_util:copy_mask_body(?MODULE, ExportPath ++ \"/include/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
                 "    do_compile(SheetList, Args).\n\n"
                 "do_compile([], _Args) ->\n"
                 "    ok;\n" ++
                 string:join([
                         "do_compile([#xlsx2erl_sheet{name = " ++ RecordName ++ ", row_list = RowList} | T], #xlsx2erl_callback_args{export_path = ExportPath} = Args) ->\n"
                     "    Head =\n"
-                    "        \"-module(\" ++ ?XLSX2ERL_DEFAULT_DATA_MODULE(" ++ RecordName ++ ") ++ \").\\n\\n\"\n"
+                    "        \"-module(" ++ RecordName ++ ").\\n\\n\"\n"
                     "    \"-include(\\\"\" ++ ?XLSX2ERL_DEFAULT_HRL ++ \"\\\").\\n\\n\"\n"
                     "    \"-export([get/1]).\\n\\n\",\n"
                     "    Body =\n"
@@ -427,16 +447,16 @@ make_template(XlsxFileName, OutDir) ->
                     "                  end, RowList),\n"
                     "    Tail =\n"
                     "        \"get(_) -> undefined.\",\n"
-                    "    ok = file:write_file(ExportPath ++ \"/data_" ++ RecordName ++ ".erl\", [Head, Body, Tail]),\n"
+                    "    ok = file:write_file(ExportPath ++ \"/" ++ RecordName ++ ".erl\", [Head, Body, Tail]),\n"
                     "    do_compile(T, Args)"
                     || [RecordName | FieldList] <- RecordDefList], ";\n") ++ ".\n\n",
             Clean =
                 "clean(#xlsx2erl_callback_args{export_path = ExportPath}) ->\n"
-                "    file:delete(ExportPath ++ \"/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
+                "    file:delete(ExportPath ++ \"/include/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
                 "    catch dets:close(?DETS_XLSX2ERL1(?MODULE)),\n"
                 "    file:delete(?DETS_PATH ++ \"/\" ++ ?MODULE_STRING),\n" ++
                 string:join([
-                        "    file:delete(ExportPath ++ \"/data_" ++ RecordName ++ ".erl\")"
+                        "    file:delete(ExportPath ++ \"/" ++ RecordName ++ ".erl\")"
                     || [RecordName | _] <- RecordDefList], ",\n") ++
                 ".\n\n",
             ErlFile =
@@ -452,8 +472,11 @@ make_template(XlsxFileName, OutDir) ->
                                 throw(badarg)
                         end
                 end,
+            HrlFile = "include/" ++ ModuleStr ++ ".hrl",
+            io:format("write template file " ++ HrlFile ++ "~n"),
+            ok = file:write_file(HrlFile, unicode:characters_to_binary([RecordMask])),
             io:format("write template file " ++ ErlFile ++ "~n"),
-            ok = file:write_file(ErlFile, unicode:characters_to_binary([Head, RecordMask, ExportDefaultGet, ExportPrivate, UpdateDets, Get, Compile, Clean]));
+            ok = file:write_file(ErlFile, unicode:characters_to_binary([Head, ExportDefaultGet, ExportPrivate, UpdateDets, Get, Compile, Clean]));
         _ ->
             io:format("make template bad xlsx name ~ts~n", [BaseName])
     end.
@@ -472,7 +495,7 @@ make_template_record_def(XlsxFile) ->
                                     Acc1
                             end
                                     end, [], Row),
-                    {next_sheet, [[RecordNameStr | FieldList] | Acc]};
+                    {next_sheet, [[?RECORD_NAME1(RecordNameStr) | FieldList] | Acc]};
                 _ ->
                     {next_sheet, Acc}
             end;

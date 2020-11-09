@@ -18,7 +18,6 @@
         [Sheet#xlsx2erl_sheet.excel_name, Sheet#xlsx2erl_sheet.sheet_name, Row#xlsx2erl_row.line] ++ Args)).% 打印错误
 
 %% 默认名字
--define(XLSX2ERL_DEFAULT_DATA_MODULE(Tag), "data_" ++ atom_to_list(Tag)).
 -define(XLSX2ERL_DEFAULT_HRL, (?MODULE_STRING -- "xlsx2erl_") ++ ".hrl").
 
 -record(xlsx2erl_row, {
