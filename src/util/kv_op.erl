@@ -63,7 +63,7 @@
 %% 对(k,v)执行一个函数,
 %% 对于, lookup+store, 可以减少一次store时的lookup
 %% 大概对应lookup和store的逻辑
--export([apply_if_exist/4, apply/4]).
+-export([update/3, update_with_default/3]).
 
 %% 从dict.erl复制过来, erl版本变化时可能会有问题, ?PTOLEMAIOS_MASK_COPY_FROM_ERL
 -record(dict, {size, n, maxn, bso, exp_size, con_size, empty, segs}).
@@ -522,150 +522,172 @@ math_op(subtract, V1, V2) -> V1 - V2;
 math_op(multiply, V1, V2) -> V1 * V2;
 math_op(divide, V1, V2) -> V1 / V2.
 
-%% @doc 执行一个函数如果值存在
+%% @doc 执行一个函数如果值存在, 少一次lookup, 但是需要apply
 %%
-%% 若函数返回DeleteMask, 则删除该值
+%% 若函数返回{true, Return}, 则删除该值并放回Return
 %%
-%% 若函数执行, 返回Struct, 否则返回error
+%% 若函数返回{false, Return, NewValue}, 则更新值并放回Return
 %%
-%% 所以ets不能使用表名'error'
--spec apply_if_exist(fun((K :: key(), V :: value()) -> V1 :: value()),
-    key()|[key()], struct(), term()) -> error| struct().
-apply_if_exist(_F, [], _Struct, _DeleteMask) ->
-    error;
-apply_if_exist(F, [{Key, Pos} | T], Struct, DeleteMask) when is_list(Struct) ->%% 这个是特别的
+%% 若数据全部存在, 函数执行, 否则返回undefined
+%%
+%% 所以ets不能使用表名'undefined'
+-spec update(fun((K :: key(), V :: value()) -> {true, Return :: term()}|{false, Return :: term(), V1 :: value()}),
+    key()|[key()], struct()) -> undefined| {Return :: term(), struct()}.
+update(_F, [], _Struct) ->
+    undefined;
+update(F, [{Key, Pos} | T], Struct) when is_list(Struct) ->%% 这个是特别的
     case lists:keyfind(Key, Pos, Struct) of
-        false -> error;
+        false -> undefined;
         Tuple ->
             case T of
                 [] ->
                     case F(Key, Tuple) of
-                        DeleteMask -> lists:keydelete(Key, Pos, Struct);
-                        Tuple1 -> lists:keystore(Key, Pos, Struct, Tuple1)
+                        {true, Return} ->
+                            {Return, lists:keydelete(Key, Pos, Struct)};
+                        {_, Return, Tuple1} ->
+                            {Return, lists:keystore(Key, Pos, Struct, Tuple1)}
                     end;
                 _ ->
-                    case apply_if_exist(F, T, Tuple, DeleteMask) of
-                        error -> error;
-                        Tuple1 -> lists:keystore(Key, Pos, Struct, Tuple1)
+                    case update(F, T, Tuple) of
+                        {Return, Tuple1} ->
+                            {Return, lists:keystore(Key, Pos, Struct, Tuple1)};
+                        _ ->
+                            undefined
                     end
             end
     end;
-apply_if_exist(F, [H | T], Struct, DeleteMask) when is_list(Struct) ->
+update(F, [H | T], Struct) when is_list(Struct) ->
     case lists:keyfind(H, 1, Struct) of
-        false -> error;
+        false -> undefined;
         {_, Value} ->
             case T of
                 [] ->
                     case F(H, Value) of
-                        DeleteMask -> lists:keydelete(H, 1, Struct);
-                        Value1 -> lists:keystore(H, 1, Struct, {H, Value1})
+                        {true, Return} ->
+                            {Return, lists:keydelete(H, 1, Struct)};
+                        {_, Return, Value1} ->
+                            {Return, lists:keystore(H, 1, Struct, {H, Value1})}
                     end;
                 _ ->
-                    case apply_if_exist(F, T, Value, DeleteMask) of
-                        error -> error;
-                        Value1 -> lists:keystore(H, 1, Struct, {H, Value1})
+                    case update(F, T, Value) of
+                        {Return, Value1} ->
+                            {Return, lists:keystore(H, 1, Struct, {H, Value1})};
+                        _ ->
+                            undefined
                     end
             end
     end;
-apply_if_exist(F, [H | T], Struct, DeleteMask) when is_record(Struct, dict) ->
+update(F, [H | T], Struct) when is_record(Struct, dict) ->
     case dict:find(H, Struct) of
-        error -> error;
+        error -> undefined;
         {ok, Value} ->
             case T of
                 [] ->
                     case F(H, Value) of
-                        DeleteMask -> dict:erase(H, Struct);
-                        Value1 -> dict:store(H, Value1, Struct)
+                        {true, Return} ->
+                            {Return, dict:erase(H, Struct)};
+                        {_, Return, Value1} ->
+                            {Return, dict:store(H, Value1, Struct)}
                     end;
                 _ ->
-                    case apply_if_exist(F, T, Value, DeleteMask) of
-                        error -> error;
-                        Value1 -> dict:store(H, Value1, Struct)
+                    case update(F, T, Value) of
+                        {Return, Value1} ->
+                            {Return, dict:store(H, Value1, Struct)};
+                        _ ->
+                            undefined
                     end
             end
     end;
-apply_if_exist(F, [H | T], Struct, DeleteMask) when is_tuple(Struct) ->
+update(F, [H | T], Struct) when is_tuple(Struct) ->
     Value = element(H, Struct),
     case T of
         [] ->
             case F(H, Value) of
                 %% 显然这个参数不应该生效
-                DeleteMask -> throw(badarg);
-                Value1 -> setelement(H, Struct, Value1)
+                {true, _} ->
+                    throw(badarg);
+                {_, Return, Value1} ->
+                    {Return, setelement(H, Struct, Value1)}
             end;
         _ ->
-            case apply_if_exist(F, T, Value, DeleteMask) of
-                error -> error;
-                Value1 -> setelement(H, Struct, Value1)
+            case update(F, T, Value) of
+                {Return, Value1} ->
+                    {Return, setelement(H, Struct, Value1)};
+                _ ->
+                    undefined
             end
     end;
-apply_if_exist(F, [H | T], Struct, DeleteMask) when is_map(Struct) ->
+update(F, [H | T], Struct) when is_map(Struct) ->
     case Struct of
         #{H := Value} ->
             case T of
                 [] ->
                     case F(H, Value) of
-                        DeleteMask -> maps:remove(H, Struct);
-                        Value1 -> Struct#{H => Value1}
+                        {true, Return} ->
+                            {Return, maps:remove(H, Struct)};
+                        {_, Return, Value1} ->
+                            {Return, Struct#{H => Value1}}
                     end;
                 _ ->
-                    case apply_if_exist(F, T, Value, DeleteMask) of
-                        error -> error;
-                        Value1 -> Struct#{H => Value1}
+                    case update(F, T, Value) of
+                        {Return, Value1} ->
+                            {Return, Struct#{H => Value1}};
+                        _ ->
+                            undefined
                     end
             end;
-        _ -> error
+        _ -> undefined
     end;
-apply_if_exist(F, [{Key, Pos} = H | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
+update(F, [{Key, Pos} = H | T], Struct) when is_atom(Struct);is_reference(Struct) ->
     try
         Value = ets:lookup_element(Struct, Key, Pos),
         case T of
             [] ->
                 case F(H, Value) of
-                    DeleteMask -> ets:delete(Struct, Key);
-                    Value1 -> ets:update_element(Struct, Key, {Pos, Value1})
+                    {true, Return} -> ets:delete(Struct, Key);
+                    {_, Return, Value1} -> ets:update_element(Struct, Key, {Pos, Value1})
                 end,
-                Struct;
+                {Return, Struct};
             _ ->
-                case apply_if_exist(F, T, Value, DeleteMask) of
-                    error -> error;
-                    Value1 ->
+                case update(F, T, Value) of
+                    {Return, Value1} ->
                         ets:update_element(Struct, Key, {Pos, Value1}),
-                        Struct
+                        {Return, Struct};
+                    _ ->
+                        undefined
                 end
         end
     catch
-        _:_ -> error
+        _:_ -> undefined
     end;
-apply_if_exist(F, [H | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
+update(F, [H | T], Struct) when is_atom(Struct);is_reference(Struct) ->
     case ets:lookup(Struct, H) of
         [Value] ->
             case T of
                 [] ->
                     case F(H, Value) of
-                        DeleteMask -> ets:delete(Struct, H);
-                        Value1 -> ets:insert(Struct, Value1)
+                        {true, Return} -> ets:delete(Struct, H);
+                        {_, Return, Value1} -> ets:insert(Struct, Value1)
                     end,
-                    Struct;
+                    {Return, Struct};
                 _ ->
-                    case apply_if_exist(F, T, Value, DeleteMask) of
-                        error -> error;
-                        Value1 ->
+                    case update(F, T, Value) of
+                        {Return, Value1} ->
                             ets:insert(Struct, Value1),
-                            Struct
+                            {Return, Struct};
+                        _ ->
+                            undefined
                     end
             end;
-        _ -> error
+        _ -> undefined
     end;
-apply_if_exist(F, Key, Struct, DeleteMask) ->
-    apply_if_exist(F, [Key], Struct, DeleteMask).
+update(F, Key, Struct) ->
+    update(F, [Key], Struct).
 
-%% @doc 执行一个函数, 如果值不存在则使用默认值
-%%
-%% 若函数返回DeleteMask, 则删除该值
--spec apply(fun((K :: key(), V :: value()) -> V1 :: value()),
-    {key(), default()}|[{key(), default()}], struct(), term()) -> struct().
-apply(F, [{{Key, Pos}, Default} | T], Struct, DeleteMask) when is_list(Struct) ->%% 这个是特别的
+%% @doc 执行一个函数, 如果值不存在则使用默认值, 其他查看update/3
+-spec update_with_default(fun((K :: key(), V :: value()) -> V1 :: value()),
+    {key(), default()}|[{key(), default()}], struct()) -> struct().
+update_with_default(F, [{{Key, Pos}, Default} | T], Struct) when is_list(Struct) ->%% 这个是特别的
     case lists:keyfind(Key, Pos, Struct) of
         false -> Tuple = make_default(Default, Key);
         Tuple -> ok
@@ -673,16 +695,16 @@ apply(F, [{{Key, Pos}, Default} | T], Struct, DeleteMask) when is_list(Struct) -
     case T of
         [] ->
             case F(Key, Tuple) of
-                DeleteMask -> lists:keydelete(Key, Pos, Struct);
-                Tuple1 -> lists:keystore(Key, Pos, Struct, Tuple1)
+                {true, Return} -> {Return, lists:keydelete(Key, Pos, Struct)};
+                {_, Return, Tuple1} -> {Return, lists:keystore(Key, Pos, Struct, Tuple1)}
             end;
         _ ->
-            case apply(F, T, Tuple, DeleteMask) of
-                error -> error;
-                Tuple1 -> lists:keystore(Key, Pos, Struct, Tuple1)
+            case update_with_default(F, T, Tuple) of
+                {Return, Tuple1} -> {Return, lists:keystore(Key, Pos, Struct, Tuple1)};
+                _ -> undefined
             end
     end;
-apply(F, [{H, Default} | T], Struct, DeleteMask) when is_list(Struct) ->
+update_with_default(F, [{H, Default} | T], Struct) when is_list(Struct) ->
     case lists:keyfind(H, 1, Struct) of
         false -> Value = make_default(Default, H);
         {_, Value} -> ok
@@ -690,16 +712,16 @@ apply(F, [{H, Default} | T], Struct, DeleteMask) when is_list(Struct) ->
     case T of
         [] ->
             case F(H, Value) of
-                DeleteMask -> lists:keydelete(H, 1, Struct);
-                Value1 -> lists:keystore(H, 1, Struct, {H, Value1})
+                {true, Return} -> {Return, lists:keydelete(H, 1, Struct)};
+                {_, Return, Value1} -> {Return, lists:keystore(H, 1, Struct, {H, Value1})}
             end;
         _ ->
-            case apply(F, T, Value, DeleteMask) of
-                error -> error;
-                Value1 -> lists:keystore(H, 1, Struct, {H, Value1})
+            case update_with_default(F, T, Value) of
+                {Return, Value1} -> {Return, lists:keystore(H, 1, Struct, {H, Value1})};
+                _ -> undefined
             end
     end;
-apply(F, [{H, Default} | T], Struct, DeleteMask) when is_record(Struct, dict) ->
+update_with_default(F, [{H, Default} | T], Struct) when is_record(Struct, dict) ->
     case dict:find(H, Struct) of
         error -> Value = make_default(Default, H);
         {ok, Value} -> ok
@@ -707,31 +729,31 @@ apply(F, [{H, Default} | T], Struct, DeleteMask) when is_record(Struct, dict) ->
     case T of
         [] ->
             case F(H, Value) of
-                DeleteMask -> dict:erase(H, Struct);
-                Value1 -> dict:store(H, Value1, Struct)
+                {true, Return} -> {Return, dict:erase(H, Struct)};
+                {_, Return, Value1} -> {Return, dict:store(H, Value1, Struct)}
             end;
         _ ->
-            case apply(F, T, Value, DeleteMask) of
-                error -> error;
-                Value1 -> dict:store(H, Value1, Struct)
+            case update_with_default(F, T, Value) of
+                {Return, Value1} -> {Return, dict:store(H, Value1, Struct)};
+                _ -> undefined
             end
     end;
-apply(F, [{H, _Default} | T], Struct, DeleteMask) when is_tuple(Struct) ->
+update_with_default(F, [{H, _Default} | T], Struct) when is_tuple(Struct) ->
     Value = element(H, Struct),
     case T of
         [] ->
             case F(H, Value) of
                 %% 显然这个参数不应该生效
-                DeleteMask -> throw(badarg);
-                Value1 -> setelement(H, Struct, Value1)
+                {true, _} -> throw(badarg);
+                {_, Return, Value1} -> {Return, setelement(H, Struct, Value1)}
             end;
         _ ->
-            case apply(F, T, Value, DeleteMask) of
-                error -> error;
-                Value1 -> setelement(H, Struct, Value1)
+            case update_with_default(F, T, Value) of
+                {Return, Value1} -> {Return, setelement(H, Struct, Value1)};
+                _ -> undefined
             end
     end;
-apply(F, [{H, Default} | T], Struct, DeleteMask) when is_map(Struct) ->
+update_with_default(F, [{H, Default} | T], Struct) when is_map(Struct) ->
     case Struct of
         #{H := Value} -> ok;
         _ -> Value = make_default(Default, H)
@@ -739,16 +761,16 @@ apply(F, [{H, Default} | T], Struct, DeleteMask) when is_map(Struct) ->
     case T of
         [] ->
             case F(H, Value) of
-                DeleteMask -> maps:remove(H, Struct);
-                Value1 -> Struct#{H => Value1}
+                {true, Return} -> {Return, maps:remove(H, Struct)};
+                {_, Return, Value1} -> {Return, Struct#{H => Value1}}
             end;
         _ ->
-            case apply(F, T, Value, DeleteMask) of
-                error -> error;
-                Value1 -> Struct#{H => Value1}
+            case update_with_default(F, T, Value) of
+                {Return, Value1} -> {Return, Struct#{H => Value1}};
+                _ -> undefined
             end
     end;
-apply(F, [{{Key, Pos} = H, Default} | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
+update_with_default(F, [{{Key, Pos} = H, Default} | T], Struct) when is_atom(Struct);is_reference(Struct) ->
     Value =
         try ets:lookup_element(Struct, Key, Pos)
         catch
@@ -759,19 +781,20 @@ apply(F, [{{Key, Pos} = H, Default} | T], Struct, DeleteMask) when is_atom(Struc
     case T of
         [] ->
             case F(H, Value) of
-                DeleteMask -> ets:delete(Struct, Key);
-                Value1 -> ets:update_element(Struct, Key, {Pos, Value1})
+                {true, Return} -> ets:delete(Struct, Key);
+                {_, Return, Value1} -> ets:update_element(Struct, Key, {Pos, Value1})
             end,
-            Struct;
+            {Return, Struct};
         _ ->
-            case apply(F, T, Value, DeleteMask) of
-                error -> error;
-                Value1 ->
+            case update_with_default(F, T, Value) of
+                {Return, Value1} ->
                     ets:update_element(Struct, Key, {Pos, Value1}),
-                    Struct
+                    {Return, Struct};
+                _ ->
+                    undefined
             end
     end;
-apply(F, [{H, Default} | T], Struct, DeleteMask) when is_atom(Struct);is_reference(Struct) ->
+update_with_default(F, [{H, Default} | T], Struct) when is_atom(Struct);is_reference(Struct) ->
     case ets:lookup(Struct, H) of
         [Value] -> ok;
         _ -> Value = make_default(Default, H)
@@ -779,20 +802,21 @@ apply(F, [{H, Default} | T], Struct, DeleteMask) when is_atom(Struct);is_referen
     case T of
         [] ->
             case F(H, Value) of
-                DeleteMask -> ets:delete(Struct, H);
-                Value1 -> ets:insert(Struct, Value1)
+                {true, Return} -> ets:delete(Struct, H);
+                {_, Return, Value1} -> ets:insert(Struct, Value1)
             end,
-            Struct;
+            {Return, Struct};
         _ ->
-            case apply(F, T, Value, DeleteMask) of
-                error -> error;
-                Value1 ->
+            case update_with_default(F, T, Value) of
+                {Return, Value1} ->
                     ets:insert(Struct, Value1),
-                    Struct
+                    {Return, Struct};
+                _ ->
+                    undefined
             end
     end;
-apply(F, Key, Struct, DeleteMask) ->
-    apply(F, [Key], Struct, DeleteMask).
+update_with_default(F, Key, Struct) ->
+    update_with_default(F, [Key], Struct).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -860,28 +884,28 @@ base_test_() ->
                     
                     ?_test(ets:delete_all_objects(?MODULE)),
                     ?_test(ets:insert(?MODULE, {ets, ok})),
-                    ?_assertEqual(Struct,
-                        kv_op:apply_if_exist(fun(_, _) ->
-                            undefined
-                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
+                    ?_assertEqual({ok, Struct},
+                        kv_op:update(fun(_, _) ->
+                            {true, ok}
+                                     end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct)),
                     ?_assert(ets:insert_new(?MODULE, {ets, ok})),
-                    ?_assertEqual(Struct,
-                        kv_op:apply_if_exist(fun(_, _) ->
-                            {ets, replace}
-                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
+                    ?_assertEqual({ok, Struct},
+                        kv_op:update(fun(_, _) ->
+                            {false, ok, {ets, replace}}
+                                     end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct)),
                     ?_assertEqual([{ets, replace}], ets:lookup(?MODULE, ets)),
-                    ?_assertEqual(error,
-                        kv_op:apply_if_exist(fun(_, _) ->
-                            undefined
-                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, error], Struct, undefined)),
+                    ?_assertEqual(undefined,
+                        kv_op:update(fun(_, _) ->
+                            will_be_error
+                                     end, [list, {tuple_list, 2}, 3, 2, map, dict, error], Struct)),
                     ?_assertError(badarg,
-                        kv_op:apply_if_exist(fun(_, _) ->
-                            undefined
-                                             end, [list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct, undefined)),
-                    ?_assertEqual(Struct,
-                        kv_op:apply(fun(lookup, {lookup, default}) ->
-                            {lookup, ok}
-                                    end,
+                        kv_op:update(fun(_, _) ->
+                            will_be_error
+                                     end, [list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct)),
+                    ?_assertEqual({ok, Struct},
+                        kv_op:update_with_default(fun(lookup, {lookup, default}) ->
+                            {false, ok, {lookup, ok}}
+                                                  end,
                             [
                                 {list, []},
                                 {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
@@ -890,12 +914,12 @@ base_test_() ->
                                 {map, ?KV_OP_DEF(dict, new)},
                                 {dict, ?MODULE},
                                 {lookup, {lookup, default}}
-                            ], [], undefined)),
+                            ], [])),
                     ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup)),
-                    ?_assertEqual(Struct,
-                        kv_op:apply(fun({lookup, 2}, ok) ->
-                            update_element
-                                    end,
+                    ?_assertEqual({ok, Struct},
+                        kv_op:update_with_default(fun({lookup, 2}, ok) ->
+                            {false, ok, update_element}
+                                                  end,
                             [
                                 {list, []},
                                 {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
@@ -904,7 +928,7 @@ base_test_() ->
                                 {map, ?KV_OP_DEF(dict, new)},
                                 {dict, ?MODULE},
                                 {{lookup, 2}, {lookup, default}}
-                            ], [], undefined)),
+                            ], [])),
                     ?_assertEqual([{lookup, update_element}], ets:lookup(?MODULE, lookup))
                 ]
             end}

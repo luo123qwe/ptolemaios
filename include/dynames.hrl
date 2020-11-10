@@ -20,6 +20,10 @@
 -define(DYNAMES_EVENT_EXECUTE(SkillId), {execute, UnitIdList, Event}).% 执行一个事件, 每次取出一个id, 然后放回事件
 -define(DYNAMES_EVENT_SKILL1(SkillId), {skill, SkillId}).% 释放一个技能
 
+%% 触发事件类型
+-define(DYNAMES_ETTB_DEAD, b_dead).% 死亡前
+-define(DYNAMES_ETTA_DEAD, a_dead).% 死亡后
+
 %% 唯一id类型
 -define(DYNAMES_ID_TYPE_GLOBAL, global).
 
@@ -76,6 +80,14 @@
     trigger_event = #{} :: map(),% 触发型事件, {type => [#dynames_event{}]}
     unit_map = maps:new() :: map(),% 所有unit, #{id => #dynames_unit{}}
     event_deep = 0 :: integer()% 事件触发深度, 防止死循环
+}).
+
+%% 死亡的事件数据流
+-record(dynames_esd_dead, {
+    killer :: integer(),% 谁造成的死亡
+    dead :: integer(),% 谁死亡了
+    event :: #dynames_event{},% 因为什么事件
+    stream :: any()%% 事件的数据流
 }).
 
 %%%%%%%%%%%xlsx2erl_dynames record define start%%%%%%%%%%%%%%%%%
