@@ -43,7 +43,8 @@ init([]) ->
     ChildSpecs = virture:get_sup_spec() ++
         [
             #{id => gateway_sup, start => {gateway_sup, start_link, []}, type => supervisor},
-            #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor}
+            #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor},
+            #{id => dynames_sup, start => {dynames_sup, start_link, []}, type => supervisor}
         ],
     
     {ok, {SupFlags, ChildSpecs}}.

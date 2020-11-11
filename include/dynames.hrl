@@ -17,7 +17,6 @@
 
 %% 事件
 -define(DYNAMES_EVENT_TEST, test).% 测试
--define(DYNAMES_EVENT_EXECUTE(SkillId), {execute, UnitIdList, Event}).% 执行一个事件, 每次取出一个id, 然后放回事件
 -define(DYNAMES_EVENT_SKILL1(SkillId), {skill, SkillId}).% 释放一个技能
 
 %% 触发事件类型

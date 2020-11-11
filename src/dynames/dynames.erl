@@ -16,8 +16,7 @@
 
 -export([init_rand_seed/0, init_rand_seed/1, rand/0, rand/1]).
 
-%% unit过滤
--export([other_unit/2, unit_in_radius/3]).
+-export([distance/2, distance/3, distance/4]).
 
 
 %% @doc 获取某个标识下的唯一id, 从1开始
@@ -59,28 +58,20 @@ rand(N) ->
     exia:eput(?PD_DYNAMES_RAND_STATE, State),
     Rand.
 
-%% @doc 除自己以外的unit
--spec other_unit(#dynames_unit{}, map()) -> map().
-other_unit(#dynames_unit{id = Id}, UnitMap) ->
-    maps:filter(fun(K, V, Acc) ->
-        case K == Id of
-            true -> Acc;
-            _ -> [V | Acc]
-        end
-                end, UnitMap).
+%% @doc 两个单位的距离
+distance(#dynames_unit{x = X1, y = Y1}, #dynames_unit{x = X2, y = Y2}) ->
+    distance(X1, Y1, X2, Y2).
 
-%% @doc 在圆内的目标
-unit_in_radius(Radius, #dynames_unit{x = X, y = Y}, UnitMap) ->
-    maps:filter(fun(_K, V, Acc) ->
-        case distance(X, Y, V) > Radius of
-            true -> Acc;
-            _ -> [V | Acc]
-        end
-                end, UnitMap).
-
+%% @doc 一个点和一个单位的距离
 distance(X1, Y1, #dynames_unit{x = X2, y = Y2}) ->
+    distance(X1, Y1, X2, Y2).
+
+%% @doc 两个点的距离
+distance(X1, Y1, X2, Y2) ->
     DX = X1 - X2,
     DY = Y1 - Y2,
     math:sqrt(DX * DX + DY * DY).
+
+
     
     

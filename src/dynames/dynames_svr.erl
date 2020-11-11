@@ -20,23 +20,14 @@
 -include("util.hrl").
 
 %% API
--export([start/2, start/3, start_link/2, start_link/3]).
+-export([start_link/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
 -export([next_frame/1, execute_frame/1, execute_event/2]).
 
-start(Args, Options) ->
-    exia:start(?MODULE, Args, Options).
-
-start(Name, Args, Options) ->
-    exia:start(Name, ?MODULE, Args, Options).
-
-start_link(Args, Options) ->
-    exia:start_link(?MODULE, Args, Options).
-
-start_link(Name, Args, Options) ->
-    exia:start_link(Name, ?MODULE, Args, Options).
+start_link(Args) ->
+    exia:start_link(?MODULE, Args, []).
 
 init(_Args) ->
     dynames:init_rand_seed(),
@@ -87,29 +78,41 @@ execute_event(#dynames_event{user = User} = Event, #dynames{unit_map = UnitMap, 
     ?DO_IF(Deep > ?DYNAMES_EVENT_MAX_DEEP, exit(event_too_deep)),
     %% 过滤目标
     case filter_event_target(Unit, Event, State) of
-        {ok, TargetList, Event1} ->
+        {ok, TargetMap, Event1} ->
             State1 = State#dynames{event_deep = Deep + 1},
-            %% 执行事件
-            try ?DYM_DYNAMES_UNIT3(Module, execute_event, [TargetList, Unit, Event1, State1]) of
-                {ok, State2} ->
-                    State2#dynames{event_deep = Deep};
-                _ ->
-                    State
-            catch
-                throw:?DYNAMES_RETURN1(?DYNAMES_RETURN_SKIP) ->
-                    State;
-                throw:?DYNAMES_RETURN1({ok, #dynames{} = State2}) ->
-                    State2#dynames{event_deep = Deep};
-                C:E:S ->
-                    %% TODO 报错处理方案??
-                    erlang:raise(C, E, S)
-            end;
+            State2 =
+                maps:fold(fun(_, Target, Acc) ->
+                    try ?DYM_DYNAMES_UNIT3(Module, execute_event, [Target, Unit, Event1, Acc]) of
+                        {ok, Acc1} ->
+                            Acc1;
+                        _ ->
+                            Acc
+                    catch
+                        throw:?DYNAMES_RETURN1(?DYNAMES_RETURN_SKIP) ->
+                            Acc;
+                        throw:?DYNAMES_RETURN1({ok, #dynames{} = Acc1}) ->
+                            Acc1;
+                        C:E:S ->
+                            %% TODO 报错处理方案??
+                            erlang:raise(C, E, S)
+                    end
+                          end, State1, TargetMap),
+            State2#dynames{event_deep = Deep};
         _ ->
             State
     end.
 
 %% 过滤目标
 filter_event_target(#dynames_unit{module = Module} = Unit, Event, State) ->
-    ?DYM_DYNAMES_UNIT3(Module, filter_event_target, [Unit, Event, State]);
+    try ?DYM_DYNAMES_UNIT3(Module, filter_event_target, [Unit, Event, State])
+    catch
+        throw:?DYNAMES_RETURN1(?DYNAMES_RETURN_SKIP) ->
+            false;
+        throw:?DYNAMES_RETURN1(Return) ->
+            Return;
+        C:E:S ->
+            %% TODO 报错处理方案??
+            erlang:raise(C, E, S)
+    end;
 filter_event_target(_, _, _) ->
     false.

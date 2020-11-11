@@ -23,21 +23,25 @@
 init(Unit, Dynames) ->
     {ok, Unit, Dynames}.
 
-filter_event_target(_Unit, Event, #dynames{unit_map = UnitMap}) ->
+filter_event_target(Unit, Event, #dynames{unit_map = UnitMap}) ->
+    #dynames_unit{id = UnitId} = Unit,
     %% 除自己以外的unit都是目标
-    TargetList = maps:keys(UnitMap) -- [Event#dynames_event.user],
+    TargetMap =
+        maps:filter(fun(K, _) ->
+            UnitId =/= K
+                    end, UnitMap),
     %% 再执行两次后停止, 模拟事件的数据传递
     case Event#dynames_event.stream of
         2 ->
-            {ok, TargetList, Event#dynames_event{stream = stop}};
+            {ok, TargetMap, Event#dynames_event{stream = stop}};
         undefined ->
-            {ok, TargetList, Event#dynames_event{stream = 1}};
+            {ok, TargetMap, Event#dynames_event{stream = 1}};
         Stream ->
-            {ok, TargetList, Event#dynames_event{stream = Stream + 1}}
+            {ok, TargetMap, Event#dynames_event{stream = Stream + 1}}
     end.
 
 execute_event(Target, Unit, Event, #dynames{frame = Frame, stream_event = StreamEvent} = State) ->
-    ?debugFmt("~n~p ~p ~p ~p~n", [Target#dynames_unit.id, Unit#dynames_unit.id, Event#dynames_event.stream, dynames:rand()]),
+    ?debugFmt("~n~p ~p ~p ~p", [Target#dynames_unit.id, Unit#dynames_unit.id, Event#dynames_event.stream, dynames:rand()]),
     case Event#dynames_event.stream of
         stop ->
             %% 下一帧执行一个事件, 模拟事件延时触发
@@ -67,7 +71,7 @@ base_test_() ->
                         %% 这个事件不会执行
                         3 => [Event2]
                     },
-                    unit_map = #{1 => #dynames_unit{id = 1, module = dynames_test}, 2 => #dynames_unit{id = 1, module = dynames_test}}
+                    unit_map = #{1 => #dynames_unit{id = 1, module = dynames_test}, 2 => #dynames_unit{id = 2, module = dynames_test}}
                 }
                                    end),
             Pid

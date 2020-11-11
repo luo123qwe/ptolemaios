@@ -16,10 +16,9 @@
 
 -export([hurt/5]).
 
--type unit_id() :: any().
-
 -callback init(#dynames_unit{}, #dynames{}) -> {ok, #dynames_unit{}, #dynames_event{}}.
--callback filter_event_target(#dynames_unit{}, #dynames_event{}, #dynames{}) -> {ok, [unit_id()], #dynames_event{}}.
+-callback filter_event_target(#dynames_unit{}, #dynames_event{}, #dynames{}) -> {ok, #{Id :: any() => #dynames_unit{}}, #dynames_event{}}.
+%% 处理事件传入的unit是旧数据, 需要重新读取再执行
 -callback execute_event(#dynames_unit{}, #dynames_unit{}, #dynames_event{}, #dynames{}) -> {ok, #dynames{}}.
 
 %% @doc 造成伤害

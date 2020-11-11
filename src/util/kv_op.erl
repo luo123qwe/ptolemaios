@@ -231,7 +231,7 @@ store([Key | T], Value, Struct) when is_atom(Struct);is_reference(Struct) ->
     %% ets 不会变
     Struct;
 store(Key, Value, Struct) ->
-    store([{Key, undefined}], Value, Struct).
+    store([Key], Value, Struct).
 
 %% @doc 存储一个值, 附带默认值{key, default}
 %%
