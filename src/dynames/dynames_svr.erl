@@ -72,34 +72,38 @@ execute_frame(#dynames{frame = Frame, stream_event = StreamEvent} = State) ->
 %% @doc 执行一个事件
 -spec execute_event(#dynames_event{}, #dynames{}) -> #dynames{}.
 execute_event(#dynames_event{user = User} = Event, #dynames{unit_map = UnitMap, event_deep = Deep} = State) ->
-    #dynames_unit{module = Module} = Unit = kv_op:lookup(User, UnitMap, undefined),
-    %% 事件深度
-    %% todo 收集哪些信息?
-    ?DO_IF(Deep > ?DYNAMES_EVENT_MAX_DEEP, exit(event_too_deep)),
-    %% 过滤目标
-    case filter_event_target(Unit, Event, State) of
-        {ok, TargetMap, Event1} ->
-            State1 = State#dynames{event_deep = Deep + 1},
-            State2 =
-                maps:fold(fun(_, Target, Acc) ->
-                    try ?DYM_DYNAMES_UNIT3(Module, execute_event, [Target, Unit, Event1, Acc]) of
-                        {ok, Acc1} ->
-                            Acc1;
-                        _ ->
-                            Acc
-                    catch
-                        throw:?DYNAMES_RETURN1(?DYNAMES_RETURN_SKIP) ->
-                            Acc;
-                        throw:?DYNAMES_RETURN1({ok, #dynames{} = Acc1}) ->
-                            Acc1;
-                        C:E:S ->
-                            %% TODO 报错处理方案??
-                            erlang:raise(C, E, S)
-                    end
-                          end, State1, TargetMap),
-            State2#dynames{event_deep = Deep};
-        _ ->
-            State
+    case kv_op:lookup(User, UnitMap, undefined) of
+        undefined ->% 被移出出游戏了
+            State;
+        #dynames_unit{module = Module} = Unit ->
+            %% 事件深度
+            %% todo 收集哪些信息?
+            ?DO_IF(Deep > ?DYNAMES_EXECUTE_EVENT_MAX_DEEP, exit(event_too_deep)),
+            %% 过滤目标
+            case filter_event_target(Unit, Event, State) of
+                {ok, TargetMap, Event1} ->
+                    State1 = State#dynames{event_deep = Deep + 1},
+                    State2 =
+                        maps:fold(fun(_, Target, Acc) ->
+                            try ?DYM_DYNAMES_UNIT3(Module, execute_event, [Target, Unit, Event1, Acc]) of
+                                {ok, Acc1} ->
+                                    Acc1;
+                                _ ->
+                                    Acc
+                            catch
+                                throw:?DYNAMES_RETURN1(?DYNAMES_RETURN_SKIP) ->
+                                    Acc;
+                                throw:?DYNAMES_RETURN1({ok, #dynames{} = Acc1}) ->
+                                    Acc1;
+                                C:E:S ->
+                                    %% TODO 报错处理方案??
+                                    erlang:raise(C, E, S)
+                            end
+                                  end, State1, TargetMap),
+                    State2#dynames{event_deep = Deep};
+                _ ->
+                    State
+            end
     end.
 
 %% 过滤目标

@@ -13,11 +13,12 @@
 
 -include("util.hrl").
 -include("dynames.hrl").
+-include("attr.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
 %% API
--export([init/2, filter_event_target/3, execute_event/4]).
+-export([init/2, filter_event_target/3, execute_event/4, init_svr/1]).
 
 %% 没用到的, 初始化直接赋值
 init(Unit, Dynames) ->
@@ -52,15 +53,47 @@ execute_event(Target, Unit, Event, #dynames{frame = Frame, stream_event = Stream
             {ok, dynames_svr:execute_event(Event#dynames_event{user = Target#dynames_unit.id}, State)}
     end.
 
+%% 手动测, Unit1加攻击, 攻击Unit2, 然后触发Unit1的死亡监听
+init_svr(P) ->
+    sys:replace_state(P, fun(_) ->
+        Attr = [{?ATTR_HP, 100}, {?ATTR_ATTACK, 100}, {?ATTR_DEFENSE, 0}],
+        BaseUnit1 = dynames_unit:new(1),
+        Unit1 = BaseUnit1#dynames_unit{
+            state = ?DYNAMES_UNIT_STATE_ALIVE,
+            x = 0, y = 1000,
+            attr = Attr, origin_attr = Attr
+        },
+        BaseUnit2 = dynames_unit:new(2),
+        Unit2 = BaseUnit2#dynames_unit{
+            state = ?DYNAMES_UNIT_STATE_ALIVE,
+            x = 0, y = 0,
+            attr = Attr, origin_attr = Attr
+        },
+        BaseSkill1Event = dynames_event:new(1, 1),
+        Skill1Event = BaseSkill1Event#dynames_event{event = ?DYNAMES_EVENT_SKILL1(?DYNAMES_SKILL_ID2(1, 1)), user = Unit1#dynames_unit.id},
+        BaseSkill2Event = dynames_event:new(1, 1),
+        Skill2Event = BaseSkill2Event#dynames_event{event = ?DYNAMES_EVENT_SKILL1(?DYNAMES_SKILL_ID2(1, 2)), user = Unit1#dynames_unit.id},
+        BaseDeadEvent = dynames_event:new(0, 1),
+        DeadEvent = BaseDeadEvent#dynames_event{event = ?DYNAMES_EVENT_NORMAL_DEAD, user = Unit1#dynames_unit.id},
+        #dynames{
+            frame = 0,
+            stream_event = #{1 => [Skill2Event], 2 => [Skill1Event]},
+            trigger_event = #{?DYNAMES_ETTA_DEAD => [DeadEvent]},
+            unit_map = #{
+                Unit1#dynames_unit.id => Unit1,
+                Unit2#dynames_unit.id => Unit2
+            }
+        }
+                         end).
+
 
 -ifdef(TEST).
 
 base_test_() ->
     {setup,
         fun() ->
-            {ok, Pid} = dynames_svr:start([test], []),
+            {ok, Pid} = dynames_svr:start_link([]),
             sys:replace_state(Pid, fun(_) ->
-                dynames:init_rand_seed({1, 1, 1}),
                 BaseEvent1 = dynames_event:new(1, 1),
                 Event1 = BaseEvent1#dynames_event{user = 1, event = ?DYNAMES_EVENT_TEST},
                 BaseEvent2 = dynames_event:new(3, 1),

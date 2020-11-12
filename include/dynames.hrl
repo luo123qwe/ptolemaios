@@ -13,18 +13,20 @@
 -define(DYNAMES_SORT2(Frame, Priority), -Frame * 10000 + Priority).
 
 %% 事件最大深度, 防止循环回调
--define(DYNAMES_EVENT_MAX_DEEP, 10).
+-define(DYNAMES_EXECUTE_EVENT_MAX_DEEP, 10).
 
 %% 事件
 -define(DYNAMES_EVENT_TEST, test).% 测试
 -define(DYNAMES_EVENT_SKILL1(SkillId), {skill, SkillId}).% 释放一个技能
+-define(DYNAMES_EVENT_NORMAL_DEAD, dead).% 普通怪物死亡触发
 
 %% 触发事件类型
 -define(DYNAMES_ETTB_DEAD, b_dead).% 死亡前
 -define(DYNAMES_ETTA_DEAD, a_dead).% 死亡后
 
 %% 唯一id类型
--define(DYNAMES_ID_TYPE_GLOBAL, global).
+-define(DYNAMES_ID_TYPE_EVENT, event).
+-define(DYNAMES_ID_TYPE_UNIT, unit).
 
 %% 技能id, id*100 + 第N个技能
 %% id规则跟着项目换就好

@@ -14,12 +14,20 @@
 
 %% API
 
--export([hurt/5]).
+-export([new/1, hurt/5]).
 
 -callback init(#dynames_unit{}, #dynames{}) -> {ok, #dynames_unit{}, #dynames_event{}}.
 -callback filter_event_target(#dynames_unit{}, #dynames_event{}, #dynames{}) -> {ok, #{Id :: any() => #dynames_unit{}}, #dynames_event{}}.
 %% 处理事件传入的unit是旧数据, 需要重新读取再执行
 -callback execute_event(#dynames_unit{}, #dynames_unit{}, #dynames_event{}, #dynames{}) -> {ok, #dynames{}}.
+
+%% todo 根据具体需求修改
+new(DataId) ->
+    #dynames_unit{
+        id = dynames:get_id(?DYNAMES_ID_TYPE_UNIT),
+        data_id = DataId,
+        module = dynames_mapping:actor_module(DataId)
+    }.
 
 %% @doc 造成伤害
 -spec hurt(number(), #dynames_unit{}, #dynames_unit{}, #dynames_event{}, #dynames{}) -> #dynames{}.

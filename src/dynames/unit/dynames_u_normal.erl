@@ -52,6 +52,9 @@ filter_event_target(Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId)}
     Radius = kv_op:lookup([#data_dynames_unit.skill_arg_1, radius], data_dynames_unit:get(UnitDataId), undefined),
     TargetMap = filter_other_radius(Radius, Unit, UnitMap),
     {ok, TargetMap, Event};
+%% 死亡
+filter_event_target(Unit, #dynames_event{event = ?DYNAMES_EVENT_NORMAL_DEAD} = Event, _Dynames) ->
+    {ok, #{Unit#dynames_unit.id => Unit}, Event};
 filter_event_target(_Unit, Event, _Dynames) ->
     ?LOG_ERROR("unknown event: ~w", [Event]),
     {ok, [], Event}.
@@ -72,9 +75,10 @@ execute_event(Target, Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId
     
     %% 扣血
     Dynames1 = dynames_unit:hurt(Hurt, Target, Unit, Event, Dynames),
+    ?LOG_NOTICE("~w ~w", [Target#dynames_unit.id, Event]),
     {ok, Dynames1};
 %% 近战加攻击
-execute_event(Target, Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId)}, Dynames)
+execute_event(Target, Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId)} = Event, Dynames)
     when SkillId == ?DYNAMES_SKILL_ID2(?ID_1, 2) ->
     #dynames_unit{data_id = UnitDataId} = Unit,
     #dynames_unit{id = TargetId, state = TargetState, attr = TargetAttr} = Target,
@@ -86,9 +90,10 @@ execute_event(Target, Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId
     Target1 = Target#dynames_unit{attr = TargetAttr1},
     
     Dynames1 = kv_op:store([#dynames.unit_map, TargetId], Target1, Dynames),
+    ?LOG_NOTICE("~w ~w", [Target#dynames_unit.id, Event]),
     {ok, Dynames1};
 %% 远程减攻击
-execute_event(Target, Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId)}, Dynames)
+execute_event(Target, Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId)} = Event, Dynames)
     when SkillId == ?DYNAMES_SKILL_ID2(?ID_2, 2) ->
     #dynames_unit{data_id = UnitDataId} = Unit,
     #dynames_unit{id = TargetId, state = TargetState, attr = TargetAttr} = Target,
@@ -100,7 +105,13 @@ execute_event(Target, Unit, #dynames_event{event = ?DYNAMES_EVENT_SKILL1(SkillId
     Target1 = Target#dynames_unit{attr = TargetAttr1},
     
     Dynames1 = kv_op:store([#dynames.unit_map, TargetId], Target1, Dynames),
+    ?LOG_NOTICE("~w ~w", [Target#dynames_unit.id, Event]),
     {ok, Dynames1};
+%% 死亡回调
+execute_event(Target, _Unit, #dynames_event{event = ?DYNAMES_EVENT_NORMAL_DEAD} = Event, Dynames) ->
+    %% todo 仅打印一句
+    ?LOG_NOTICE("~w ~w", [Target#dynames_unit.id, Event]),
+    {ok, Dynames};
 execute_event(_Target, _Unit, Event, Dynames) ->
     ?LOG_ERROR("unknown event: ~w", [Event]),
     {ok, Dynames}.

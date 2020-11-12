@@ -22,7 +22,7 @@
 new(Frame, Priority) ->
     #dynames_event{
         sort = ?DYNAMES_SORT2(Frame, Priority),
-        id = dynames:get_id(?DYNAMES_ID_TYPE_GLOBAL),
+        id = dynames:get_id(?DYNAMES_ID_TYPE_EVENT),
         frame = Frame,
         priority = Priority
     }.
@@ -31,7 +31,7 @@ new(Frame, Priority) ->
 copy(Frame, Priority, Event) ->
     Event#dynames_event{
         sort = ?DYNAMES_SORT2(Frame, Priority),
-        id = dynames:get_id(?DYNAMES_ID_TYPE_GLOBAL),
+        id = dynames:get_id(?DYNAMES_ID_TYPE_EVENT),
         frame = Frame,
         priority = Priority
     }.
@@ -83,7 +83,7 @@ do_trigger([H | T], Type, StreamData, Dynames) ->
         false ->
             do_trigger(T, Type, StreamData, Dynames);
         {value, _, EventList1} ->
-            Dynames1 = kv_op:store(Key, Dynames, EventList1),
+            Dynames1 = kv_op:store(Key, EventList1, Dynames),
             Dynames2 = dynames_svr:execute_event(H#dynames_event{stream = StreamData}, Dynames1),
             do_trigger(T, Type, StreamData, Dynames2)
     end.
