@@ -3,3 +3,8 @@ Q:
 A:
     原因不明, 使用os:cmd(filename:absname("a/b/c/d"))解决
 
+Q:
+    在win下编译C文件成功但是reabr3_util:sh使用unicode:characters_to_binary/1
+    可能因为中文(非unicode)返回error, 导致编失败
+A:
+    cmd改成unicode, chcp 65001
