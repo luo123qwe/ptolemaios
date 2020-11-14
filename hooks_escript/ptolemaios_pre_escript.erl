@@ -152,7 +152,7 @@ compile_proto(RebarConfig) ->
                                     "    Acc.\n\n"
                                 ])
                             end,
-                            L1 = ["        ", Name, ":get_msg_defs()" | L],
+                            L1 = [["        ", Name, ":get_msg_defs()"] | L],
                             {PB1, D1, R1} =
                                 lists:foldr(fun([PName, Proto], {PB_1, D_1, R_1}) ->
                                     {
