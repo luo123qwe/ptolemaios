@@ -6,6 +6,7 @@ call vcvarsall.bat x64
 rem 设置编码
 chcp 65001
 
+
 setlocal
 set rebarscript=%~f0
 escript.exe "%rebarscript:.cmd=%" %*
