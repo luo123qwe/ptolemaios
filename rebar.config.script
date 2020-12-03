@@ -115,11 +115,6 @@ MillisecondStr = integer_to_list(Millisecond),
         type_specs
     ]},
 
-    %% Windows需要先设置编译环境
-    %% 把cl.exe放到环境变量
-    %% windows设置vs环境
-    %% "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x64
-    %% "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
     {port_specs, [
         {"priv/template_enif.so", [
             "c_src/template_enif.c"

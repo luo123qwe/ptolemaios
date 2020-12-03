@@ -10,6 +10,7 @@
 == Contents ==
 
 <ol>
+  <li>{@section 安装}</li>
   <li>{@section 规范}</li>
   <li>{@section 工具(util)}</li>
   <li>{@section 数据(virture)}</li>
@@ -22,6 +23,14 @@
   <li>{@section 结构(struct)}</li>
   <li>{@section 行为树(behaviac)}</li>
 </ol>
+
+== 安装 ==
+
+clone项目, 设置window编译环境(查看rebar3.cmd)
+
+设置config/sys.config.script, gateway(tcp端口)和virture(数据库)
+
+rebar3 shell即可启动
 
 == 规范 ==
 
