@@ -91,8 +91,17 @@
     stream :: any()%% 事件的数据流
 }).
 
-%%%%%%%%%%%xlsx2erl_dynames record define start%%%%%%%%%%%%%%%%%
--record(data_dynames_unit, {id, name, type, radius, skill_arg_1, skill_arg_2}).
-%%%%%%%%%%%xlsx2erl_dynames record define end%%%%%%%%%%%%%%%%%%%
 
+%%%%%%%%%%% data_dynames_unit record define start%%%%%%%%%%%%%%%%%
+%% 
+-record(data_dynames_unit, {
+    id,% 
+    name,% 
+    type,% 
+    radius,% 
+    skill_arg_1,% 
+    skill_arg_2% 
+}).
+%%%%%%%%%%% data_dynames_unit record define end%%%%%%%%%%%%%%%%%%%
 -endif.
+

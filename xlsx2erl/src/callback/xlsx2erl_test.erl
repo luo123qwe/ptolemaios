@@ -100,7 +100,9 @@ get_equip() ->
 
 compile(#xlsx2erl_cb_args{hrl_path = HrlPath} = Args) ->
     #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl_util:get_excel(?MODULE),
-    xlsx2erl_util:copy_mask_body(?MODULE, HrlPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
+    %% todo 删除不需要的copy
+    xlsx2erl_util:copy_mask_body(?MODULE, "data_test_goods", HrlPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
+    xlsx2erl_util:copy_mask_body(?MODULE, "data_test_equip", HrlPath ++ "/" ++ ?XLSX2ERL_DEFAULT_HRL),
     do_compile(SheetList, Args).
 
 do_compile([], _Args) ->

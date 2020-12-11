@@ -14,7 +14,7 @@
 -export([convert_bin/4, convert_int/4, convert_float/4, convert_term/4, convert_json/4]).
 
 
--export([to_iolist/1, copy_mask_body/2, copy_mask_body/4, ensure_dets/1, get_excel/1]).
+-export([to_iolist/1, copy_mask_body/3, copy_mask_body/4, ensure_dets/1, get_excel/1]).
 
 %% @doc 二进制文本
 -spec convert_bin(non_neg_integer(), [atom()], #xlsx2erl_row{}, #xlsx2erl_sheet{}) -> binary().
@@ -90,7 +90,9 @@ eval_fix_string([$.]) ->
 eval_fix_string([H | T]) ->
     [H | eval_fix_string(T)].
 
-%% @doc 转换成IOList, 文本请传入binary
+%% @doc 转换成erlang格式, 返回IOList
+%%
+%% 文本请传入binary, 转换成<<X/utf8>>
 to_iolist(Binary) when is_binary(Binary) ->
     List = unicode:characters_to_list(Binary),
     %% 文本中含有 " 需要转换成 \", \ 转换成 \\
@@ -106,14 +108,19 @@ to_iolist(Term) ->
 
 %% @doc 复制mask包裹的内容到指定文件, 不会影响文件原有内容, 搜索到第一个mask end就停止
 
+%% 如果ToFile以-endif.(后续可以包含([ \t\n]*)+|(%.*))结尾, 且没有复制过, 则复制到-endif.前
+
 %% %%%%mask start%%%%%%
 
 %% 复制的内容
 
 %% %%%%mask end%%%%%%
-copy_mask_body(Module, ToFile) ->
+copy_mask_body(Module, RecordName, ToFile) ->
+    MaskStart = ?XLSX2ERL_RECORD_START_MASK1(RecordName),
+    MaskEnd = ?XLSX2ERL_RECORD_END_MASK1(RecordName),
     ModuleStr = atom_to_list(Module),
-    copy_mask_body(?XLSX2ERL_RECORD_START_MASK1(ModuleStr), ?XLSX2ERL_RECORD_END_MASK1(ModuleStr), "include/" ++ ModuleStr ++ ".hrl", ToFile).
+    FromFile = "include/" ++ ModuleStr ++ ".hrl",
+    copy_mask_body(MaskStart, MaskEnd, FromFile, ToFile).
 copy_mask_body(MaskStart, MaskEnd, FromFile, ToFile) ->
     {ok, FromFD} = file:open(FromFile, [read]),
     case copy_mask_body_1(MaskStart, MaskEnd, FromFD, [], false) of
@@ -158,41 +165,74 @@ copy_mask_body_1(MaskStart, MaskEnd, FromFD, MaskData, IsFindStart) ->
             []
     end.
 
-%% 复制数据到to file
+%% 一行行读
 copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, ToData, IsFindStart, IsFinishCopy) ->
     case file:read_line(ToFD) of
+        {ok, "-endif." ++ _ = Data} when IsFinishCopy == false, IsFindStart == false ->
+            %% 如果最后是-endif., 且没有复制
+            %% 把内容复制到-endif.前
+            copy_mask_body_3(MaskStart, MaskEnd, ToFD, MaskData, ToData, [Data]);
         {ok, Data} ->
-            case IsFinishCopy of
-                true ->
-                    copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, [Data | ToData], IsFindStart, IsFinishCopy);
-                _ ->
-                    case copy_mask_body_is_mask(Data, MaskStart) of
-                        true ->% 开始复制
-                            copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, MaskData ++ [Data | ToData], true, IsFinishCopy);
-                        false ->
-                            case copy_mask_body_is_mask(Data, MaskEnd) of
-                                true ->% 结束复制
-                                    copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, [Data | ToData], IsFindStart, true);
-                                false ->
-                                    case IsFindStart of
-                                        true ->
-                                            copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, ToData, IsFindStart, IsFinishCopy);
-                                        false ->
-                                            copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, [Data | ToData], IsFindStart, IsFinishCopy)
-                                    end
-                            end
-                    end
-            end;
+            {ToData1, IsFindStart1, IsFinishCopy1} =
+                copy_mask_body_4(MaskStart, MaskEnd, Data, MaskData, ToData, IsFindStart, IsFinishCopy),
+            copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, ToData1, IsFindStart1, IsFinishCopy1);
         eof ->
             case IsFinishCopy of
                 true ->
                     lists:reverse(ToData);
                 _ ->
-                    lists:reverse([MaskEnd, MaskData, MaskStart ++ "\n"] ++ "\n" ++ ToData)
+                    lists:reverse([MaskEnd ++ "\n", lists:reverse(MaskData), MaskStart ++ "\n"] ++ "\n" ++ ToData)
             end;
         {error, Error} ->
             io:format("copy_mask_body ~p error~n~p~n", [?LINE, Error]),
             []
+    end.
+
+%% 剩下的内容是不是erlang代码
+copy_mask_body_3(MaskStart, MaskEnd, ToFD, MaskData, ToData, NewToData) ->
+    case file:read_line(ToFD) of
+        {ok, "-endif." ++ _ = Data} ->
+            %% 如果最后是-endif., 且没有复制
+            %% 把内容复制到-endif.前
+            copy_mask_body_3(MaskStart, MaskEnd, ToFD, MaskData, NewToData ++ ToData, [Data]);
+        {ok, Data} ->
+            case re:run(Data, "([ \t\n]*)+|(%.*)", [{capture, first, index}]) of
+                nomatch ->
+                    {ToData1, IsFindStart1, IsFinishCopy1} =
+                        copy_mask_body_4(MaskStart, MaskEnd, Data, MaskData, NewToData ++ ToData, false, false),
+                    copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, ToData1, IsFindStart1, IsFinishCopy1);
+                _ ->
+                    copy_mask_body_3(MaskStart, MaskEnd, ToFD, MaskData, ToData, [Data | NewToData])
+            end;
+        eof ->
+            lists:reverse(NewToData ++ [MaskEnd ++ "\n", lists:reverse(MaskData), MaskStart ++ "\n"] ++ "\n" ++ ToData);
+        {error, Error} ->
+            io:format("copy_mask_body ~p error~n~p~n", [?LINE, Error]),
+            []
+    end.
+
+%% 复制到ToData
+copy_mask_body_4(MaskStart, MaskEnd, Data, MaskData, ToData, IsFindStart, IsFinishCopy) ->
+    case IsFinishCopy of
+        true ->
+            {[Data | ToData], IsFindStart, IsFinishCopy};
+        _ ->
+            case copy_mask_body_is_mask(Data, MaskStart) of
+                true ->% 开始复制
+                    {MaskData ++ [Data | ToData], true, IsFinishCopy};
+                false ->
+                    case copy_mask_body_is_mask(Data, MaskEnd) of
+                        true ->% 结束复制
+                            {[Data | ToData], IsFindStart, true};
+                        false ->
+                            case IsFindStart of
+                                true ->
+                                    {ToData, IsFindStart, IsFinishCopy};
+                                false ->
+                                    {[Data | ToData], IsFindStart, IsFinishCopy}
+                            end
+                    end
+            end
     end.
 
 copy_mask_body_is_mask([$\n], []) ->

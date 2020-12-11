@@ -31,7 +31,7 @@ namespace behaviac {
     so does the Sequence. If it returns Success, the Sequence will move on to the next child in line
     and return Running.If a child returns Running, so does the Sequence and that same child will be
     ticked again next time the Sequence is ticked.Once the Sequence reaches the end of its child list,
-    it returns Success and resets its child index ¨C meaning the first child in the line will be ticked
+    it returns Success and resets its child index ï¿½C meaning the first child in the line will be ticked
     on the next tick of the Sequence.
     */
     class BEHAVIAC_API SequenceStochastic : public CompositeStochastic {

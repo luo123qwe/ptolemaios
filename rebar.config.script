@@ -55,8 +55,10 @@ MillisecondStr = integer_to_list(Millisecond),
         {extended_start_script, true}
     ]},
 
-    %% set ESCRIPT_EMULATOR=werl&rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
-    %% ./rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
+    %% 带名字的节点
+    %% rebar3 shell --name ptolemaios@127.0.0.1 --setcookie ptolemaios_cookie
+    %% 性能测试(perf_*)+设置核心数
+    %% rebar3 compile & erl +sct L0-0T0-0C0-0 -pa _build/default/lib/ptolemaios/ebin
     {shell, [
         {config, "config/sys.config"},
         {apps, [ptolemaios]}

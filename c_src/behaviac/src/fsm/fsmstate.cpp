@@ -41,7 +41,7 @@ namespace behaviac {
             BEHAVIAC_ASSERT(pTransition != 0);
             this->m_transitions.push_back(pTransition);
 
-            //time£º2015-07-24 15:49:05
+            //timeï¿½ï¿½2015-07-24 15:49:05
             return;
         }
 

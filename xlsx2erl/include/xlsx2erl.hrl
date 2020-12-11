@@ -7,11 +7,12 @@
 -define(XLSX2ERL_INCLUDE_PATH, "include").% include路径
 
 %% mask字符串
--define(XLSX2ERL_RECORD_START_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define start%%%%%%%%%%%%%%%%%").
--define(XLSX2ERL_RECORD_END_MASK1(ModuleStr), "%%%%%%%%%%%" ++ ModuleStr ++ " record define end%%%%%%%%%%%%%%%%%%%").
+-define(XLSX2ERL_RECORD_START_MASK1(RecordName), "%%%%%%%%%%% " ++ RecordName ++ " record define start%%%%%%%%%%%%%%%%%").
+-define(XLSX2ERL_RECORD_END_MASK1(RecordName), "%%%%%%%%%%% " ++ RecordName ++ " record define end%%%%%%%%%%%%%%%%%%%").
 
--define(XLSX2ERL_KEY_MASK, "KEY").% 工作表标识哪一行是key
--define(XLSX2ERL_DATA_MASK, "DATA").% 工作表标识哪一行是data
+-define(XLSX2ERL_MASK_COMMENT, "COMMENT").% 工作表标识哪一行是注释
+-define(XLSX2ERL_MASK_KEY, "KEY").% 工作表标识哪一行是key
+-define(XLSX2ERL_MASK_DATA, "DATA").% 工作表标识哪一行是data
 
 %% 打印错误信息, 精确到哪一行
 -define(XLSX2ERL_ERROR4(Sheet, Row, Format, Args),

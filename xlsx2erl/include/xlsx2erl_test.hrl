@@ -1,5 +1,17 @@
-%%%%%%%%%%%xlsx2erl_test record define start%%%%%%%%%%%%%%%%%
--record(data_test_goods, {id, type, name, price, resolve_reward}).
--record(data_test_equip, {id, attr}).
-%%%%%%%%%%%xlsx2erl_test record define end%%%%%%%%%%%%%%%%%%%
-
+%%%%%%%%%%% data_test_goods record define start%%%%%%%%%%%%%%%%%
+%% 物品
+-record(data_test_goods, {
+    id,% id
+    type,% 类型
+    name,% 名字
+    price,% 价格
+    resolve_reward% 分解奖励, [{物品id, 数量}]
+}).
+%%%%%%%%%%% data_test_goods record define end%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%% data_test_equip record define start%%%%%%%%%%%%%%%%%
+%% 装备
+-record(data_test_equip, {
+    id,% id
+    attr% 属性
+}).
+%%%%%%%%%%% data_test_equip record define end%%%%%%%%%%%%%%%%%%%

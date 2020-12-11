@@ -55,7 +55,7 @@ compile_config() ->
             {ok, SysConfig} = file:script("config/sys.config.script"),
             file:write_file("config/sys.config", io_lib:format("~p.", [SysConfig]))
     end,
-    
+
     {ok, #file_info{mtime = VmArgsScriptMTime}} = file:read_file_info("config/vm.args.script"),
     case file:read_file_info("config/vm.args") of
         {ok, #file_info{mtime = VmArgstMTime}} when VmArgstMTime > VmArgsScriptMTime ->
@@ -66,7 +66,7 @@ compile_config() ->
                 lists:map(fun(Element) ->
                     case Element of
                         {K, V} -> [K, $ , V, $\n, $\n];
-                        _ -> [Element, $\n]
+                        _ -> [Element, $\n, $\n]
                     end end, VmArgs),
             file:write_file("config/vm.args", io_lib:format("~s", [VmArgs1]))
     end.

@@ -30,7 +30,7 @@ namespace behaviac {
     Success, then so does the Selector. If it returns Failure, the Selector will move on to the
     next child in line and return Running.If a child returns Running, so does the Selector and
     that same child will be ticked again next time the Selector is ticked. Once the Selector
-    reaches the end of its child list, it returns Failure and resets its child index ¨C meaning
+    reaches the end of its child list, it returns Failure and resets its child index ï¿½C meaning
     the first child in the line will be ticked on the next tick of the Selector.
     */
     class BEHAVIAC_API Selector : public BehaviorNode {
