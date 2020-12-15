@@ -14,7 +14,8 @@ message gateway_p_role_info {
 }
 
 message gateway_s_login {// 102
-    repeated gateway_p_role_info role_list = 1;
+    string account = 1;
+    repeated gateway_p_role_info role_list = 2;
 }
 
 // 选择角色

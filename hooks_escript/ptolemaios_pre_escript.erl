@@ -156,9 +156,9 @@ compile_proto(RebarConfig) ->
                             {PB1, D1, R1} =
                                 lists:foldr(fun([PName, Proto], {PB_1, D_1, R_1}) ->
                                     {
-                                        ["proto(Msg) when element(1, Msg) == ", PName, "-> ", Proto, ";\n" | PB_1],
+                                        ["proto(Msg) when element(1, Msg) == ", PName, " -> ", Proto, ";\n" | PB_1],
                                         ["decode(", Proto, ", Bin) ->\n  enif_protobuf:decode(Bin, ", PName, ");\n" | D_1],
-                                        ["route(Msg, Acc) when element(1, Msg) == ", PName, "->\n  ", Route, ":handle(Msg, Acc);\n" | R_1]
+                                        ["route(Msg, Acc) when element(1, Msg) == ", PName, " ->\n  ", Route, ":handle(Msg, Acc);\n" | R_1]
                                     }
                                             end, {PB, D, R}, MatchList),
                             {L1, PB1, D1, R1};
@@ -167,7 +167,7 @@ compile_proto(RebarConfig) ->
                             Acc
                     end
                                                                 end, {[], [], [], []}),
-            Load1 = string:join(Load, " ++\n") ++ ",",
+            Load1 = string:join(Load, " ++\n") ++ ",\n",
             LoadTail =
                 "    enif_protobuf:load_cache(DefList),\n"
                 "    ok.\n\n",

@@ -96,7 +96,7 @@ decode_bin(#gateway_state{bin = Bin, socket = Socket, player_pid = PlayerPid} = 
                         {stop, normal, State2};
                     Msg when ProtoHead == 1 ->% gateway的协议
                         %% 在本进程返回客户端, 省一个?MSG_GATEWAY_SEND_MSG1
-                        case catch gateway_1_handle:handle(Msg, State1) of
+                        case gateway_1_handle:handle(Msg, State1) of
                             ?ERROR_CODE1(ErrorCode) ->
                                 CBin = gateway:pack(#gateway_s_error{proto = Proto, code = ErrorCode}),
                                 ranch_tcp:send(Socket, CBin),

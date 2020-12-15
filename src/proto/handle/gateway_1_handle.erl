@@ -18,7 +18,7 @@ handle(#gateway_c_login{account = MsgAccount}, #gateway_state{account = Account}
     ?ERROR_CODE_NOT_MATCH3(local_lock:lock(?LOCAL_LOCK_ACCOUNT1(MsgAccount)), lock, ?ERROR_CODE_OTHER_HAD_LOGIN),
     %% 锁住该账号, 防止并发
     GateWay1 = GateWay#gateway_state{account = MsgAccount},
-    Msg = #gateway_s_login{role_list = pkg_role_list(GateWay1)},
+    Msg = #gateway_s_login{account = MsgAccount, role_list = pkg_role_list(GateWay1)},
     {[Msg], GateWay1};
 
 handle(#gateway_c_create_role{name = Name}, #gateway_state{account = Account} = Gateway) ->
