@@ -107,7 +107,11 @@ decode_bin(#gateway_state{bin = Bin, socket = Socket, player_pid = PlayerPid} = 
                                     CBin = gateway:pack(CMsg1),
                                     ranch_tcp:send(Socket, CBin)
                                               end, MsgList),
-                                decode_bin(State2)
+                                decode_bin(State2);
+                            Error ->
+                                ?LOG_ERROR("~w", [Error]),
+                                State2 = close(State1),
+                                {stop, normal, State2}
                         end;
                     Msg when is_pid(PlayerPid) ->% 玩家进程的协议
                         exia:cast(PlayerPid, ?MSG_PLAYER_GATEWAY_PROTO1(Msg)),
