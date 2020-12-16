@@ -8,6 +8,12 @@
 -define(VIRTURE_LIST(Size, List), {Size, List}).
 
 %% 数据类型
+-define(VIRTURE_INT8, int8).
+-define(VIRTURE_UINT8, uint8).
+-define(VIRTURE_INT16, int16).
+-define(VIRTURE_UINT16, uint16).
+-define(VIRTURE_INT24, int24).
+-define(VIRTURE_UINT24, uint24).
 -define(VIRTURE_INT32, int32).
 -define(VIRTURE_UINT32, uint32).
 -define(VIRTURE_INT64, int64).

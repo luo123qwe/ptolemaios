@@ -32,7 +32,8 @@
 
 -type json_def() :: term().% ?VIRTURE_JSON[_XXXX]
 -type field_type() ::
-?VIRTURE_INT32|?VIRTURE_INT64|?VIRTURE_UINT32|?VIRTURE_UINT64|?VIRTURE_FLOAT
+?VIRTURE_INT8|?VIRTURE_UINT8|?VIRTURE_INT16|?VIRTURE_UINT16|?VIRTURE_INT24|?VIRTURE_UINT24
+|?VIRTURE_INT32|?VIRTURE_UINT32|?VIRTURE_INT64|?VIRTURE_UINT64|?VIRTURE_FLOAT
 |?VIRTURE_STRING1(Length ::integer())|?VIRTURE_TO_STRING|?VIRTURE_BINARY|?VIRTURE_TO_BINARY
 |json_def().
 -export_type([field_type/0]).
@@ -68,6 +69,18 @@ build_table(VirtureList) ->
         end
               end, VirtureList).
 
+convert_type(?VIRTURE_INT8) ->
+    "tinyint";
+convert_type(?VIRTURE_UINT8) ->
+    "tinyint unsigned";
+convert_type(?VIRTURE_INT16) ->
+    "smallint";
+convert_type(?VIRTURE_UINT16) ->
+    "smallint unsigned";
+convert_type(?VIRTURE_INT24) ->
+    "mediumint";
+convert_type(?VIRTURE_UINT24) ->
+    "mediumint unsigned";
 convert_type(?VIRTURE_INT32) ->
     "int";
 convert_type(?VIRTURE_UINT32) ->
