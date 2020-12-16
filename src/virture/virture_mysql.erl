@@ -28,7 +28,7 @@
 -export([build_table/0, build_table/1, system_init/0, system_init/3, save_defined/0, fix_dets/3, check_dets/0, hotfix/2]).
 
 %% 数据库结构
--export([query/1]).
+-export([query/1, query/2]).
 
 -type json_def() :: term().% ?VIRTURE_JSON[_XXXX]
 -type field_type() ::
