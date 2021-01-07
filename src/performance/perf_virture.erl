@@ -35,10 +35,10 @@ run_dict(#perf_virture{
     store_times = StoreTimes,
     fold_times = FoldTimes
 }) ->
-    RecordList = [#virture_mysql_test_player{player_id = N} || N <- lists:seq(1, Size)],
+    RecordList = [#vsql_test_player{player_id = N} || N <- lists:seq(1, Size)],
     Dict =
         lists:foldl(fun(N, Acc) ->
-            dict:store(N, #virture_mysql_test_player{player_id = N}, Acc)
+            dict:store(N, #vsql_test_player{player_id = N}, Acc)
                     end, dict:new(), lists:seq(1, Size)),
     {
         dict,
@@ -60,7 +60,7 @@ dict_store(0, _, _, _) ->
 dict_store(StoreTimes, [], RecordList, Dict) ->
     dict_store(StoreTimes - 1, RecordList, RecordList, Dict);
 dict_store(StoreTimes, [Record | T], RecordList, Dict) ->
-    Dict1 = dict:store(Record#virture_mysql_test_player{}, Record, Dict),
+    Dict1 = dict:store(Record#vsql_test_player{}, Record, Dict),
     dict_store(StoreTimes, T, RecordList, Dict1).
 
 dict_fold(0, _Dict) ->
@@ -75,12 +75,12 @@ run_virture(#perf_virture{
     store_times = StoreTimes,
     fold_times = FoldTimes
 }) ->
-    virture_mysql:process_init(),
-    virture_mysql:clean_pd(),
-    virture_mysql:load(virture_mysql_test_player, undefined),
-    RecordList = [#virture_mysql_test_player{player_id = N} || N <- lists:seq(1, Size)],
+    vsql:process_init(),
+    vsql:clean_pd(),
+    vsql:load(vsql_test_player, undefined),
+    RecordList = [#vsql_test_player{player_id = N} || N <- lists:seq(1, Size)],
     lists:foreach(fun(N) ->
-        virture_mysql:insert(#virture_mysql_test_player{player_id = N})
+        vsql:insert(#vsql_test_player{player_id = N})
                   end, lists:seq(1, Size)),
     {
         virture,
@@ -95,7 +95,7 @@ virture_lookup(0, _, _) ->
 virture_lookup(LookupTimes, 0, Size) ->
     virture_lookup(LookupTimes - 1, Size, Size);
 virture_lookup(LookupTimes, N, Size) ->
-    _ = virture_mysql:lookup(virture_mysql_test_player, [N]),
+    _ = vsql:lookup(vsql_test_player, [N]),
     virture_lookup(LookupTimes, N - 1, Size).
 
 virture_store(0, _, _) ->
@@ -103,12 +103,12 @@ virture_store(0, _, _) ->
 virture_store(StoreTimes, [], RecordList) ->
     virture_store(StoreTimes - 1, RecordList, RecordList);
 virture_store(StoreTimes, [Record | T], RecordList) ->
-    virture_mysql:insert(Record),
+    vsql:insert(Record),
     virture_store(StoreTimes, T, RecordList).
 
 virture_fold(0) ->
     ok;
 virture_fold(N) ->
-    _ = virture_mysql:fold_cache(fun(K, V, Acc) -> [{K, V} | Acc] end, [], virture_mysql_test_player),
+    _ = vsql:fold_cache(fun(K, V, Acc) -> [{K, V} | Acc] end, [], vsql_test_player),
     virture_fold(N - 1).
 

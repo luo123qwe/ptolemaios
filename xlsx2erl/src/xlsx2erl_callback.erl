@@ -10,6 +10,6 @@
 
 -include("xlsx2erl.hrl").
 
--callback update_dets(FileName :: file:filename()) -> any().
+-callback update_dets(#xlsx2erl_sheet{}) -> any().
 -callback compile(#xlsx2erl_cb_args{}) -> any().
 -callback clean(#xlsx2erl_cb_args{}) -> any().

@@ -35,7 +35,7 @@
 %%% 对第一部分进一步的优化, 可以减少一次store时的lookup
 %%% @end
 %%%-------------------------------------------------------------------
--module(kv_op).
+-module(kv).
 -author("dominic").
 
 -include("util.hrl").
@@ -836,13 +836,13 @@ base_test_() ->
                 %% list, tuple_list, tuple, map, dict, ets
                 [
                     ?_assertEqual({ets, ok},
-                        kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
+                        kv:lookup([list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct, undefined)),
                     ?_assertEqual(undefined,
-                        kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, error], Struct, undefined)),
+                        kv:lookup([list, {tuple_list, 2}, 3, 2, map, dict, error], Struct, undefined)),
                     ?_assertError(badarg,
-                        kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct, undefined)),
+                        kv:lookup([list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct, undefined)),
                     ?_assertEqual(Struct,
-                        kv_op:store_with_default([
+                        kv:store_with_default([
                             {list, []},
                             {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
                             {3, '_'},
@@ -853,7 +853,7 @@ base_test_() ->
                         ], {lookup, ok}, [])),
                     ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup)),
                     ?_assertEqual(Struct,
-                        kv_op:store_with_default([
+                        kv:store_with_default([
                             {list, []},
                             {{tuple_list, 2}, {'_', tuple_list, {'_', #{}}}},
                             {3, '_'},
@@ -863,47 +863,47 @@ base_test_() ->
                             {{lookup, 2}, {lookup, undefined}}
                         ], update_element, [])),
                     ?_assertEqual(update_element,
-                        kv_op:lookup([list, {tuple_list, 2}, 3, 2, map, dict, {lookup, 2}], Struct, undefined)),
-                    ?_assertEqual([{1, 1}], kv_op:store_with_default(1, 1, [])),
+                        kv:lookup([list, {tuple_list, 2}, 3, 2, map, dict, {lookup, 2}], Struct, undefined)),
+                    ?_assertEqual([{1, 1}], kv:store_with_default(1, 1, [])),
                     
                     ?_test(ets:delete_all_objects(?MODULE)),
                     ?_test(ets:insert(?MODULE, [{1, 1}, {2, 1}, {3, 1}])),
-                    ?_assertError(badarith, kv_op:plus([[], #{1 => a}])),
-                    ?_assertEqual([{1, 3}, {2, 2}, {3, 1}], kv_op:plus([
+                    ?_assertError(badarith, kv:plus([[], #{1 => a}])),
+                    ?_assertEqual([{1, 3}, {2, 2}, {3, 1}], kv:plus([
                         [], #{1 => 1},
                         dict:store(1, 1, dict:store(2, 1, dict:new())), ?MODULE])),
-                    ?_assertEqual([{1, 0}, {2, 0}, {3, 0}], kv_op:subtract([
+                    ?_assertEqual([{1, 0}, {2, 0}, {3, 0}], kv:subtract([
                         [{1, 3}, {2, 2}, {3, 1}], #{1 => 1},
                         dict:store(1, 1, dict:store(2, 1, dict:new())), ?MODULE])),
-                    ?_assertEqual([{1, 1}, {2, 4}, {3, 3}], kv_op:multiply([
+                    ?_assertEqual([{1, 1}, {2, 4}, {3, 3}], kv:multiply([
                         [{1, 1}, {2, 2}, {3, 3}], #{1 => 1},
                         dict:store(1, 1, dict:store(2, 2, dict:new())), ?MODULE])),
-                    ?_assertEqual([{1, 1.0}, {2, 1.0}, {3, 3.0}], kv_op:divide([
+                    ?_assertEqual([{1, 1.0}, {2, 1.0}, {3, 3.0}], kv:divide([
                         [{1, 1}, {2, 2}, {3, 3}], #{1 => 1},
                         dict:store(1, 1, dict:store(2, 2, dict:new())), ?MODULE])),
                     
                     ?_test(ets:delete_all_objects(?MODULE)),
                     ?_test(ets:insert(?MODULE, {ets, ok})),
                     ?_assertEqual({ok, Struct},
-                        kv_op:update(fun(_, _) ->
+                        kv:update(fun(_, _) ->
                             {true, ok}
                                      end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct)),
                     ?_assert(ets:insert_new(?MODULE, {ets, ok})),
                     ?_assertEqual({ok, Struct},
-                        kv_op:update(fun(_, _) ->
+                        kv:update(fun(_, _) ->
                             {false, ok, {ets, replace}}
                                      end, [list, {tuple_list, 2}, 3, 2, map, dict, ets], Struct)),
                     ?_assertEqual([{ets, replace}], ets:lookup(?MODULE, ets)),
                     ?_assertEqual(undefined,
-                        kv_op:update(fun(_, _) ->
+                        kv:update(fun(_, _) ->
                             will_be_error
                                      end, [list, {tuple_list, 2}, 3, 2, map, dict, error], Struct)),
                     ?_assertError(badarg,
-                        kv_op:update(fun(_, _) ->
+                        kv:update(fun(_, _) ->
                             will_be_error
                                      end, [list, {tuple_list, 2}, 3, 2, map, dict, ets, error], Struct)),
                     ?_assertEqual({ok, Struct},
-                        kv_op:update_with_default(fun(lookup, {lookup, default}) ->
+                        kv:update_with_default(fun(lookup, {lookup, default}) ->
                             {false, ok, {lookup, ok}}
                                                   end,
                             [
@@ -917,7 +917,7 @@ base_test_() ->
                             ], [])),
                     ?_assertEqual([{lookup, ok}], ets:lookup(?MODULE, lookup)),
                     ?_assertEqual({ok, Struct},
-                        kv_op:update_with_default(fun({lookup, 2}, ok) ->
+                        kv:update_with_default(fun({lookup, 2}, ok) ->
                             {false, ok, update_element}
                                                   end,
                             [

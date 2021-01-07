@@ -11,37 +11,40 @@
 -include("xlsx2erl.hrl").
 
 %% 转换文本到erl结构
--export([convert_bin/4, convert_int/4, convert_float/4, convert_term/4, convert_json/4]).
+%% 需要配合进程字典使用
+-export([to_bin/2, to_int/2, to_float/2, to_term/2, to_json/2]).
 
 
--export([to_iolist/1, copy_mask_body/3, copy_mask_body/4, ensure_dets/1, get_excel/1]).
+-export([to_iolist/1, copy_mask_body/3, copy_mask_body/4, delete_mask_body/2, ensure_dets/1, get_excel/1]).
 
 %% @doc 二进制文本
--spec convert_bin(non_neg_integer(), [atom()], #xlsx2erl_row{}, #xlsx2erl_sheet{}) -> binary().
-convert_bin(Index, RecordDef, Row, Sheet) ->
-    Field = element(Index, Row#xlsx2erl_row.record),
+-spec to_bin(non_neg_integer(), #xlsx2erl_row{}) -> binary().
+to_bin(Index, Row) ->
+    Field = element(Index, Row#xlsx2erl_row.data),
     try unicode:characters_to_binary(Field)
     catch
         _:_ ->
-            ?XLSX2ERL_ERROR4(Sheet, Row, "~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
+            ?XLSX2ERL_PD_ERROR2("类型转换错误 ~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc 整数
--spec convert_int(non_neg_integer(), [atom()], #xlsx2erl_row{}, #xlsx2erl_sheet{}) -> integer().
-convert_int(Index, RecordDef, Row, Sheet) ->
-    Field = element(Index, Row#xlsx2erl_row.record),
+-spec to_int(non_neg_integer(), #xlsx2erl_row{}) -> integer().
+to_int(Index, Row) ->
+    Field = element(Index, Row#xlsx2erl_row.data),
     try list_to_integer(Field)
     catch
         _:_ ->
-            ?XLSX2ERL_ERROR4(Sheet, Row, "~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
+            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc 浮点数
--spec convert_float(non_neg_integer(), [atom()], #xlsx2erl_row{}, #xlsx2erl_sheet{}) -> float().
-convert_float(Index, RecordDef, Row, Sheet) ->
-    Field = element(Index, Row#xlsx2erl_row.record),
+-spec to_float(non_neg_integer(), #xlsx2erl_row{}) -> float().
+to_float(Index, Row) ->
+    Field = element(Index, Row#xlsx2erl_row.data),
     try
         case catch list_to_float(Field) of
             Float when is_float(Float) -> Float;
@@ -49,30 +52,32 @@ convert_float(Index, RecordDef, Row, Sheet) ->
         end
     catch
         _:_ ->
-            ?XLSX2ERL_ERROR4(Sheet, Row, "~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
+            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc json
--spec convert_json(non_neg_integer(), [atom()], #xlsx2erl_row{}, #xlsx2erl_sheet{}) -> jsx:json_term().
-convert_json(Index, RecordDef, Row, Sheet) ->
-    Field = element(Index, Row#xlsx2erl_row.record),
+-spec to_json(non_neg_integer(), #xlsx2erl_row{}) -> jsx:json_term().
+to_json(Index, Row) ->
+    Field = element(Index, Row#xlsx2erl_row.data),
     try jsx:decode(unicode:characters_to_binary(Field))
     catch
         _:_ ->
-            ?XLSX2ERL_ERROR4(Sheet, Row, "~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
+            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc erlang结构
--spec convert_term(non_neg_integer(), [atom()], #xlsx2erl_row{}, #xlsx2erl_sheet{}) -> term().
-convert_term(Index, RecordDef, Row, Sheet) ->
-    Field = element(Index, Row#xlsx2erl_row.record),
+-spec to_term(non_neg_integer(), #xlsx2erl_row{}) -> term().
+to_term(Index, Row) ->
+    Field = element(Index, Row#xlsx2erl_row.data),
     try eval(Field)
     catch
         _:_ ->
-            ?XLSX2ERL_ERROR4(Sheet, Row, "~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
-            exit(?FUNCTION_NAME)
+            RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
+            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field])
     end.
 
 eval(Str) when is_binary(Str) ->
@@ -115,9 +120,9 @@ to_iolist(Term) ->
 %% 复制的内容
 
 %% %%%%mask end%%%%%%
-copy_mask_body(Module, RecordName, ToFile) ->
-    MaskStart = ?XLSX2ERL_RECORD_START_MASK1(RecordName),
-    MaskEnd = ?XLSX2ERL_RECORD_END_MASK1(RecordName),
+copy_mask_body(Module, Tag, ToFile) ->
+    MaskStart = ?XLSX2ERL_MASK_START1(Tag),
+    MaskEnd = ?XLSX2ERL_MASK_END1(Tag),
     ModuleStr = atom_to_list(Module),
     FromFile = "include/" ++ ModuleStr ++ ".hrl",
     copy_mask_body(MaskStart, MaskEnd, FromFile, ToFile).
@@ -244,20 +249,61 @@ copy_mask_body_is_mask([H | T1], [H | T2]) ->
 copy_mask_body_is_mask(_Data, _Mask) ->
     false.
 
+
+%% @doc 删除指定文件mask包裹的内容, 原理同copy_mask_body
+delete_mask_body(Tag, ToFile) ->
+    MaskStart = ?XLSX2ERL_MASK_START1(Tag),
+    MaskEnd = ?XLSX2ERL_MASK_END1(Tag),
+    {ok, ToFD} = file:open(ToFile, [read, write]),
+    case delete_mask_body_1(ToFD, MaskStart, MaskEnd, false, false, []) of
+        skip ->
+            file:close(ToFD);
+        NewData ->
+            file:close(ToFD),
+            file:write_file(ToFile, NewData)
+    end.
+
+delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, ToData) ->
+    case file:read_line(ToFD) of
+        {ok, Data} when IsEnd ->
+            delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, [Data | ToData]);
+        {ok, Data} when IsStart ->
+            case copy_mask_body_is_mask(Data, MaskEnd) of
+                true ->% 结束删除, 读剩下的
+                    delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, true, ToData);
+                _ ->
+                    delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, ToData)
+            end;
+        {ok, Data} ->
+            case copy_mask_body_is_mask(Data, MaskStart) of
+                true ->% 开始删除
+                    delete_mask_body_1(ToFD, MaskStart, MaskEnd, true, IsEnd, ToData);
+                _ ->
+                    delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, [Data | ToData])
+            end;
+        eof when IsEnd ->
+            lists:reverse(ToData);
+        eof ->% 没有东西可以删除
+            skip;
+        {error, Error} ->
+            io:format("copy_mask_body ~p error~n~p~n", [?LINE, Error]),
+            skip
+    end.
+
 %% @doc 确保dets开启
 -spec ensure_dets(atom()) -> any().
-ensure_dets(Module) ->
-    case dets:info(?DETS_XLSX2ERL1(Module)) of
+ensure_dets(Name) ->
+    case dets:info(Name) of
         undefined ->
-            {ok, ?DETS_XLSX2ERL1(Module)} = dets:open_file(?DETS_XLSX2ERL1(Module), [{file, ?DETS_PATH ++ "/" ++ atom_to_list(Module) ++ ".dets"}, {keypos, 2}]);
+            {ok, Name} = dets:open_file(Name, [{file, ?XLSX2ERL_DETS_PATH ++ "/" ++ atom_to_list(Name) ++ ".dets"}, {keypos, 2}]);
         _ -> ok
     end.
 
 %% @doc 获取excel
 -spec get_excel(atom()) -> undefined|#xlsx2erl_excel{}.
 get_excel(Module) ->
-    ensure_dets(?DETS_XLSX2ERL1(Module)),
-    case dets:lookup(?DETS_XLSX2ERL1(Module), Module) of
+    ensure_dets(?XLSX2ERL_DETS_TABLE1(Module)),
+    case dets:lookup(?XLSX2ERL_DETS_TABLE1(Module), Module) of
         [Excel] -> Excel;
         _ -> undefined
     end.

@@ -142,7 +142,7 @@ compile_proto(RebarConfig) ->
                                     "%% @private auto create\n"
                                     "-module(", Route, ").\n\n"
                                     "-include(\"util.hrl\").\n"
-                                    "-include(\"error_code.hrl\").\n"
+                                    "-include(\"ec.hrl\").\n"
                                     "-include(\"" ++ Name ++ ".hrl\").\n"
                                     "-include(\"" ++ ModuleName ++ ".hrl\").\n\n"
                                     "-export([handle/2]).\n\n"

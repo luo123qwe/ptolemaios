@@ -2,11 +2,21 @@
 
 -include("xlsx2erl.hrl").
 -include_lib("kernel/include/file.hrl").
+-include("util.hrl").
 
 -define(RECORD_NAME1(Name), "data_" ++ Name).
+%% make_sheet_list参数
+-record(msl_arg, {
+    filename,
+    workbook_name,
+    workbook_name_atom,
+    last_sheet_full_name,
+    sheet_name_atom,
+    sheet_list = []
+}).
 
 %% private
--export([main/1, get_sheet_data/2, make_template/1, make_template/3]).
+-export([main/1, make_template/1, make_template/4, make_sheet/4, make_sheet_list/1, make_row_list/3]).
 
 %%====================================================================
 %% API functions
@@ -19,55 +29,24 @@ main(["compile", XlsxDir0, ErlPath0, HrlPath0]) ->
     XlsxDir = filename:absname(XlsxDir0),
     file:make_dir(ErlPath),
     file:make_dir(HrlPath),
-    file:make_dir(?DETS_PATH),
-
-    %% 需要重新生成的xlsx和模块列表
-    UpdateDetsList =
-        filelib:fold_files(XlsxDir, ".xlsx", true,
-            fun(FileName, Acc) ->
-                BaseName = filename:basename(FileName),
-                FileNameFirstChar = hd(BaseName),
-                case FileNameFirstChar =/= $~
-                    andalso string:split(filename:rootname(BaseName), "-")
-                of
-                    [_, TagStr] ->
-                        ModuleStr = "xlsx2erl_" ++ TagStr,
-                        Module = list_to_atom(ModuleStr),
-                        xlsx2erl_util:ensure_dets(Module),
-                        [{Module, BaseName, FileName} | Acc];
-                    false ->% 中间文件
-                        Acc;
-                    _ ->
-                        io:format("bad file name ~ts", [BaseName]),
-                        throw(error)
-                end
-            end, []),
-
+    file:make_dir(?XLSX2ERL_DETS_PATH),
+    
+    WorkbookList = make_workbook_list(XlsxDir),
+    UpdateDetsSheetList =
+        lists:foldl(fun(#xlsx2erl_workbook{file_name = Filename}, Acc) ->
+            make_sheet_list(Filename) ++ Acc
+                    end, [], WorkbookList),
+    
     %% 基础设置
     erlang:process_flag(trap_exit, true),
     %% [{processor, [CoreInfo]}], Cpu数量
     CpuNum = length(element(2, hd(erlang:system_info(cpu_topology)))),
     %% 多进程更新dets
-    IsContinue =
-        try compile_update_dets(UpdateDetsList, [], CpuNum, CpuNum) of
-            ok -> true;
-            _ -> false
-        catch
-            _:_ -> false
-        end,
-
-    case IsContinue of
-        true ->
-            %% 构造依赖关系, 哪些模块(excel表)需要重新生成
-            {ok, CallbackFileList} = file:list_dir(?XLSX2ERL_CALLBACK_PATH),
-            DependModuleList = compile_make_depend(CallbackFileList, UpdateDetsList, []),
-
-            %% 多进程调用对应compile函数
-            CallbackArgs = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
-            catch compile_do_compile(DependModuleList, CallbackArgs, [], CpuNum, CpuNum);
-        _ ->
-            skip
-    end,
+    compile_update_dets(UpdateDetsSheetList, [], CpuNum, CpuNum),
+    
+    %% 多进程调用对应compile函数
+    CallbackArgs = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
+    catch compile_do_compile(UpdateDetsSheetList, CallbackArgs, [], CpuNum, CpuNum),
     %% 关闭所有dets
     close_dets();
 main(["compile_change", XlsxDir0, ErlPath0, HrlPath0]) ->
@@ -76,127 +55,81 @@ main(["compile_change", XlsxDir0, ErlPath0, HrlPath0]) ->
     XlsxDir = filename:absname(XlsxDir0),
     file:make_dir(ErlPath),
     file:make_dir(HrlPath),
-    file:make_dir(?DETS_PATH),
-
-    %% 需要重新生成的xlsx和模块列表
-    {UpdateDetsList, ErlChangeList} =
-        filelib:fold_files(XlsxDir, ".xlsx", true,
-            fun(FileName, {XCL, ECL} = Acc) ->
-                BaseName = filename:basename(FileName),
-                FileNameFirstChar = hd(BaseName),
-                case FileNameFirstChar =/= $~
-                    andalso string:split(filename:rootname(BaseName), "-")
-                of
-                    [_, TagStr] ->
-                        ModuleStr = "xlsx2erl_" ++ TagStr,
-                        Module = list_to_atom(ModuleStr),
-                        xlsx2erl_util:ensure_dets(Module),
-                        case dets:lookup(?DETS_XLSX2ERL1(Module), ?XLSX2ERL_EXCEL_UPDATE_TIME) of
-                            [#xlsx2erl_dets{v = UpdateTime}] ->
-                                {ok, #file_info{mtime = MTime}} = file:read_file_info(FileName),
-                                case UpdateTime < MTime of
-                                    true ->% xlsx变了
-                                        {[{Module, BaseName, FileName} | XCL], ECL};
-                                    _ ->
-                                        {ok, #file_info{mtime = ErlMTime}} = file:read_file_info(?XLSX2ERL_CALLBACK_PATH ++ "/" ++ ModuleStr ++ ".erl"),
-                                        case UpdateTime < ErlMTime of
-                                            true -> {XCL, [{Module, BaseName} | ECL]};% .erl变了
-                                            _ -> Acc
-                                        end
-                                end;
-                            _ ->
-                                {[{Module, BaseName, FileName} | XCL], ECL}
-                        end;
-                    false ->% 中间文件
-                        Acc;
-                    _ ->
-                        io:format("bad file name ~ts", [BaseName]),
-                        throw(error)
-                end
-            end, {[], []}),
-
+    file:make_dir(?XLSX2ERL_DETS_PATH),
+    
+    %% 需要重新生成的xlsx和模块
+    WorkbookList = make_workbook_list(XlsxDir),
+    UpdateDetsSheetList =
+        lists:foldl(fun(#xlsx2erl_workbook{name = WorkbookName, file_name = Filename}, Acc) ->
+            xlsx2erl_util:ensure_dets(?XLSX2ERL_DETS_TABLE1(WorkbookName)),
+            case dets:match(?XLSX2ERL_DETS_TABLE1(WorkbookName), [{{?XLSX2ERL_DETS_KEY_UPDATE1('_'), '$1'}, [], ['$1']}]) of
+                [_ | _] = UpdateTimeList ->
+                    UpdateTime = lists:max(UpdateTimeList),
+                    {ok, #file_info{mtime = MTime}} = file:read_file_info(Filename),
+                    case UpdateTime < MTime of
+                        true ->% xlsx变了
+                            make_sheet_list(Filename) ++ Acc;
+                        _ ->
+                            % 保证文件夹存在
+                            ErlDir = ?XLSX2ERL_CB_PATH ++ "/" ++ atom_to_list(WorkbookName),
+                            file:make_dir(ErlDir),
+                            %% 对比所有文件的修改时间
+                            IsModifyErl =
+                                filelib:fold_files(ErlDir, ".erl", false,
+                                    fun(_FN, true) -> true;
+                                        (FN, ErlAcc) ->
+                                            {ok, #file_info{mtime = ErlMTime}} = file:read_file_info(FN),
+                                            case UpdateTime < ErlMTime of
+                                                true -> true;
+                                                _ -> ErlAcc
+                                            end
+                                    end, false),
+                            case IsModifyErl of
+                                true -> make_sheet_list(Filename) ++ Acc;% .erl变了
+                                _ -> Acc
+                            end
+                    end;
+                _ ->
+                    make_sheet_list(Filename) ++ Acc
+            end
+                    end, [], WorkbookList),
+    
     %% 基础设置
     erlang:process_flag(trap_exit, true),
     %% [{processor, [CoreInfo]}], Cpu数量
     CpuNum = length(element(2, hd(erlang:system_info(cpu_topology)))),
     %% 多进程更新dets
-    IsContinue =
-        try compile_update_dets(UpdateDetsList, [], CpuNum, CpuNum) of
-            ok -> true;
-            _ -> false
-        catch
-            _:_ -> false
-        end,
-
-    case IsContinue of
-        true ->
-            %% 构造依赖关系, 哪些模块(excel表)需要重新生成
-            {ok, CallbackFileList} = file:list_dir(?XLSX2ERL_CALLBACK_PATH),
-            DependModuleList = compile_make_depend(CallbackFileList, UpdateDetsList, []),
-
-            %% 多进程调用对应compile函数
-            CallbackArgs = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
-            catch compile_do_compile(ErlChangeList ++ DependModuleList, CallbackArgs, [], CpuNum, CpuNum);
-        _ ->
-            skip
-    end,
+    compile_update_dets(UpdateDetsSheetList, [], CpuNum, CpuNum),
+    
+    %% 构造依赖关系, 哪些模块(excel表)需要重新生成
+    UpdateDependSheetList = filelib:fold_files(?XLSX2ERL_CB_PATH, ".erl", true, fun compile_make_depend/2, UpdateDetsSheetList),
+    
+    %% 多进程调用对应compile函数
+    CallbackArgs = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
+    catch compile_do_compile(UpdateDependSheetList, CallbackArgs, [], CpuNum, CpuNum),
     %% 关闭所有dets
     close_dets();
-main(["clean", XlsxDir0, ErlPath0, HrlPath0]) ->
+main(["clean", ErlPath0, HrlPath0]) ->
     ErlPath = filename:absname(ErlPath0),
     HrlPath = filename:absname(HrlPath0),
-    XlsxDir = filename:absname(XlsxDir0),
     file:make_dir(ErlPath),
     file:make_dir(HrlPath),
-    filelib:fold_files(XlsxDir, ".xlsx", true,
+    
+    %% 执行所有callback
+    Args = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
+    filelib:fold_files(?XLSX2ERL_CB_PATH, ".erl", true,
         fun(FileName, _) ->
-            BaseName = filename:basename(FileName),
-            case string:split(filename:rootname(BaseName), "-") of
-                [_, ModuleStr] ->
-                    Module = list_to_atom("xlsx2erl_" ++ ModuleStr),
-                    Args = #xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath},
-                    Start = erlang:system_time(millisecond),
-                    case catch Module:clean(Args) of
-                        {'EXIT', Error} ->
-                            case code:is_loaded(Module) of
-                                false ->
-                                    %% 没有这个erlang文件
-                                    io:format("warning clean ~ts no erl file~n", [BaseName]);
-                                _ ->
-                                    io:format("clean ~ts error~n~p~n~n", [BaseName, Error])
-                            end;
-                        _ ->
-                            End = erlang:system_time(millisecond),
-                            io:format("clean ~ts success, cost ~p ms~n", [BaseName, End - Start])
-                    end;
+            Start = erlang:system_time(millisecond),
+            Module = list_to_atom(filename:basename(FileName, ".erl")),
+            case catch Module:clean(Args) of
+                {'EXIT', Error} ->
+                    io:format("clean ~w error~n~p~n~n", [Module, Error]);
                 _ ->
-                    io:format("bad file name ~ts", [BaseName])
+                    End = erlang:system_time(millisecond),
+                    io:format("~w clean success, cost ~p ms~n", [Module, End - Start])
             end
         end, []),
     close_dets();
-main(["template", Name, ErlPath0, HrlPath0]) ->
-    ErlPath = filename:absname(ErlPath0),
-    HrlPath = filename:absname(HrlPath0),
-    case filelib:is_dir(Name) of
-        true ->
-            filelib:fold_files(Name, ".xlsx", true,
-                fun(FileName, _) ->
-                    make_template(FileName, ErlPath, HrlPath)
-                end, []);
-        false ->
-            make_template(Name, ErlPath, HrlPath)
-    end;
-main(["template_hrl", Name, HrlPath0]) ->
-    HrlPath = filename:absname(HrlPath0),
-    case filelib:is_dir(Name) of
-        true ->
-            filelib:fold_files(Name, ".xlsx", true,
-                fun(FileName, _) ->
-                    make_hrl_template(FileName, HrlPath)
-                end, []);
-        false ->
-            make_hrl_template(Name, HrlPath)
-    end;
 main(_) ->
     io:format(
         "compile: \"../rebar3\" escriptize&\"_build/default/bin/xlsx2erl\" compile xlsx export export/include\n"
@@ -211,27 +144,30 @@ compile_update_dets([], [], _, _) ->
 compile_update_dets(CompileList, ReceiveList, SpawnNum, ProcessNum) when CompileList == [] orelse SpawnNum == 0 ->
     compile_receive_spawn(?FUNCTION_NAME, ReceiveList),
     compile_update_dets(CompileList, [], ProcessNum, ProcessNum);
-compile_update_dets([{Module, BaseName, FileName} | T], ReceiveList, SpawnNum, ProcessNum) ->
+compile_update_dets([#xlsx2erl_sheet{workbook_name = WorkbookName, module = Module} = Sheet | T], ReceiveList, SpawnNum, ProcessNum) ->
+    %% dets开一下
+    xlsx2erl_util:ensure_dets(?XLSX2ERL_DETS_TABLE1(WorkbookName)),
+    Start = erlang:system_time(millisecond),
     Pid = spawn_link(fun() ->
-        Start = erlang:system_time(millisecond),
-        case (catch Module:update_dets(FileName)) of
-            {'EXIT', {undef, [{Module, update_dets, [FileName], _} | _]}} ->
+        case (catch Module:update_dets(Sheet)) of
+            {'EXIT', {undef, [{Module, update_dets, [_], _} | _]}} ->
                 %% 没有这个erlang文件, 自动创建模板
-                make_template(FileName),
+                make_template(Sheet),
                 io:format("make_template ~p~n", [Module]),
                 close_dets(),
                 exit(make_template);
             {'EXIT', Error} ->
                 io:format("update_dets ~p error~n~p~n~n", [Module, Error]),
                 close_dets(),
-                file:delete(?DETS_PATH ++ "/" ++ atom_to_list(Module)),
+                file:delete(?XLSX2ERL_DETS_PATH ++ "/" ++ atom_to_list(Module)),
                 exit(make_template);
             _ ->
                 End = erlang:system_time(millisecond),
-                io:format("update dets ~ts, cost ~p ms~n", [BaseName, End - Start])
+                io:format("update dets ~ts, cost ~p ms~n", [Module, End - Start])
         end
                      end),
-    compile_update_dets(T, [{Pid, Module} | ReceiveList], SpawnNum - 1, ProcessNum).
+    ReceiveList1 = [{Pid, Module} | ReceiveList],
+    compile_update_dets(T, ReceiveList1, SpawnNum - 1, ProcessNum).
 
 %% 多进程编译
 compile_do_compile([], _, [], _, _) ->
@@ -239,15 +175,15 @@ compile_do_compile([], _, [], _, _) ->
 compile_do_compile(CompileList, CallbackArgs, ReceiveList, SpawnNum, ProcessNum) when CompileList == [] orelse SpawnNum == 0 ->
     compile_receive_spawn(?FUNCTION_NAME, ReceiveList),
     compile_do_compile(CompileList, CallbackArgs, [], ProcessNum, ProcessNum);
-compile_do_compile([{Module, BaseName} | T], CallbackArgs, ReceiveList, SpawnNum, ProcessNum) ->
+compile_do_compile([#xlsx2erl_sheet{module = Module} | T], CallbackArgs, ReceiveList, SpawnNum, ProcessNum) ->
     Pid = spawn_link(fun() ->
         Start = erlang:system_time(millisecond),
         case catch Module:compile(CallbackArgs) of
             {'EXIT', Error} ->
-                io:format("compile ~ts error~n~p~n~n", [BaseName, Error]);
+                io:format("compile ~w error~n~p~n~n", [Module, Error]);
             _ ->
                 End = erlang:system_time(millisecond),
-                io:format("compile ~ts success, cost ~p ms~n", [BaseName, End - Start])
+                io:format("compile ~w success, cost ~p ms~n", [Module, End - Start])
         end
                      end),
     compile_do_compile(T, CallbackArgs, [{Pid, Module} | ReceiveList], SpawnNum - 1, ProcessNum).
@@ -285,41 +221,50 @@ compile_receive_spawn(FunctionName, ReceiveList) ->
 %% 例如, A表数据变了, B/C表不变
 %% 那么A表的key可能变了, 导致B表的key对应不上, 所以需要重新生成
 %% 但是C表的key依赖B表的key, B表并没有改变, 所以不需要生成
-compile_make_depend([], _CompileList, ModuleList) ->
-    lists:ukeysort(1, ModuleList);
-compile_make_depend([ErlFileName | T], CompileList, ModuleList) ->
-    Module = list_to_atom(filename:basename(ErlFileName, ".erl")),
-    case lists:keyfind(Module, 1, CompileList) of
-        {_, BaseName, _} ->
-            compile_make_depend(T, CompileList, [{Module, BaseName} | ModuleList]);
+compile_make_depend(ErlFileName, CompileList) ->
+    ErlFileBaseName = filename:basename(ErlFileName, ".erl"),
+    Module = list_to_atom(ErlFileBaseName),
+    case lists:keymember(Module, #xlsx2erl_sheet.module, CompileList) of
+        true ->
+            CompileList;
         _ ->
-            {ok, Binary} = file:read_file(?XLSX2ERL_CALLBACK_PATH ++ "/" ++ ErlFileName),
+            {ok, Binary} = file:read_file(ErlFileName),
             %% 正则找出所有 xlsx2erl_xxx: 的调用
             case re:run(Binary, "(xlsx2erl_(?!util)[A-z0-9]*):", [global, {capture, all_but_first, binary}]) of
                 {match, MatchModuleList} ->
                     MatchModuleList1 = lists:usort(MatchModuleList),
-                    ModuleList1 =
-                        case lists:any(fun([MatchModule]) ->
-                            MatchModuleAtom = binary_to_atom(MatchModule),
-                            case lists:keyfind(MatchModuleAtom, 1, CompileList) of
-                                {_, _, _} -> true;
-                                _ -> false
-                            end
-                                       end, MatchModuleList1)
-                        of
-                            true ->
-                                case Module of
-                                    %% 测试依赖
-                                    xlsx2erl_test_dep -> BaseName = "xlsx2erl_test_dep";
-                                    _ -> #xlsx2erl_excel{excel_name = BaseName} = xlsx2erl_util:get_excel(Module)
-                                end,
-                                [{Module, BaseName} | ModuleList];
-                            _ ->
-                                ModuleList
-                        end,
-                    compile_make_depend(T, CompileList, ModuleList1);
+                    case lists:any(fun([MatchModule]) ->
+                        MatchModuleAtom = binary_to_atom(MatchModule),
+                        lists:keymember(MatchModuleAtom, #xlsx2erl_sheet.module, CompileList)
+                                   end, MatchModuleList1)
+                    of
+                        true ->
+                            %% 拿到module的工作簿, ?XLSX2ERL_DEFAULT_MODULE2
+                            [_, WorkbookName | SheetName] = string:split(ErlFileBaseName, "_"),
+                            WorkbookList = make_workbook_list(Module),
+                            case lists:keyfind(list_to_atom(WorkbookName), #xlsx2erl_workbook.name, WorkbookList) of
+                                false ->% xlsx被删了但是erl文件还在
+                                    case Module of
+                                        xlsx2erl_test_dep ->% 测试数据
+                                            [#xlsx2erl_sheet{module = xlsx2erl_test_dep}] ++ CompileList;
+                                        _ ->
+                                            io:format("~s not exist, but ~s use it!~n", [WorkbookName, ErlFileName]),
+                                            exit(error)
+                                    end;
+                                #xlsx2erl_workbook{file_name = WorkbookFileName} ->
+                                    case lists:keymember(WorkbookFileName, #xlsx2erl_sheet.filename, CompileList) of
+                                        false ->
+                                            make_sheet_list(WorkbookFileName) ++ CompileList;
+                                        _ ->% sheet已经加载但是里面没有这个模块, 代表这个模块对应的sheet没了
+                                            io:format("~s not exist, but ~s use it!~n", [SheetName, ErlFileName]),
+                                            exit(error)
+                                    end
+                            end;
+                        _ ->
+                            CompileList
+                    end;
                 _ ->
-                    compile_make_depend(T, CompileList, ModuleList)
+                    CompileList
             end
     end.
 
@@ -331,69 +276,231 @@ close_dets() ->
         end
                   end, dets:all()).
 
-%% @private 获取所有sheet的数据, 拿到的是倒序的!!
--spec get_sheet_data([{RecordName :: atom(), RecordFieldList :: [atom()]}], file:filename()) -> error|[#xlsx2erl_sheet{}].
-get_sheet_data(RecordDefList, XlsxFile) ->
-    RowHandler =
-        fun(SheetName, [Line, Key | Row], {NthListList, SheetList} = Acc) ->
-            case string:split(SheetName, "-") of
-                [_, RecordNameStr] ->
-                    case catch list_to_atom(?RECORD_NAME1(RecordNameStr)) of
-                        RecordName when is_atom(RecordName) -> ok;
-                        _ -> RecordName = undefined
+%% 多次重复打开同一个workbook不会有任何优化
+%% 而且打开工作簿本身占用更多时间
+%% 所以在一次read遍历把所有的信息读完
+make_sheet_list(FileName) ->
+    case get(?PD_XLSX2ERL_SHEET_LIST1(FileName)) of
+        undefined ->
+            [_, WorkbookName] = string:split(filename:rootname(filename:basename(FileName)), "-"),
+            Arg = #msl_arg{filename = FileName, workbook_name = WorkbookName, workbook_name_atom = list_to_atom(WorkbookName)},
+            case xlsx_reader:read(FileName, Arg, fun make_sheet_list/3) of
+                {error, Reason} ->
+                    io:format("read ~ts error~n~p~n", [FileName, Reason]),
+                    exit(error);
+                #msl_arg{sheet_list = SheetList} ->
+                    %% 把顺序倒回来
+                    SheetList1 =
+                        lists:foldl(fun(#xlsx2erl_sheet{row_list = RowList} = Sheet, Acc) ->
+                            [Sheet#xlsx2erl_sheet{row_list = lists:reverse(RowList)} | Acc]
+                                    end, [], SheetList),
+                    put(?PD_XLSX2ERL_SHEET_LIST1(FileName), SheetList1),
+                    SheetList1
+            end;
+        SheetList ->
+            SheetList
+    end.
+
+make_sheet_list(SheetFullName, [_Line, _Key | _RowT] = Row, Arg) ->
+    #msl_arg{last_sheet_full_name = LastSheetFullName} = Arg,
+    %% 先检查表名, 同一个表避免反复检查
+    case LastSheetFullName == SheetFullName of
+        true ->
+            make_sheet_list_1(Row, Arg);
+        _ ->
+            case string:split(SheetFullName, "-") of
+                [_, SheetName1] ->
+                    case catch list_to_atom(SheetName1) of
+                        SheetNameAtom when is_atom(SheetNameAtom) ->
+                            Arg1 = Arg#msl_arg{last_sheet_full_name = SheetFullName, sheet_name_atom = SheetNameAtom},
+                            make_sheet_list_1(Row, Arg1);
+                        _ ->
+                            {next_sheet, Arg#msl_arg{last_sheet_full_name = undefined}}
                     end;
                 _ ->
-                    RecordName = undefined
+                    {next_sheet, Arg#msl_arg{last_sheet_full_name = undefined}}
+            end
+    end;
+%% 没有有效内容的行
+make_sheet_list(_, _, Arg) ->
+    {next_row, Arg}.
+
+make_sheet_list_1([_Line, ?XLSX2ERL_KEY_KEY | RowT], Arg) ->
+    #msl_arg{
+        filename = FileName, workbook_name = WorkbookName,
+        workbook_name_atom = WorkbookNameAtom,
+        last_sheet_full_name = SheetFullName,
+        sheet_name_atom = SheetNameAtom,
+        sheet_list = SheetList
+    } = Arg,
+    
+    %% 索引对应的key
+    {_, Index2Key} =
+        lists:foldl(fun(Column, {ColumnIndex, I2K}) ->
+            case catch list_to_atom(Column) of
+                ColumnAtom when is_atom(ColumnAtom), ColumnAtom =/= '' ->
+                    {ColumnIndex + 1, [{ColumnIndex, ColumnAtom} | I2K]};
+                _ ->
+                    {ColumnIndex + 1, I2K}
+            end
+                    end, {1, []}, RowT),
+    Index2Key1 = lists:keysort(1, Index2Key),
+    case lists:keyfind(SheetNameAtom, #xlsx2erl_sheet.name, SheetList) of
+        #xlsx2erl_sheet{index2key = OldIndex2Key} ->% 前面有表构造了, 检查keymap是否一样
+            case OldIndex2Key =/= Index2Key1 of
+                true ->
+                    io:format("bad key define in ~ts:~ts~n", [FileName, SheetFullName]);
+                _ ->
+                    skip
             end,
-            RecordDef = lists:keyfind(RecordName, 1, RecordDefList),
-            Acc1 =
-                case RecordDef =/= false andalso Key of
-                    ?XLSX2ERL_MASK_KEY ->
-                        {_RecordName, RecordFieldList} = RecordDef,
-                        %% 构造#{Key => ColumnIndex}
-                        {_, KeyMap} =
-                            lists:foldl(fun(Column, {ColumnIndex, M}) ->
-                                case catch list_to_atom(Column) of
-                                    ColumnAtom when is_atom(ColumnAtom) ->
-                                        {ColumnIndex + 1, M#{ColumnAtom => ColumnIndex}};
-                                    _ ->
-                                        {ColumnIndex + 1, M}
-                                end
-                                        end, {1, #{}}, Row),
-                        case get_sheet_data_nth(RecordFieldList, KeyMap, []) of
-                            NthList when is_list(NthList) ->
-                                {
-                                    [{RecordName, NthList} | NthListList],
-                                    [#xlsx2erl_sheet{excel_name = XlsxFile, sheet_name = SheetName, name = RecordName, row_list = []} | SheetList]
-                                };
-                            Error ->
-                                io:format("bad key in ~ts~n~p~n", [SheetName, Error]),
-                                throw(error)
-                        end;
-                    ?XLSX2ERL_MASK_DATA ->
-                        case lists:keyfind(RecordName, 1, NthListList) of
-                            false ->% 未初始化key
-                                Acc;
-                            {_, NthList} ->
-                                #xlsx2erl_sheet{row_list = RowList} = Sheet = lists:keyfind(RecordName, #xlsx2erl_sheet.name, SheetList),
-                                RecordValueList = get_sheet_data_value(NthList, Row),
-                                Record = list_to_tuple([RecordName | RecordValueList]),
-                                RowList1 = [#xlsx2erl_row{line = Line, record = Record} | RowList],
-                                {NthListList, lists:keystore(RecordName, #xlsx2erl_sheet.name, SheetList, Sheet#xlsx2erl_sheet{row_list = RowList1})}
+            {next_row, Arg};
+        _ ->
+            SheetList1 = [#xlsx2erl_sheet{
+                name = SheetNameAtom, workbook_name = WorkbookNameAtom,
+                filename = FileName, full_name = SheetFullName,
+                module = ?XLSX2ERL_ERL_NAME2(WorkbookName, atom_to_list(SheetNameAtom)),
+                index2key = Index2Key1, row_list = []
+            } | SheetList],
+            {next_row, Arg#msl_arg{sheet_list = SheetList1}}
+    end;
+make_sheet_list_1([Line, ?XLSX2ERL_KEY_DATA | RowT], Arg) ->
+    #msl_arg{
+        filename = FileName,
+        last_sheet_full_name = SheetFullName,
+        sheet_name_atom = SheetNameAtom,
+        sheet_list = SheetList
+    } = Arg,
+    case lists:keyfind(SheetNameAtom, #xlsx2erl_sheet.name, SheetList) of
+        false ->% 未初始化key
+            io:format("key mask row before data ~ts~n", [SheetFullName]),
+            throw(error);
+        #xlsx2erl_sheet{row_list = RowList, index2key = Index2Key} = Sheet ->
+            RowKV = index2key_value(Index2Key, RowT, 1, FileName, SheetFullName, Line),
+            Sheet1 = Sheet#xlsx2erl_sheet{row_list = [#xlsx2erl_row{line = Line, data = RowKV} | RowList]},
+            SheetList1 = lists:keyreplace(SheetNameAtom, #xlsx2erl_sheet.name, SheetList, Sheet1),
+            {next_row, Arg#msl_arg{sheet_list = SheetList1}}
+    end;
+make_sheet_list_1(_Row, Arg) ->
+    {next_row, Arg}.
+
+index2key_value([], _, _, _, _, _) ->
+    [];
+index2key_value([{_, Key} | _], [], _, FileName, SheetFullName, Line) ->
+    io:format("empty value in ~ts:~ts, ~w:~w", [FileName, SheetFullName, Key, Line]);
+index2key_value([{Index, Key} | I2KT], [RowH | RowT], Index, FileName, SheetFullName, Line) ->
+    [{Key, RowH} | index2key_value(I2KT, RowT, Index + 1, FileName, SheetFullName, Line)];
+index2key_value(I2KList, [_RowH | RowT], Index, FileName, SheetFullName, Line) ->
+    index2key_value(I2KList, RowT, Index + 1, FileName, SheetFullName, Line).
+
+make_workbook_list(XlsxDir) ->
+    case get(?PD_XLSX2ERL_WORKBOOK_LIST) of
+        undefined ->
+            %% 搜索全部xlsx文件
+            filelib:fold_files(XlsxDir, ".xlsx", true,
+                fun(FileName, Acc) ->
+                    BaseName = filename:basename(FileName),
+                    FileNameFirstChar = hd(BaseName),
+                    case FileNameFirstChar =/= $~
+                        andalso string:split(filename:rootname(BaseName), "-")
+                    of
+                        [_, WorkbookName] ->
+                            case catch list_to_atom(WorkbookName) of
+                                WorkbookNameAtom when is_atom(WorkbookNameAtom), WorkbookNameAtom =/= '' ->
+                                    [#xlsx2erl_workbook{name = WorkbookNameAtom, file_name = FileName} | Acc];
+                                _ ->
+                                    Acc
+                            end;
+                        false ->% 中间文件
+                            Acc;
+                        _ ->
+                            Acc
+                    end
+                end, []);
+        WorkbookList ->
+            WorkbookList
+    end.
+
+make_row_list(#xlsx2erl_sheet{index2key = I2K, row_list = RowList}, RecordName, FieldList) ->
+    %% 先检查字段对不对得上
+    lists:foreach(fun(Field) ->
+        case lists:keymember(Field, 2, I2K) of
+            true -> ok;
+            _ ->
+                io:format("bad field ~w in record ~w~nvalid field list: ~w~n",
+                    [Field, RecordName, [Key || {_, Key} <- I2K]]),
+                exit(error)
+        end
+                  end, FieldList),
+    lists:reverse(lists:foldl(fun(#xlsx2erl_row{data = KVList} = Row, Acc) ->
+        Record = list_to_tuple([RecordName | [element(2, lists:keyfind(Field, 1, KVList)) || Field <- FieldList]]),
+        [Row#xlsx2erl_row{data = Record} | Acc]
+                              end, [], RowList)).
+
+%% @private 获取sheet的数据, 转换成Record
+-spec make_sheet(file:filename(), atom(), RecordName :: atom(), RecordFieldList :: [atom()]) -> error|[#xlsx2erl_sheet{}].
+make_sheet(FileName, Module, RecordName, RecordFieldList) ->
+    [_, WorkbookName] = string:split(filename:rootname(filename:basename(FileName)), "-"),
+    RowHandler =
+        fun(SheetFullName, [Line, Key | Row], {NL, S} = Acc) ->
+            IsThisSheet =
+                case string:split(SheetFullName, "-") of
+                    [_, SheetName] ->
+                        case catch ?XLSX2ERL_ERL_NAME2(WorkbookName, SheetName) of
+                            Module -> true;
+                            _ -> false
                         end;
                     _ ->
-                        Acc
+                        SheetName = "undefined",
+                        false
                 end,
-            {next_row, Acc1};
+            case IsThisSheet andalso Key of
+                false ->
+                    {next_sheet, Acc};
+                ?XLSX2ERL_KEY_KEY when NL == undefined ->% 用一个找到的sheet的key
+                    %% 构造#{Key => ColumnIndex}
+                    {_, KeyMap} =
+                        lists:foldl(fun(Column, {ColumnIndex, M}) ->
+                            case catch list_to_atom(Column) of
+                                ColumnAtom when is_atom(ColumnAtom) ->
+                                    {ColumnIndex + 1, M#{ColumnAtom => ColumnIndex}};
+                                _ ->
+                                    {ColumnIndex + 1, M}
+                            end
+                                    end, {1, #{}}, Row),
+                    case get_sheet_data_nth(RecordFieldList, KeyMap, []) of
+                        NthList when is_list(NthList) ->
+                            {next_row, {
+                                NthList,
+                                #xlsx2erl_sheet{filename = FileName, full_name = SheetFullName, name = list_to_atom(SheetName), row_list = []}
+                            }};
+                        Error ->
+                            io:format("bad key in ~ts~n~p~n", [SheetFullName, Error]),
+                            throw(error)
+                    end;
+                ?XLSX2ERL_KEY_DATA ->
+                    case NL of
+                        undefined ->% 未初始化key
+                            io:format("key mask row before data ~ts~n", [SheetFullName]),
+                            throw(error);
+                        _ ->
+                            #xlsx2erl_sheet{row_list = RowList} = S,
+                            RecordValueList = get_sheet_data_value(NL, Row),
+                            Record = list_to_tuple([RecordName | RecordValueList]),
+                            RowList1 = [#xlsx2erl_row{line = Line, data = Record} | RowList],
+                            {next_row, {NL, S#xlsx2erl_sheet{row_list = RowList1}}}
+                    end;
+                _ ->
+                    {next_row, Acc}
+            end;
             (_SheetName, _, Acc) ->
                 {next_row, Acc}
         end,
-    case xlsx_reader:read(XlsxFile, {[], []}, RowHandler) of
+    case xlsx_reader:read(FileName, {[], []}, RowHandler) of
         {error, Reason} ->
-            io:format("read ~ts error~n~p~n", [XlsxFile, Reason]),
+            io:format("read ~ts error~n~p~n", [FileName, Reason]),
             error;
-        {_, List} ->
-            List
+        {_, Sheet} ->
+            Sheet
     end.
 
 get_sheet_data_nth([], _, NthList) ->
@@ -419,132 +526,149 @@ get_sheet_data_value_1(N, [_ | T]) ->
     get_sheet_data_value_1(N - 1, T).
 
 %% @equiv make_template(XlsxFileName, default)
-make_template(XlsxFileName) ->
-    make_template(XlsxFileName, default, default).
+make_template(#xlsx2erl_sheet{filename = XlsxFileName, name = SheetName}) ->
+    make_template(XlsxFileName, atom_to_list(SheetName), default, default).
 %% @private 生成模板erl
--spec make_template(file:filename_all(), file:filename_all(), file:filename_all()) -> any().
-make_template(XlsxFileName, ErlPath, HrlPath) ->
-    case make_template_get_base_info(XlsxFileName) of
-        {ok, ModuleStr, KeyCommentList} ->
-            RecordDefList = [[Key || {Key, _} <- KeyComment] || KeyComment <- KeyCommentList],
+make_template(XlsxFileName, SheetName, ErlPath, HrlPath) ->
+    case make_template_get_base_info(XlsxFileName, SheetName) of
+        {ok, WorkbookName, RecordName, RecordComment, FieldCommentList} ->
+            ModuleStr = ?XLSX2ERL_ERL_NAME2(WorkbookName, SheetName),
+            Key = element(1, hd(RecordComment)),
             Head =
                 "-module(" ++ ModuleStr ++ ").\n\n"
             "-behaviour(xlsx2erl_callback).\n\n"
-            "-include(\"xlsx2erl.hrl\").\n\n"
+            "-include(\"util.hrl\").\n"
+            "-include(\"xlsx2erl.hrl\").\n"
             "-include(\"" ++ ModuleStr ++ ".hrl\").\n\n"
-            "-define(DETS_DICT1(Name), {Name, dict}).\n\n",
-            ExportDefaultGet =
-                "-export([" ++ string:join(["get_" ++ RecordName ++ "/0" || [RecordName | _] <- RecordDefList], ", ") ++ "]).\n\n",
-            ExportPrivate =
+            "%% workbook和sheet的名字\n"
+            "-define(PRIV_WORKBOOK_NAME, \"" ++ WorkbookName ++ "\").\n"
+            "-define(PRIV_SHEET_NAME, \"" ++ SheetName ++ "\").\n"
+            "%% dets\n"
+            "-define(PRIV_DETS, ?DETS_TABLE1(?PRIV_WORKBOOK_NAME)).\n"
+            "-define(PRIV_DETS_SHEET, list_to_atom(?PRIV_SHEET_NAME)).\n"
+            "-define(PRIV_DETS_INDEX, {index, ?MODULE}).\n"
+            "%% todo 生成的文件名字, hrl复制的mask\n"
+            "-define(PRIV_ERL_FILE, " ++ RecordName ++ ".erl\").\n"
+            "-define(PRIV_HRL_FILE, " ++ ?XLSX2ERL_HRL_NAME1(WorkbookName) ++ ".hrl).\n"
+            "-define(PRIV_MASK_TAG, " ++ RecordName ++ ".hrl).\n"
+            "",
+            Export =
+                "-export([get_index/0]).\n\n"
                 "-export([update_dets/1, compile/1, clean/1]).\n\n",
+            Pd =
+                "%% 字典数据, 用于报错\n"
+                "init_pd() ->\n"
+                "    put(?PD_XLSX2ERL_WORKBOOK, ?PRIV_WORKBOOK_NAME),\n"
+                "    put(?PD_XLSX2ERL_SHEET, ?PRIV_SHEET_NAME),\n"
+                "    put(?PD_XLSX2ERL_FIELD_DEF, record_info(fields, " ++ RecordName ++ ")).\n\n"
+            "clean_pd() ->\n"
+            "    erase(?PD_XLSX2ERL_WORKBOOK),\n"
+            "    erase(?PD_XLSX2ERL_SHEET),\n"
+            "    erase(?PD_XLSX2ERL_FIELD_DEF),\n"
+            "    erase(?PD_XLSX2ERL_ROW).\n\n"
+            "",
             UpdateDets =
-                "update_dets(FileName) ->\n"
-                "    RecordDef = [\n" ++
+                "update_dets(Sheet) ->\n"
+                "    init_pd(),\n"
+                "    RowList = xlsx2erl:make_row_list(Sheet, " ++ RecordName ++ ", record_info(fields, " ++ RecordName ++ ")),\n"
+            "    %% todo 可以生成自定义数据索引, 用来优化表交叉验证数据的效率\n"
+            "    %% todo 默认生成record第一个字段为key的map结构\n"
+            "    {RowList1, Index} = update_dets_convert_record(RowList, [], #{}),\n"
+            "    Now = erlang:localtime(),\n"
+            "    dets:insert(?PRIV_DETS, Sheet#xlsx2erl_sheet{row_list = RowList1}),\n"
+            "    dets:insert(?PRIV_DETS, #xlsx2erl_dets{k = ?XLSX2ERL_EXCEL_UPDATE_TIME, v = Now}),\n"
+            "    %% 保存自定义数据\n"
+            "    dets:insert(?PRIV_DETS, #xlsx2erl_dets{k = ?PRIV_DETS_INDEX, v = Index}),\n"
+            "\n"
+            "    clean_pd().\n\n"
+            "update_dets_convert_record([], RowList, Index) ->\n"
+            "    {RowList, Index};\n"
+            "update_dets_convert_record([H | T], RowList, Index) ->\n"
+            "    put(?PD_XLSX2ERL_ROW, H),\n"
+            "    %% todo 选择转换类型\n"
+            "    Record1 = #" ++ RecordName ++ "{\n" ++
                 string:join([
-                        "        {" ++ RecordName ++ ", record_info(fields, " ++ RecordName ++ ")}"
-                    || [RecordName | _] <- RecordDefList], ",\n") ++ "\n" ++
-                "    ],\n"
-                "    case xlsx2erl:get_sheet_data(RecordDef, FileName) of\n"
-                "        SheetList when is_list(SheetList) ->\n"
-                "            %% todo 可以生成自定义数据, 可以用来优化表交叉验证数据的效率\n"
-                "            %% todo 默认生成record第一个字段为key的dict结构\n"
-                "            {SheetList1, DictList} = update_dets_convert(SheetList, [], []),\n"
-                "            Now = erlang:localtime(),\n"
-                "            dets:insert(?DETS_XLSX2ERL1(?MODULE), #xlsx2erl_excel{name = ?MODULE, excel_name = filename:basename(FileName), sheet_list = SheetList1}),\n"
-                "            dets:insert(?DETS_XLSX2ERL1(?MODULE), #xlsx2erl_dets{k = ?XLSX2ERL_EXCEL_UPDATE_TIME, v = Now}),\n"
-                "            %% todo 保存自定义数据\n"
-                "            lists:foreach(fun({K, V}) ->\n"
-                "                dets:insert(?DETS_XLSX2ERL1(?MODULE), #xlsx2erl_dets{k = ?DETS_DICT1(K), v = V})\n"
-                "                          end, DictList);\n"
-                "        _ ->\n"
-                "            error\n"
-                "    end.\n\n"
-                "update_dets_convert([], SheetList, DictList) ->\n"
-                "    {SheetList, DictList};\n" ++
-                string:join([
-                        "update_dets_convert([#xlsx2erl_sheet{name = " ++ RecordName ++ ", row_list = RowList} = H | T], SheetList, DictList) ->\n"
-                    "    {OldRowList, OldDict} = update_dets_convert_sheet_and_dict(" ++ RecordName ++ ", SheetList, DictList),\n"
-                    "    {RowList1, Dict1} = update_dets_convert_record_" ++ RecordName ++ "(RowList, H, record_info(fields, " ++ RecordName ++ "), OldRowList, OldDict),\n"
-                    "    SheetList1 = lists:keystore(" ++ RecordName ++ ", #xlsx2erl_sheet.name, SheetList, H#xlsx2erl_sheet{row_list = RowList1}),\n"
-                    "    DictList1 = lists:keystore(" ++ RecordName ++ ", 1, DictList, {" ++ RecordName ++ ", Dict1}),\n"
-                    "    update_dets_convert(T, SheetList1, DictList1)"
-                    || [RecordName | _] <- RecordDefList], ";\n") ++
-                ".\n\n"
-                "update_dets_convert_sheet_and_dict(Name, SheetList, DictList) ->\n"
-                "    case lists:keyfind(Name, #xlsx2erl_sheet.name, SheetList) of\n"
-                "        false -> OldRowList = [];\n"
-                "        #xlsx2erl_sheet{row_list = OldRowList} -> ok\n"
-                "    end,\n"
-                "    case lists:keyfind(Name, 1, DictList) of\n"
-                "        false -> OldDict = dict:new();\n"
-                "        {_, OldDict} -> ok\n"
-                "    end,\n"
-                "    {OldRowList, OldDict}.\n\n" ++
-                ["update_dets_convert_record_" ++ RecordName ++ "([], _Sheet, _RecordDef, RowList, Dict) ->\n"
-                "    {RowList, Dict};\n"
-                "update_dets_convert_record_" ++ RecordName ++ "([H | T], Sheet, RecordDef, RowList, Dict) ->\n"
-                "    %% todo 选择转换类型\n"
-                "    Record1 = #" ++ RecordName ++ "{\n" ++
-                    string:join([
-                            "        " ++ Field ++ " = xlsx2erl_util:convert_bin(#" ++ RecordName ++ "." ++ Field ++ ", RecordDef, H, Sheet)"
-                        || Field <- FieldList], ",\n") ++ "\n"
-                "    },\n"
-                "    RowList1 = [H#xlsx2erl_row{record = Record1} | RowList],\n"
-                "    %% todo 构造数据索引\n"
-                "    Dict1 = dict:store(element(2, Record1), Record1, Dict),\n"
-                "    update_dets_convert_record_" ++ RecordName ++ "(T, Sheet, RecordDef, RowList1, Dict1).\n\n"
-                    || [RecordName | FieldList] <- RecordDefList],
-            Get =
-                "%% todo 对应的获取自定义数据方法, 默认获取dict\n" ++
-                ["get_" ++ RecordName ++ "() ->\n"
-                "    xlsx2erl_util:ensure_dets(?DETS_XLSX2ERL1(?MODULE)),\n"
-                "    [#xlsx2erl_dets{v = V}] = dets:lookup(?DETS_XLSX2ERL1(?MODULE), ?DETS_DICT1(" ++ RecordName ++ ")),\n"
-                "    V.\n\n"
-                    || [RecordName | _] <- RecordDefList],
+                        "        " ++ Field ++ " = ?XLSX2ERL_TO_(#" ++ RecordName ++ "." ++ Field ++ ", RecordDef, H, Sheet)"
+                    || {Field, _} <- FieldCommentList], ",\n") ++ "\n"
+            "    },\n"
+            "    RowList1 = [H#xlsx2erl_row{record = Record1} | RowList],\n"
+            "    %% todo 构造数据索引\n"
+            "    Index1 = Index#{Record1#data_test_goods.id => Record1},\n"
+            "    update_dets_convert_record(T, RowList1, Index1).\n\n"
+            "",
+            Index =
+                "%% todo 对应的获取自定义索引\n" ++
+                "get_index() ->\n"
+                "    xlsx2erl_util:ensure_dets(?PRIV_DETS),\n"
+                "    [#xlsx2erl_dets{v = V}] = dets:lookup(?PRIV_DETS, ?PRIV_DETS_INDEX),\n"
+                "    V.\n\n",
             Compile =
-                "compile(#xlsx2erl_cb_args{hrl_path = HrlPath} = Args) ->\n"
-                "    #xlsx2erl_excel{sheet_list = SheetList} = xlsx2erl_util:get_excel(?MODULE),\n"
-                "    %% todo 删除不需要的copy" ++
-                ["    xlsx2erl_util:copy_mask_body(?MODULE, \"" ++ RecordName
-                    ++ "\", HrlPath ++ \"/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
-                    || [RecordName | _] <- RecordDefList] ++
-                "    do_compile(SheetList, Args).\n\n"
-                "do_compile([], _Args) ->\n"
-                "    ok;\n" ++
+                "compile(#xlsx2erl_cb_args{hrl_path = HrlPath, erl_path = ErlPath}) ->"
+                "    [#xlsx2erl_sheet{row_list = RowList}] = dets:lookup(?PRIV_DETS, ?PRIV_DETS_SHEET),\n"
+                "    %% todo 如果不需要复制hrl定义可以删除这句\n"
+                "    xlsx2erl_util:copy_mask_body(?MODULE, ?PRIV_MASK_TAG, HrlPath ++ " / " ++ ?PRIV_HRL_FILE),\n"
+                "\n"
+                "    %% todo 构造文件内容, 如果生成多个函数, priv_arg多定义几个参数即可\n"
+                "    Head =\n"
+                "        \"-module(\" ++ filename:rootname(?PRIV_ERL_FILE) ++ \").\n\n\"\n"
+                "    \"-include(\\\"\" ++ ?PRIV_HRL_FILE ++ \"\\\").\\n\\n\"\n"
+                "    \"-export([get/1]).\\n\\n\",\n"
+                "    #priv_arg{body = Body} = compile_row_list(RowList, #priv_arg{}),\n"
+                "    Tail =\n"
+                "        \"get(_) -> undefined.\",\n"
+                "    file:make_dir(ErlPath ++ \"/\" ++ ?PRIV_WORKBOOK_NAME),\n"
+                "    File = ErlPath ++ \"/\" ++ ?PRIV_WORKBOOK_NAME ++ \"/\" ++ ?PRIV_ERL_FILE\n"
+                "    ok = file:write_file(File, [Head, Body, Tail]),\n"
+                "\n"
+                "    clean_pd()\n\n"
+                "compile_row_list([], Arg) -> Arg;\n"
+                "compile_row_list([H | T], Arg) ->\n"
+                "    %% 再套一层, 提示报错\n"
+                "    put(?PD_XLSX2ERL_ROW, H),\n"
+                "    case catch compile_row(H, Arg) of\n"
+                "        {'EXIT', ?XLSX2ERL_ERROR} ->% 已知错误\n"
+                "            exit(?XLSX2ERL_ERROR);\n"
+                "        #priv_arg{} = Arg1 ->\n"
+                "            compile_row_list(T, Arg1);\n"
+                "        Error ->\n"
+                "            ?XLSX2ERL_PD_ERROR2(\"unknow error ~w~n\", [Error]),\n"
+                "            exit(?XLSX2ERL_ERROR)\n"
+                "    end.\n\n"
+                "compile_row(#xlsx2erl_row{data = Record}, #priv_arg{body = Body, keys = Keys}) ->\n"
+                "    %% todo 添加数值检查或转换\n"
+                "    %% todo 是否重复key\n"
+                "    Key = Record#" ++ RecordName ++ "." ++ Key ++ "\n"
+            "    ?DO_IF(maps:is_key(Key, Keys), ?XLSX2ERL_PD_ERROR2(\"key ~w 重复了\", [Key])),\n"
+            "    %% todo 添加数值转换\n"
+            "    Record1 = Record#" ++ RecordName ++ "{}\n"
+            "    BodyRow = compile_body(Record1),\n"
+            "    Body1 = [BodyRow | Body],\n"
+            "    Keys1 = Keys#{Key => 1},\n"
+            "    {ok, #priv_arg{body = Body1, keys = Keys1}}.\n\n"
+            "%% todo 构造文本\n"
+            "compile_body(Record) ->\n"
+            "    \"get(\" ++ xlsx2erl_util:to_iolist(Record#" ++ RecordName ++ "." ++ Key ++ ") ++ \") -> \\n\" ++\n"
+            "        \"    #" ++ RecordName ++ "{\"\n" ++
                 string:join([
-                        "do_compile([#xlsx2erl_sheet{name = " ++ RecordName ++ ", row_list = RowList} | T], #xlsx2erl_cb_args{erl_path = ErlPath} = Args) ->\n"
-                    "    Head =\n"
-                    "        \"-module(" ++ RecordName ++ ").\\n\\n\"\n"
-                    "    \"-include(\\\"\" ++ ?XLSX2ERL_DEFAULT_HRL ++ \"\\\").\\n\\n\"\n"
-                    "    \"-export([get/1]).\\n\\n\",\n"
-                    "    Body =\n"
-                    "        lists:map(fun(#xlsx2erl_row{record = Record}) ->\n"
-                    "            %% todo 添加数值检查\n"
-                    "            \"get(\" ++ xlsx2erl_util:to_iolist(Record#" ++ RecordName ++ "." ++ hd(FieldList) ++ ") ++ \") -> \\n\" ++\n"
-                    "                \"    #" ++ RecordName ++ "{\"\n" ++
-                        string:join([
-                                "                \"" ++ Field ++ " = \" ++ xlsx2erl_util:to_iolist(Record#" ++ RecordName ++ "." ++ Field ++ ") ++"
-                            || Field <- FieldList], " \", \" ++\n") ++ "\n"
-                    "                \"};\\n\"\n"
-                    "                  end, RowList),\n"
-                    "    Tail =\n"
-                    "        \"get(_) -> undefined.\",\n"
-                    "    ok = file:write_file(ErlPath ++ \"/" ++ RecordName ++ ".erl\", [Head, Body, Tail]),\n"
-                    "    do_compile(T, Args)"
-                    || [RecordName | FieldList] <- RecordDefList], ";\n") ++ ".\n\n",
+                        "        \"        " ++ Field ++ " = \" ++ xlsx2erl_util:to_iolist(Record#" ++ RecordName ++ "." ++ Field ++ ") ++"
+                    || {Field, _} <- RecordComment], " \", \" ++\n") ++ "\n"
+            "        \"};\\n\".\n\n"
+            "",
             Clean =
-                "clean(#xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath}) ->\n"
-                "    file:delete(HrlPath ++ \"/\" ++ ?XLSX2ERL_DEFAULT_HRL),\n"
-                "    catch dets:close(?DETS_XLSX2ERL1(?MODULE)),\n"
-                "    file:delete(?DETS_PATH ++ \"/\" ++ ?MODULE_STRING),\n" ++
-                string:join([
-                        "    file:delete(ErlPath ++ \"/" ++ RecordName ++ ".erl\")"
-                    || [RecordName | _] <- RecordDefList], ",\n") ++
-                ".\n\n",
+                "clean(#xlsx2erl_cb_args{erl_path = ErlPath, hrl_path = HrlPath}) ->"
+                "        %% 先删dets\n"
+                "    xlsx2erl_util:ensure_dets(?PRIV_DETS),\n"
+                "    dets:delete(?PRIV_DETS, ?PRIV_DETS_SHEET),\n"
+                "    dets:delete(?PRIV_DETS, ?PRIV_DETS_INDEX),\n"
+                "    %% 再删文件\n"
+                "    %% todo 如果不需要复制hrl定义可以删除这句\n"
+                "    xlsx2erl_util:delete_mask_body(?PRIV_MASK_TAG, HrlPath ++ \"/\" ++ ?PRIV_HRL_FILE),\n"
+                "    file:delete(ErlPath ++ \"/\" ++ ?PRIV_WORKBOOK_NAME ++ \"/\" ++ ?PRIV_ERL_FILE).\n"
+                "",
             ErlFile =
                 case ErlPath of
                     default ->
-                        ?XLSX2ERL_CALLBACK_PATH ++ "/" ++ ModuleStr ++ ".erl";
+                        ?XLSX2ERL_CB_PATH ++ "/" ++ ModuleStr ++ ".erl";
                     _ ->
                         case filelib:is_dir(ErlPath) of
                             true ->
@@ -555,28 +679,29 @@ make_template(XlsxFileName, ErlPath, HrlPath) ->
                         end
                 end,
             io:format("write template file " ++ ErlFile ++ "~n"),
-            ok = file:write_file(ErlFile, unicode:characters_to_binary([Head, ExportDefaultGet, ExportPrivate, UpdateDets, Get, Compile, Clean])),
-            make_hrl_template(ModuleStr, KeyCommentList, HrlPath);
+            ok = file:write_file(ErlFile, unicode:characters_to_binary([Head, Export, UpdateDets, Compile, Index, Clean])),
+            make_hrl_template(ModuleStr, FieldCommentList, HrlPath);
         Error ->
             Error
     end.
 
 make_hrl_template(XlsxFileName, HrlPath) ->
-    case make_template_get_base_info(XlsxFileName) of
-        {ok, ModuleStr, KeyCommentList} ->
-            make_hrl_template(ModuleStr, KeyCommentList, HrlPath);
-        Error ->
-            Error
-    end.
+%%    case make_template_get_base_info(XlsxFileName) of
+%%        {ok, ModuleStr, KeyCommentList} ->
+%%            make_hrl_template(ModuleStr, KeyCommentList, HrlPath);
+%%        Error ->
+%%            Error
+%%    end.
+    ok.
 
 make_hrl_template(ModuleStr, KeyCommentList, HrlPath) ->
     RecordMask =
-        [[?XLSX2ERL_RECORD_START_MASK1(RecordName) ++ "\n"
+        [[?XLSX2ERL_MASK_START1(RecordName) ++ "\n"
         "%% " ++ RecordNameComment ++ "\n"
         "-record(", RecordName, ", {\n"
             , make_field_comment_str(FieldList),
                 "}).\n" ++
-                ?XLSX2ERL_RECORD_END_MASK1(RecordName) ++ "\n"
+                ?XLSX2ERL_MASK_END1(RecordName) ++ "\n"
         ] || [{RecordName, RecordNameComment} | FieldList] <- KeyCommentList],
     HrlFile =
         case HrlPath of
@@ -595,48 +720,81 @@ make_hrl_template(ModuleStr, KeyCommentList, HrlPath) ->
     ok = file:write_file(HrlFile, unicode:characters_to_binary([RecordMask])).
 
 %% 获取一些基础信息用于生成模板
-make_template_get_base_info(XlsxFileName) ->
+make_template_get_base_info(XlsxFileName, SheetName) ->
     BaseName = filename:basename(XlsxFileName),
     case string:split(filename:rootname(BaseName), "-") of
-        [_, TagStr] ->
-            ModuleStr = "xlsx2erl_" ++ TagStr,
-            KeyList = get_mask_row(?XLSX2ERL_MASK_KEY, XlsxFileName),
-            CommentList = get_mask_row(?XLSX2ERL_MASK_COMMENT, XlsxFileName),
+        [_, WorkbookName] ->
+            {SheetFullName, MaskList} = make_template_get_mask_info(XlsxFileName, SheetName),
+            KeyList =
+                case lists:keyfind(?XLSX2ERL_KEY_KEY, 1, MaskList) of
+                    false ->
+                        io:format("no key in ~ts: ~s", [XlsxFileName, SheetName]),
+                        exit(error);
+                    {_, KeyList0} ->
+                        KeyList0
+                end,
+            CommentList =
+                case lists:keyfind(?XLSX2ERL_KEY_COMMENT, 1, MaskList) of
+                    false ->
+                        [];
+                    {_, CommentList0} ->
+                        CommentList0
+                end,
             KeyCommentList = make_field_comment_tuple(KeyList, CommentList),
-            {ok, ModuleStr, KeyCommentList};
+            RecordName = atom_to_list(?XLSX2ERL_RECORD_NAME2(WorkbookName, SheetName)),
+            RecordComment = hd(string:split(SheetFullName, "-")),
+            {ok, WorkbookName, RecordName, RecordComment, KeyCommentList};
         _ ->
             io:format("make template bad xlsx name ~ts~n", [BaseName]),
             error
     end.
 
-
 %% 获取所有sheet的mask行对应的数据
 %% [{sheet名, record名字, [字段]}]
-get_mask_row(Mask, XlsxFile) ->
+make_template_get_mask_info(XlsxFile, SheetName) ->
     RowHandler =
-        fun(SheetName, [_Line, ThisMask | Row], Acc) when ThisMask == Mask ->
-            case string:split(SheetName, "-") of
-                [SheetNameHead, RecordNameStr] ->
-                    RecordName = ?RECORD_NAME1(RecordNameStr),
-                    case lists:keymember(RecordName, 2, Acc) of
-                        true ->% 合并表的话留一个就够了
-                            {next_sheet, Acc};
+        fun(SheetFullName, Row, {LastSheetFullName, RL, SL, SearchLine}) ->
+            IsThisSheet =
+                case LastSheetFullName == SheetFullName orelse string:split(SheetFullName, "-") of
+                    true -> true;
+                    [_, SheetName] ->
+                        true;
+                    _ ->
+                        false
+                end,
+            case IsThisSheet of
+                true ->
+                    case Row of
+                        [_, Mask | RowT] ->
+                            make_template_get_mask_info_1(Mask, RowT, SheetFullName, RL, SL, SearchLine);
                         _ ->
-                            {next_sheet, [{SheetNameHead, RecordName, Row} | Acc]}
+                            {next_row, {SheetFullName, RL, SL, SearchLine}}
                     end;
-                _ ->% 名字格式不对, 忽略
-                    {next_sheet, Acc}
-            end;
-            (_SheetName, _, Acc) ->
-                {next_row, Acc}
+                _ ->
+                    {next_sheet, {undefined, RL, SL, ?XLSX2ERL_KEY_SEARCH_LINE}}
+            end
         end,
     case xlsx_reader:read(XlsxFile, [], RowHandler) of
         {error, Reason} ->
-            io:format("get_mask_row ~s ~ts error~n~p~n", [Mask, filename:basename(XlsxFile), Reason]),
+            io:format("~ts get_mask_info error~n~p~n", [filename:basename(XlsxFile), Reason]),
             error;
-        RecordDefList ->
-            %% 翻转
-            lists:reverse(RecordDefList)
+        {MaskSheetFullName, ResultList, _SearchList, _} ->
+            {MaskSheetFullName, ResultList}
+    end.
+
+make_template_get_mask_info_1(_, _, SheetFullName, ResultList, SearchList, 0) ->
+    {break, {SheetFullName, ResultList, SearchList, 0}};
+make_template_get_mask_info_1(Key, Row, SheetFullName, ResultList, SearchList, SearchLine) ->
+    case lists:member(Key, SearchList) of
+        true ->
+            case lists:delete(Key, SearchList) of
+                [] ->% 全部mask收集完
+                    {break, {SheetFullName, [{Key, Row} | ResultList], [], SearchLine - 1}};
+                SearchList1 ->
+                    {next_row, {SheetFullName, [{Key, Row} | ResultList], SearchList1, SearchLine - 1}}
+            end;
+        _ ->
+            {next_row, {SheetFullName, ResultList, SearchList, SearchLine - 1}}
     end.
 
 %% [[{record_name, 注释}|[{field, 注释}]]]
@@ -654,9 +812,9 @@ make_field_comment_tuple([{SheetNameHead, RecordName, FieldList} | T], AllCommen
 
 make_field_comment_tuple1([], _) ->
     [];
-make_field_comment_tuple1(L, []) ->
+make_field_comment_tuple1(L, []) ->% 后续的comment没有了
     [{Field, []} || Field <- L, Field =/= []];
-make_field_comment_tuple1([[] | FT], [_ | CT]) ->
+make_field_comment_tuple1([[] | FT], [_ | CT]) ->% 空的cell
     make_field_comment_tuple1(FT, CT);
 make_field_comment_tuple1([FH | FT], [CH | CT]) ->
     [{FH, CH} | make_field_comment_tuple1(FT, CT)].

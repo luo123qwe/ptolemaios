@@ -3,19 +3,20 @@ full name                                       |short name         |中文注�
 supervisor                                      |sup                |缩写
 sever                                           |svr                |缩写
 callback                                        |cb                 |缩写
+private                                         |priv               |缩写
 ptolemaios                                      |                   |这个app
 util                                            |                   |杂乱的工具
-kv_op                                           |                   |kv数据结构操作
-local_lock                                      |                   |本地锁
+kv                                              |                   |kv数据结构操作
+local_lock                                      |ll                 |本地锁
 log                                             |                   |日志
 fold                                            |                   |支持break的遍历操作
 virture                                         |                   |数据操作
-virture_mysql                                   |                   |使用mysql作为数据库
+virture_mysql                                   |vsql               |使用mysql作为数据库
 exia                                            |                   |gen_server的修改版
 proto                                           |                   |协议
 gateway                                         |                   |网关
 gateway_client                                  |gateway_c          |客户端
-error_code                                      |                   |错误码, 仅头文件
+error_code                                      |ec                 |错误码, 仅头文件
 fix                                             |                   |数据, 代码修复
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 框架补充 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 performance                                     |perf               |性能测试用文件
@@ -23,11 +24,13 @@ template                                        |                   |模板文�
 fractal_tree                                    |                   |分型树
 hash_tuple                                      |                   |哈希tuple(数组)
 xlsx2erl                                        |                   |excel生成erl配置文件
-dynames                                         |                   |战斗框架
-dynames_unit_xxx                                |dynames_u_xxx      |战斗单位
-dynames_event_stream_data_xxx                   |dynames_esd_xxx    |战斗事件特殊的数据流
-dynames_event_trigger_type_before_xxx           |dynames_ettb_xxx   |战斗事件触发xxx类型前
-dynames_event_trigger_type_after_xxx            |dynames_etta_xxx   |战斗事件触发xxx类型后
+dynames                                         |ds                 |战斗框架
+dynames_return[_xxx]                            |ds_r[_xxx]         |战斗单位
+dynames_unit_xxx                                |ds_u_xxx           |战斗单位
+dynames_event_xxx                               |ds_e_xxx           |战斗事件
+dynames_event_stream_data_xxx                   |ds_esd_xxx         |战斗事件特殊的数据流
+dynames_event_trigger_type_before_xxx           |ds_ettb_xxx        |战斗事件触发xxx类型前
+dynames_event_trigger_type_after_xxx            |ds_etta_xxx        |战斗事件触发xxx类型后
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 业务功能 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 player                                          |                   |玩家
 

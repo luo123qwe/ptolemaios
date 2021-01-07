@@ -41,8 +41,8 @@ get_sup_spec(mysql) ->
             {keep_alive, true},
             {prepare, []}],%{test, "SELECT * FROM player WHERE id=?"}]}],
         [
-            mysql_poolboy:child_spec(?VIRTURE_MYSQL_POOL, PoolOptions, MySqlOptions),
-            #{id => virture_mysql_sup, start => {virture_mysql_sup, start_link, []}, type => supervisor}
+            mysql_poolboy:child_spec(?VSQL_POOL, PoolOptions, MySqlOptions),
+            #{id => vsql_sup, start => {vsql_sup, start_link, []}, type => supervisor}
         ]
     catch
         C:E ->
@@ -51,63 +51,63 @@ get_sup_spec(mysql) ->
     end.
 
 %% @doc 所有表定义写在这里
--spec all(mysql) -> [#virture_mysql{}].
+-spec all(mysql) -> [#vsql{}].
 all(mysql) ->
     [
-        #virture_mysql{
-            table = virture_mysql_test_player,
-            private_key_pos = #virture_mysql_test_player.virture_mysql_key,
-            state_pos = #virture_mysql_test_player.virture_mysql_state,
+        #vsql{
+            table = vsql_test_player,
+            private_key_pos = #vsql_test_player.vsql_key,
+            state_pos = #vsql_test_player.vsql_state,
             select_key = [player_id],
             private_key = [player_id],
             all_fields = [
-                #virture_mysql_field{name = player_id, pos = #virture_mysql_test_player.player_id, type = ?VIRTURE_UINT32},
-                #virture_mysql_field{name = str, pos = #virture_mysql_test_player.str, type = ?VIRTURE_STRING1(100)},
-                #virture_mysql_field{name = to_str, pos = #virture_mysql_test_player.to_str, type = ?VIRTURE_TO_STRING},
-                #virture_mysql_field{name = to_bin, pos = #virture_mysql_test_player.to_bin, type = ?VIRTURE_TO_BINARY},
-                #virture_mysql_field{name = to_json, pos = #virture_mysql_test_player.to_json, type = ?VIRTURE_JSON_OBJ_LIST([<<"a">>, ?VIRTURE_JSON_OBJ(<<"b">>, [<<"c">>, <<"d">>])])}
+                #vsql_field{name = player_id, pos = #vsql_test_player.player_id, type = ?VIRTURE_UINT32},
+                #vsql_field{name = str, pos = #vsql_test_player.str, type = ?VIRTURE_STRING1(100)},
+                #vsql_field{name = to_str, pos = #vsql_test_player.to_str, type = ?VIRTURE_TO_STRING},
+                #vsql_field{name = to_bin, pos = #vsql_test_player.to_bin, type = ?VIRTURE_TO_BINARY},
+                #vsql_field{name = to_json, pos = #vsql_test_player.to_json, type = ?VIRTURE_JSON_OBJ_LIST([<<"a">>, ?VIRTURE_JSON_OBJ(<<"b">>, [<<"c">>, <<"d">>])])}
             ],
-            record_size = record_info(size, virture_mysql_test_player)
+            record_size = record_info(size, vsql_test_player)
         },
-        #virture_mysql{
-            table = virture_mysql_test_goods,
-            private_key_pos = #virture_mysql_test_goods.virture_mysql_key,
-            state_pos = #virture_mysql_test_goods.virture_mysql_state,
+        #vsql{
+            table = vsql_test_goods,
+            private_key_pos = #vsql_test_goods.vsql_key,
+            state_pos = #vsql_test_goods.vsql_state,
             select_key = [player_id],
             private_key = [player_id, goods_id],
             all_fields = [
-                #virture_mysql_field{name = player_id, pos = #virture_mysql_test_goods.player_id, type = ?VIRTURE_UINT32},
-                #virture_mysql_field{name = goods_id, pos = #virture_mysql_test_goods.goods_id, type = ?VIRTURE_UINT32},
-                #virture_mysql_field{name = str, pos = #virture_mysql_test_goods.str, type = ?VIRTURE_STRING1(100)},
-                #virture_mysql_field{name = to_str, pos = #virture_mysql_test_goods.to_str, type = ?VIRTURE_TO_STRING},
-                #virture_mysql_field{name = to_bin, pos = #virture_mysql_test_goods.to_bin, type = ?VIRTURE_TO_BINARY}
+                #vsql_field{name = player_id, pos = #vsql_test_goods.player_id, type = ?VIRTURE_UINT32},
+                #vsql_field{name = goods_id, pos = #vsql_test_goods.goods_id, type = ?VIRTURE_UINT32},
+                #vsql_field{name = str, pos = #vsql_test_goods.str, type = ?VIRTURE_STRING1(100)},
+                #vsql_field{name = to_str, pos = #vsql_test_goods.to_str, type = ?VIRTURE_TO_STRING},
+                #vsql_field{name = to_bin, pos = #vsql_test_goods.to_bin, type = ?VIRTURE_TO_BINARY}
             ],
             index = [[goods_id]],
-            record_size = record_info(size, virture_mysql_test_goods)
+            record_size = record_info(size, vsql_test_goods)
         },
-        #virture_mysql{
-            table = virture_mysql_test_equip,
+        #vsql{
+            table = vsql_test_equip,
             use_ets = false,
-            private_key_pos = #virture_mysql_test_equip.virture_mysql_key,
-            state_pos = #virture_mysql_test_equip.virture_mysql_state,
+            private_key_pos = #vsql_test_equip.vsql_key,
+            state_pos = #vsql_test_equip.vsql_state,
             select_key = [player_id],
             private_key = [player_id, equip_id],
             all_fields = [
-                #virture_mysql_field{name = player_id, pos = #virture_mysql_test_equip.player_id, type = ?VIRTURE_UINT32},
-                #virture_mysql_field{name = equip_id, pos = #virture_mysql_test_equip.equip_id, type = ?VIRTURE_UINT32}
+                #vsql_field{name = player_id, pos = #vsql_test_equip.player_id, type = ?VIRTURE_UINT32},
+                #vsql_field{name = equip_id, pos = #vsql_test_equip.equip_id, type = ?VIRTURE_UINT32}
             ],
-            record_size = record_info(size, virture_mysql_test_equip)
+            record_size = record_info(size, vsql_test_equip)
         },
-        #virture_mysql{
+        #vsql{
             table = player,
-            private_key_pos = #player.virture_mysql_key,
-            state_pos = #player.virture_mysql_state,
+            private_key_pos = #player.vsql_key,
+            state_pos = #player.vsql_state,
             select_key = [id],
             private_key = [id],
             all_fields = [
-                #virture_mysql_field{name = id, pos = #player.id, type = ?VIRTURE_UINT64, auto_incremental = 1},
-                #virture_mysql_field{name = account, pos = #player.account, type = ?VIRTURE_STRING1(100)},
-                #virture_mysql_field{name = name, pos = #player.name, type = ?VIRTURE_STRING1(100)}
+                #vsql_field{name = id, pos = #player.id, type = ?VIRTURE_UINT64, auto_incremental = 1},
+                #vsql_field{name = account, pos = #player.account, type = ?VIRTURE_STRING1(100)},
+                #vsql_field{name = name, pos = #player.name, type = ?VIRTURE_STRING1(100)}
             ],
             index = [[account]],
             unique_index = [[name]],
@@ -117,6 +117,6 @@ all(mysql) ->
 
 
 %% @doc 获取某个table的定义
--spec get(mysql, atom()) -> #virture_mysql{}|false.
+-spec get(mysql, atom()) -> #vsql{}|false.
 get(mysql, Table) ->
-    lists:keyfind(Table, #virture_mysql.table, all(mysql)).
+    lists:keyfind(Table, #vsql.table, all(mysql)).

@@ -5,10 +5,10 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(template_dynames_unit).
+-module(template_ds_u).
 -author("dominic").
 
--behaviour(dynames_unit).
+-behaviour(ds_unit).
 
 %% API
 -export([init/2, filter_event_target/3, execute_event/4]).

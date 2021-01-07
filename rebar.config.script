@@ -7,6 +7,8 @@ Millisecond = erlang:system_time(millisecond),
 MillisecondStr = integer_to_list(Millisecond),
 
 [
+    %% 这个东西有点迷, 有时候可以有时候不可以
+    %% HEX_CDN=https://hexpm.upyun.com
     {rebar_packages_cdn, "https://hexpm.upyun.com"},
 
     {erl_opts, [

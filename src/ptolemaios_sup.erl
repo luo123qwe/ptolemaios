@@ -35,7 +35,7 @@ init([]) ->
         period => 5
     },
     
-    local_lock:init_ets(),
+    ll:init_ets(),
     
     proto_mapping:load(),
     
@@ -44,7 +44,7 @@ init([]) ->
         [
             #{id => gateway_sup, start => {gateway_sup, start_link, []}, type => supervisor},
             #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor},
-            #{id => dynames_sup, start => {dynames_sup, start_link, []}, type => supervisor}
+            #{id => ds_sup, start => {ds_sup, start_link, []}, type => supervisor}
         ],
     
     {ok, {SupFlags, ChildSpecs}}.

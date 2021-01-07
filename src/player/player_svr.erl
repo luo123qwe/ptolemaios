@@ -13,7 +13,7 @@
 -include("util.hrl").
 -include("player.hrl").
 -include("gateway.hrl").
--include("error_code.hrl").
+-include("ec.hrl").
 -include("gateway_1_pb.hrl").
 
 %% API
@@ -34,7 +34,7 @@ name(Id) ->
 
 init([Id, Gateway]) ->
     ?LOG_ERROR("~w ~w", [Id, Gateway]),
-    virture_mysql:load(player, [Id]),
+    vsql:load(player, [Id]),
     {ok, #player_state{id = Id, gateway = Gateway}}.
 
 handle_call(?MSG_PLAYER_GATEWAY_RECONNECT1(Gateway), _From, State) ->
@@ -52,11 +52,11 @@ handle_cast(?MSG_PLAYER_GATEWAY_PROTO1(Msg), #player_state{gateway = Gateway} = 
         UnKnow ->%% ????
             ?LOG_ERROR("unknown return ~w", [UnKnow]),
             Proto = proto_mapping:proto(Msg),
-            exia:cast(Gateway, ?MSG_GATEWAY_SEND_MSG1(#gateway_s_error{code = ?ERROR_CODE_ERROR, proto = Proto})),
+            exia:cast(Gateway, ?MSG_GATEWAY_SEND_MSG1(#gateway_s_error{code = ?EC_ERROR, proto = Proto})),
             State1 = exia:rollback(Rollback),
             {noreply, State1}
     catch
-        throw:?ERROR_CODE1(ErrorCode) ->
+        throw:?EC1(ErrorCode) ->
             Proto = proto_mapping:proto(Msg),
             exia:cast(Gateway, ?MSG_GATEWAY_SEND_MSG1(#gateway_s_error{code = ErrorCode, proto = Proto})),
             State1 = exia:rollback(Rollback),

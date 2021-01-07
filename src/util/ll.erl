@@ -5,7 +5,7 @@
 %%% 通过ets的xxx_element函数实现简单的悲观锁
 %%% @end
 %%%-------------------------------------------------------------------
--module(local_lock).
+-module(ll).
 -author("dominic").
 
 -include("util.hrl").
@@ -139,22 +139,22 @@ force_release(Key, Owner) ->
 base_test_() ->
     [
         {setup,
-            fun() -> local_lock:init_ets() end,
+            fun() -> ll:init_ets() end,
             fun(_) -> ets:delete(?ETS_LOCAL_LOCK) end,
             fun(_X) ->
                 [
-                    ?_assertEqual(lock, local_lock:lock(a)),
-                    ?_assertEqual(self(), local_lock:get_owner(a)),
-                    ?_assertEqual(fail, local_lock:lock(a)),
-                    ?_assertEqual(release, local_lock:release(a)),
-                    ?_assertError(not_owner, local_lock:release(a)),
-                    ?_test(spawn(fun() -> local_lock:lock(b), timer:sleep(10 * 1000) end)),
-                    ?_assertEqual(fail, local_lock:lock(b)),
-                    ?_assertError(not_owner, local_lock:release(b)),
-                    ?_assertEqual(force_release, local_lock:force_release(b)),
-                    ?_assertEqual(undefined, local_lock:get_owner(b)),
-                    ?_assertEqual(lock, local_lock:lock(b)),
-                    ?_assertEqual(self(), local_lock:get_owner(b))
+                    ?_assertEqual(lock, ll:lock(a)),
+                    ?_assertEqual(self(), ll:get_owner(a)),
+                    ?_assertEqual(fail, ll:lock(a)),
+                    ?_assertEqual(release, ll:release(a)),
+                    ?_assertError(not_owner, ll:release(a)),
+                    ?_test(spawn(fun() -> ll:lock(b), timer:sleep(10 * 1000) end)),
+                    ?_assertEqual(fail, ll:lock(b)),
+                    ?_assertError(not_owner, ll:release(b)),
+                    ?_assertEqual(force_release, ll:force_release(b)),
+                    ?_assertEqual(undefined, ll:get_owner(b)),
+                    ?_assertEqual(lock, ll:lock(b)),
+                    ?_assertEqual(self(), ll:get_owner(b))
                 ]
             end}
     ].

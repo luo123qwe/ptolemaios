@@ -14,7 +14,7 @@
 -include("gateway.hrl").
 -include("player.hrl").
 -include("gateway_1_pb.hrl").
--include("error_code.hrl").
+-include("ec.hrl").
 
 %% API
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
@@ -73,12 +73,12 @@ handle_info(Info, State) ->
 terminate(_, State) ->
     case State#gateway_state.account of
         undefined -> skip;
-        Account -> local_lock:release(?LOCAL_LOCK_ACCOUNT1(Account))
+        Account -> ll:release(?LOCAL_LOCK_ACCOUNT1(Account))
     end,
     case State#gateway_state.player_id of
         undefined -> skip;
         PlayerId ->
-            local_lock:release(?LOCAL_LOCK_PLAYER_ID1(PlayerId)),
+            ll:release(?LOCAL_LOCK_PLAYER_ID1(PlayerId)),
             exia:cast(State#gateway_state.player_pid, ?MSG_PLAYER_GATEWAY_DISCONNECT)
     end,
     ok.
@@ -97,7 +97,7 @@ decode_bin(#gateway_state{bin = Bin, socket = Socket, player_pid = PlayerPid} = 
                     Msg when ProtoHead == 1 ->% gateway的协议
                         %% 在本进程返回客户端, 省一个?MSG_GATEWAY_SEND_MSG1
                         case catch gateway_1_handle:handle(Msg, State1) of
-                            ?ERROR_CODE1(ErrorCode) ->
+                            ?EC1(ErrorCode) ->
                                 CBin = gateway:pack(#gateway_s_error{proto = Proto, code = ErrorCode}),
                                 ranch_tcp:send(Socket, CBin),
                                 decode_bin(State1);
@@ -117,7 +117,7 @@ decode_bin(#gateway_state{bin = Bin, socket = Socket, player_pid = PlayerPid} = 
                         exia:cast(PlayerPid, ?MSG_PLAYER_GATEWAY_PROTO1(Msg)),
                         decode_bin(State1);
                     _ ->
-                        CBin = gateway:pack(#gateway_s_error{proto = Proto, code = ?ERROR_CODE_NOT_LOGIN}),
+                        CBin = gateway:pack(#gateway_s_error{proto = Proto, code = ?EC_NOT_LOGIN}),
                         ranch_tcp:send(Socket, CBin),
                         decode_bin(State1)
                 end

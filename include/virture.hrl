@@ -40,25 +40,25 @@
 %% 一份代码相当于对应一个数据库和一个连接池
 %% 所以如果需要使用多个数据库和连接池的话, 复制一份代码并且替换宏即可
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% virture mysql %%%%%%%%%%%%%%%%%%%%%%%%%%%%
--define(VIRTURE_MYSQL_POOL, virture_mysql_pool).
--define(PD_VIRTURE_MYSQL, pd_virture_mysql).%% #{table => #virture_mysql{}}
--define(PD_VIRTURE_MYSQL_NOT_FLUSH, pd_virture_mysql_not_flush).%% [table], 记录改变数据且未同步到ets的table, 避免每次遍历全部表
--define(ETS_VIRTURE_MYSQL_LOAD, ets_virture_mysql_load).% 已经加载的数据, {{table, key}, 1}
+-define(VSQL_POOL, vsql_pool).
+-define(PD_VSQL, pd_vsql).%% #{table => #vsql{}}
+-define(PD_VSQL_NOT_FLUSH, pd_vsql_not_flush).%% [table], 记录改变数据且未同步到ets的table, 避免每次遍历全部表
+-define(ETS_VSQL_LOAD, ets_vsql_load).% 已经加载的数据, {{table, key}, 1}
 % 数据保存到数据失败时保存到dets
--define(DETS_VIRTURE_MYSQL, virture_mysql).% 配置保存表名
--define(VIRTURE_MYSQL_SQL_LIMIT, 1000).% 单次操作拼sql的条数
+-define(DETS_VSQL, vsql).% 配置保存表名
+-define(VSQL_SQL_LIMIT, 1000).% 单次操作拼sql的条数
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% field
--record(virture_mysql_field, {
+-record(vsql_field, {
     name :: atom(),% 对应数据库字段名
-    type :: virture_mysql:field_type(),% 数据类型, 自动建表用
+    type :: vsql:field_type(),% 数据类型, 自动建表用
     pos :: integer(),% 对应record的下标
     auto_incremental = false :: integer()|any()% 自增id
 }).
 
 %% table
--record(virture_mysql, {
+-record(vsql, {
     %% 配置项
     table = error({require, table}) :: atom(),% 数据表名和mysql一样
     use_ets = true :: boolean(),% 是否使用ets作为缓存
@@ -66,7 +66,7 @@
     state_pos = error({require, state_pos}) :: integer(),% 额外字段, 用于缓存中标识数据状态
     select_key = error({require, select_key}) :: [],% 初始化数据库搜索全部数据用的key
     private_key = error({require, private_key}) :: [],% 数据的主键, 至少要有一个字段
-    all_fields = error({require, all_fields}) :: [#virture_mysql_field{}],% 所有列的定义
+    all_fields = error({require, all_fields}) :: [#vsql_field{}],% 所有列的定义
     index = [] :: [[Key :: atom()]],%  自动创建数据库的时候加索引
     unique_index = [] :: [[Key :: atom()]],% 自动创建数据库的时候加unique索引
     record_size = error({require, record_size}) :: integer(),% record的定义, 因为record的字段不一定全都是数据库里面的
@@ -87,9 +87,9 @@
 }).
 
 %% 测试普通主键
--record(virture_mysql_test_player, {
-    virture_mysql_key,
-    virture_mysql_state,
+-record(vsql_test_player, {
+    vsql_key,
+    vsql_state,
     player_id,
     str,
     to_str,
@@ -98,9 +98,9 @@
 }).
 
 %% 测试复合主键
--record(virture_mysql_test_goods, {
-    virture_mysql_key,
-    virture_mysql_state,
+-record(vsql_test_goods, {
+    vsql_key,
+    vsql_state,
     player_id,
     goods_id,
     str,
@@ -109,9 +109,9 @@
 }).
 
 %% 测试不使用ets缓存
--record(virture_mysql_test_equip, {
-    virture_mysql_key,
-    virture_mysql_state,
+-record(vsql_test_equip, {
+    vsql_key,
+    vsql_state,
     player_id,
     equip_id
 }).

@@ -8,8 +8,8 @@
 -define(SQL_PLAYER_CREATE2(Account, Name), io_lib:format("insert into player set account='~s', name='~s'", [Account, Name])).
 
 -record(player, {
-    virture_mysql_key,
-    virture_mysql_state,
+    vsql_key,
+    vsql_state,
     id :: integer(),
     account :: binary(),
     name :: binary()
