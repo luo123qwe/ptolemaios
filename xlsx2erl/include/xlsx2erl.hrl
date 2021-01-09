@@ -19,10 +19,11 @@
 -define(XLSX2ERL_MASK_END1(Tag), "%% xlsx2erl mask end " ++ Tag).
 
 %% sheet第一行key
--define(XLSX2ERL_KEY_SEARCH_LINE, 100).% 工作表搜索非XLSX2ERL_MASK_DATA最大行数
+-define(XLSX2ERL_KEY_SEARCH_LIMIT, 100).% 工作表搜索非XLSX2ERL_MASK_DATA最大行数
 -define(XLSX2ERL_KEY_COMMENT, "COMMENT").% 工作表标识哪一行是注释
 -define(XLSX2ERL_KEY_KEY, "KEY").% 工作表标识哪一行是key
 -define(XLSX2ERL_KEY_DATA, "DATA").% 工作表标识哪一行是data
+-define(XLSX2ERL_KEY_LIST, [?XLSX2ERL_KEY_COMMENT, ?XLSX2ERL_KEY_KEY, ?XLSX2ERL_KEY_DATA]).
 
 %% 进程字典
 %% XLSX2ERL_ERROR2用的
@@ -32,6 +33,7 @@
 -define(PD_XLSX2ERL_FIELD_DEF, pd_xlsx2erl_record_def).
 %% 缓存数据
 -define(PD_XLSX2ERL_ZIP_FD1(Filename), {pd_xlsx2erl_zip_fd, Filename}).
+-define(PD_XLSX2ERL_SHARE_STRING1(Filename), {pd_xlsx2erl_share_string, Filename}).
 -define(PD_XLSX2ERL_SHEET_LIST1(Filename), {pd_xlsx2erl_sheet_list, Filename}).
 -define(PD_XLSX2ERL_WORKBOOK_LIST, pd_xlsx2erl_workbook_list).
 
@@ -56,9 +58,14 @@
 -define(XLSX2ERL_TO_TERM2(Index, Row), xlsx2erl_util:to_term(Index, Row)).
 -define(XLSX2ERL_TO_JSON2(Index, Row), xlsx2erl_util:to_json(Index, Row)).
 
+-record(xlsx2erl_raw_row, {
+    line :: integer(),
+    data :: [{Index :: atom(), V :: string()}]
+}).
+
 -record(xlsx2erl_row, {
     line :: integer(),
-    data :: Record :: tuple()|[{K :: atom(), V :: string()}]
+    data :: Record :: tuple()
 }).
 
 -record(xlsx2erl_sheet, {
@@ -70,22 +77,12 @@
     module :: atom(),% 对应的回调模块
     id :: string(),% r:id
     taget :: string(),% 对应sheet的xml
-    
-    index2key :: [{Index :: integer(), Key :: atom()}],% excel列下标(数字)对应的key
-    record_name :: atom(),% 对应record的名字
-    field_list :: [atom()],% 对应record的字段名字, 有序
-    row_list :: [RawData :: map()]% {key => value}
+    data :: map()% {?XLSX2ERL_KEY_XXX => [#xlsx2erl_row{}|#xlsx2erl_raw_row{}]}
 }).
 
 -record(xlsx2erl_workbook, {
     name :: atom(),% 工作簿对应的名字
     file_name :: string()% 全名
-}).
-
--record(xlsx2erl_excel, {
-    name :: atom(),% 工作簿对应的名字
-    excel_name :: string(),% 全名
-    sheet_list :: [#xlsx2erl_sheet{}]
 }).
 
 -record(xlsx2erl_cb_args, {

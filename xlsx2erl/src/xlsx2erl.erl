@@ -16,7 +16,7 @@
 }).
 
 %% private
--export([main/1, make_template/1, make_template/4, make_sheet/4, make_sheet_list/1, make_row_list/3]).
+-export([main/1, make_template/1, make_template/4, make_sheet/4, make_sheet_list/1, sheet_data_to_record/3]).
 
 %%====================================================================
 %% API functions
@@ -291,8 +291,8 @@ make_sheet_list(FileName) ->
                 #msl_arg{sheet_list = SheetList} ->
                     %% 把顺序倒回来
                     SheetList1 =
-                        lists:foldl(fun(#xlsx2erl_sheet{row_list = RowList} = Sheet, Acc) ->
-                            [Sheet#xlsx2erl_sheet{row_list = lists:reverse(RowList)} | Acc]
+                        lists:foldl(fun(#xlsx2erl_sheet{data = RowList} = Sheet, Acc) ->
+                            [Sheet#xlsx2erl_sheet{data = lists:reverse(RowList)} | Acc]
                                     end, [], SheetList),
                     put(?PD_XLSX2ERL_SHEET_LIST1(FileName), SheetList1),
                     SheetList1
@@ -343,26 +343,7 @@ make_sheet_list_1([_Line, ?XLSX2ERL_KEY_KEY | RowT], Arg) ->
                 _ ->
                     {ColumnIndex + 1, I2K}
             end
-                    end, {1, []}, RowT),
-    Index2Key1 = lists:keysort(1, Index2Key),
-    case lists:keyfind(SheetNameAtom, #xlsx2erl_sheet.name, SheetList) of
-        #xlsx2erl_sheet{index2key = OldIndex2Key} ->% 前面有表构造了, 检查keymap是否一样
-            case OldIndex2Key =/= Index2Key1 of
-                true ->
-                    io:format("bad key define in ~ts:~ts~n", [FileName, SheetFullName]);
-                _ ->
-                    skip
-            end,
-            {next_row, Arg};
-        _ ->
-            SheetList1 = [#xlsx2erl_sheet{
-                name = SheetNameAtom, workbook_name = WorkbookNameAtom,
-                filename = FileName, full_name = SheetFullName,
-                module = ?XLSX2ERL_ERL_NAME2(WorkbookName, atom_to_list(SheetNameAtom)),
-                index2key = Index2Key1, row_list = []
-            } | SheetList],
-            {next_row, Arg#msl_arg{sheet_list = SheetList1}}
-    end;
+                    end, {1, []}, RowT);
 make_sheet_list_1([Line, ?XLSX2ERL_KEY_DATA | RowT], Arg) ->
     #msl_arg{
         filename = FileName,
@@ -374,9 +355,9 @@ make_sheet_list_1([Line, ?XLSX2ERL_KEY_DATA | RowT], Arg) ->
         false ->% 未初始化key
             io:format("key mask row before data ~ts~n", [SheetFullName]),
             throw(error);
-        #xlsx2erl_sheet{row_list = RowList, index2key = Index2Key} = Sheet ->
-            RowKV = index2key_value(Index2Key, RowT, 1, FileName, SheetFullName, Line),
-            Sheet1 = Sheet#xlsx2erl_sheet{row_list = [#xlsx2erl_row{line = Line, data = RowKV} | RowList]},
+        #xlsx2erl_sheet{data = RowList} = Sheet ->
+            RowKV = index2key_value([], RowT, 1, FileName, SheetFullName, Line),
+            Sheet1 = Sheet#xlsx2erl_sheet{data = [#xlsx2erl_row{line = Line, data = RowKV} | RowList]},
             SheetList1 = lists:keyreplace(SheetNameAtom, #xlsx2erl_sheet.name, SheetList, Sheet1),
             {next_row, Arg#msl_arg{sheet_list = SheetList1}}
     end;
@@ -420,21 +401,39 @@ make_workbook_list(XlsxDir) ->
             WorkbookList
     end.
 
-make_row_list(#xlsx2erl_sheet{index2key = I2K, row_list = RowList}, RecordName, FieldList) ->
+sheet_data_to_record(#xlsx2erl_sheet{data = Data}, RecordName, FieldList) ->
+    #{?XLSX2ERL_KEY_KEY := [#xlsx2erl_raw_row{data = KeyRow}], ?XLSX2ERL_KEY_DATA := Data} = Data,
+    KeyRow1 = [{ColumnIndex, list_to_atom(Value)} || {ColumnIndex, Value} <- KeyRow, Value =/= ""],
     %% 先检查字段对不对得上
-    lists:foreach(fun(Field) ->
-        case lists:keymember(Field, 2, I2K) of
-            true -> ok;
-            _ ->
-                io:format("bad field ~w in record ~w~nvalid field list: ~w~n",
-                    [Field, RecordName, [Key || {_, Key} <- I2K]]),
-                exit(error)
-        end
+    ColumnIndexList =
+        lists:map(fun(Field) ->
+            case lists:keyfind(Field, 2, KeyRow1) of
+                {ColumnIndex, _Value} ->
+                    ColumnIndex;
+                _ ->
+                    io:format("bad field ~w in record ~w~nvalid field list: ~w~n",
+                        [Field, RecordName, [Key || {_, Key} <- []]]),
+                    exit(error)
+            end
                   end, FieldList),
-    lists:reverse(lists:foldl(fun(#xlsx2erl_row{data = KVList} = Row, Acc) ->
-        Record = list_to_tuple([RecordName | [element(2, lists:keyfind(Field, 1, KVList)) || Field <- FieldList]]),
-        [Row#xlsx2erl_row{data = Record} | Acc]
-                              end, [], RowList)).
+    case length(ColumnIndexList) > 16 of
+        true ->
+            lists:reverse(lists:foldl(fun(#xlsx2erl_raw_row{data = DataRow} = Row, Acc) ->
+                FieldValueList =
+                    lists:reverse(lists:foldl(fun(ColumnIndex, {FVL, DR}) ->
+                        {value, {_, FieldValue}, DR1} = lists:keytake(ColumnIndex, 1, DR),
+                        {[FieldValue | FVL], DR1}
+                                              end, {[], DataRow}, ColumnIndexList)),
+                Record = list_to_tuple([RecordName | FieldValueList]),
+                [Row#xlsx2erl_row{data = Record} | Acc]
+                                      end, [], Data));
+        _ ->
+            lists:reverse(lists:foldl(fun(#xlsx2erl_raw_row{data = DataRow} = Row, Acc) ->
+                FieldValueList = [element(2, lists:keyfind(ColumnIndex, 1, DataRow)) || ColumnIndex <- ColumnIndexList],
+                Record = list_to_tuple([RecordName | FieldValueList]),
+                [Row#xlsx2erl_row{data = Record} | Acc]
+                                      end, [], Data))
+    end.
 
 %% @private 获取sheet的数据, 转换成Record
 -spec make_sheet(file:filename(), atom(), RecordName :: atom(), RecordFieldList :: [atom()]) -> error|[#xlsx2erl_sheet{}].
@@ -471,7 +470,7 @@ make_sheet(FileName, Module, RecordName, RecordFieldList) ->
                         NthList when is_list(NthList) ->
                             {next_row, {
                                 NthList,
-                                #xlsx2erl_sheet{filename = FileName, full_name = SheetFullName, name = list_to_atom(SheetName), row_list = []}
+                                #xlsx2erl_sheet{filename = FileName, full_name = SheetFullName, name = list_to_atom(SheetName), data = []}
                             }};
                         Error ->
                             io:format("bad key in ~ts~n~p~n", [SheetFullName, Error]),
@@ -483,11 +482,11 @@ make_sheet(FileName, Module, RecordName, RecordFieldList) ->
                             io:format("key mask row before data ~ts~n", [SheetFullName]),
                             throw(error);
                         _ ->
-                            #xlsx2erl_sheet{row_list = RowList} = S,
+                            #xlsx2erl_sheet{data = RowList} = S,
                             RecordValueList = get_sheet_data_value(NL, Row),
                             Record = list_to_tuple([RecordName | RecordValueList]),
                             RowList1 = [#xlsx2erl_row{line = Line, data = Record} | RowList],
-                            {next_row, {NL, S#xlsx2erl_sheet{row_list = RowList1}}}
+                            {next_row, {NL, S#xlsx2erl_sheet{data = RowList1}}}
                     end;
                 _ ->
                     {next_row, Acc}
@@ -771,7 +770,7 @@ make_template_get_mask_info(XlsxFile, SheetName) ->
                             {next_row, {SheetFullName, RL, SL, SearchLine}}
                     end;
                 _ ->
-                    {next_sheet, {undefined, RL, SL, ?XLSX2ERL_KEY_SEARCH_LINE}}
+                    {next_sheet, {undefined, RL, SL, ?XLSX2ERL_KEY_SEARCH_LIMIT}}
             end
         end,
     case xlsx_reader:read(XlsxFile, [], RowHandler) of

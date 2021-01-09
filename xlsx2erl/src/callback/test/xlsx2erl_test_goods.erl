@@ -43,12 +43,12 @@ clean_pd() ->
 update_dets(Sheet) ->
     init_pd(),
     
-    RowList = xlsx2erl:make_row_list(Sheet, data_test_goods, record_info(fields, data_test_goods)),
+    RowList = xlsx2erl:sheet_data_to_record(Sheet, data_test_goods, record_info(fields, data_test_goods)),
     %% todo 可以生成自定义数据索引, 用来优化表交叉验证数据的效率
     %% todo 默认生成record第一个字段为key的map结构
     {RowList1, Index} = update_dets_convert_record(RowList, [], #{}),
     Now = erlang:localtime(),
-    Sheet1 = Sheet#xlsx2erl_sheet{row_list = RowList1},
+    Sheet1 = Sheet#xlsx2erl_sheet{data = RowList1},
     dets:insert(?PRIV_DETS, {?XLSX2ERL_DETS_KEY_SHEET1(?PRIV_DETS_SHEET), Sheet1}),
     dets:insert(?PRIV_DETS, {?XLSX2ERL_DETS_KEY_UPDATE1(?PRIV_DETS_SHEET), Now}),
     %% 保存自定义数据
@@ -82,7 +82,7 @@ get_index() ->
 
 compile(#xlsx2erl_cb_args{hrl_path = HrlPath, erl_path = ErlPath}) ->
     init_pd(),
-    [#xlsx2erl_sheet{row_list = RowList}] = dets:lookup(?PRIV_DETS, ?PRIV_DETS_SHEET),
+    [#xlsx2erl_sheet{data = RowList}] = dets:lookup(?PRIV_DETS, ?PRIV_DETS_SHEET),
     
     %% todo 如果不需要复制hrl定义可以删除这句
     xlsx2erl_util:copy_mask_body(?MODULE, ?PRIV_MASK_TAG, HrlPath ++ "/" ++ ?PRIV_HRL_FILE),

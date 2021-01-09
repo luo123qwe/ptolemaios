@@ -14,8 +14,9 @@
 %% 需要配合进程字典使用
 -export([to_bin/2, to_int/2, to_float/2, to_term/2, to_json/2]).
 
+-export([to_iolist/1, ensure_dets/1]).
 
--export([to_iolist/1, copy_mask_body/3, copy_mask_body/4, delete_mask_body/2, ensure_dets/1, get_excel/1]).
+-export([copy_mask_body/3, copy_mask_body/4, delete_mask_body/2]).
 
 %% @doc 二进制文本
 -spec to_bin(non_neg_integer(), #xlsx2erl_row{}) -> binary().
@@ -295,15 +296,6 @@ delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, ToData) ->
 ensure_dets(Name) ->
     case dets:info(Name) of
         undefined ->
-            {ok, Name} = dets:open_file(Name, [{file, ?XLSX2ERL_DETS_PATH ++ "/" ++ atom_to_list(Name) ++ ".dets"}, {keypos, 2}]);
+            {ok, Name} = dets:open_file(Name, [{file, ?XLSX2ERL_DETS_PATH ++ "/" ++ atom_to_list(Name) ++ ".dets"}, {keypos, 1}]);
         _ -> ok
-    end.
-
-%% @doc 获取excel
--spec get_excel(atom()) -> undefined|#xlsx2erl_excel{}.
-get_excel(Module) ->
-    ensure_dets(?XLSX2ERL_DETS_TABLE1(Module)),
-    case dets:lookup(?XLSX2ERL_DETS_TABLE1(Module), Module) of
-        [Excel] -> Excel;
-        _ -> undefined
     end.
