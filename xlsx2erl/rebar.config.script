@@ -7,11 +7,7 @@
 [
     {rebar_packages_cdn, "https://hexpm.upyun.com"},
     {erl_opts, [no_debug_info, {i, "../include"}]},
-    {deps, [
-        {xlsxio, ".*", {git, "https://github.com/DominicGame/xlsxio.git", {tag, "master"}}},
-        {erlsom, ".*", {git, "https://github.com/willemdj/erlsom.git", {tag, "master"}}},
-        {jsx, "3.0.0"}
-    ]},
+    {deps, [{jsx, "3.0.0"}]},
 
     {escript_incl_apps, [xlsx2erl, xlsxio, jsx]},
     {escript_main_app, xlsx2erl},
