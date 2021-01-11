@@ -56,8 +56,7 @@ sheets_with_data(Filename, KeyTimesList, SearchLimit) ->
     %% 发回来耗时很低, 可以有效降低内存使用
     Self = self(),
     {Pid, Ref} = spawn_monitor(fun() ->
-        Self ! {sheets_with_data, sheets_with_data_1(Filename, KeyTimesList, SearchLimit)},
-        io:format("~w~n", [erlang:memory()])
+        Self ! {sheets_with_data, sheets_with_data_1(Filename, KeyTimesList, SearchLimit)}
                                end),
     receive
         {sheets_with_data, Data} ->
