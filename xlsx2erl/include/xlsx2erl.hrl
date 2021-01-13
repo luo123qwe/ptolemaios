@@ -1,3 +1,6 @@
+-ifndef(XLSX2ERL_HRL).
+-define(XLSX2ERL_HRL, true).
+-include("util.hrl").
 -define(XLSX2ERL_SPLIT, "_").
 
 -define(XLSX2ERL_DETS_PATH, "dets").% dets路径
@@ -7,8 +10,10 @@
         _ -> list_to_atom("xlsx_" ++ Module)
     end).% dets表名
 %% dets key
+-define(XLSX2ERL_DETS_KEY_MD5, md5).% xlsx文件md5
+-define(XLSX2ERL_DETS_KEY_UPDATE, update).% xlsx文件更新时间
 -define(XLSX2ERL_DETS_KEY_SHEET1(Tag), {sheet, Tag}).% dets sheet
--define(XLSX2ERL_DETS_KEY_UPDATE1(Tag), {update, Tag}).% dets更新时间
+-define(XLSX2ERL_DETS_KEY_DATA1(Tag), {data, Tag}).% #{?XLSX2ERL_KEY_XXX => [#xlsx2erl_row{}|#xlsx2erl_raw_row{}]}
 -define(XLSX2ERL_DETS_KEY_INDEX1(Tag), {index, Tag}).% dets索引
 
 -define(XLSX2ERL_CB_PATH, "src/callback").% callback路径
@@ -39,17 +44,18 @@
 
 %% 错误处理
 -define(XLSX2ERL_ERROR, xlsx2erl_error).
--define(XLSX2ERL_ERROR2(Format, Args), io:format(Format ++ "~n", Args), exit(?XLSX2ERL_ERROR)).
+-define(XLSX2ERL_ERROR2(Format, Args), ?LOG_ERROR(Format, Args), exit(?XLSX2ERL_ERROR)).
 %% 打印错误信息, 精确到哪一行, 需要进程字典支持
 -define(XLSX2ERL_PD_ERROR2(Format, Args),
-    io:format("配错了!!!!!,工作簿 ~ts 数据表 ~ts 第 ~p 行~n" ++ Format ++ "~n",
-        [get(?PD_XLSX2ERL_WORKBOOK), get(?PD_XLSX2ERL_SHEET), (get(?PD_XLSX2ERL_ROW))#xlsx2erl_row.line] ++ Args),
+    ?LOG_ERROR("配错了!!!!!, 工作簿: ~ts, 数据表: ~ts, 第 ~p 行~n" ++ Format ++ "~n~9999999p",
+        [filename:basename((get(?PD_XLSX2ERL_SHEET))#xlsx2erl_sheet.filename), (get(?PD_XLSX2ERL_SHEET))#xlsx2erl_sheet.full_name,
+            (get(?PD_XLSX2ERL_ROW))#xlsx2erl_row.line] ++ Args ++ [(get(?PD_XLSX2ERL_ROW))#xlsx2erl_row.record]),
     exit(?XLSX2ERL_ERROR)).% 打印错误
 
 %% 默认名字
 -define(XLSX2ERL_HRL_NAME1(WorkbookName), WorkbookName).
--define(XLSX2ERL_ERL_NAME2(WorkbookName, SheetName), list_to_atom("xlsx2erl_" ++ WorkbookName ++ "_" ++ SheetName)).
--define(XLSX2ERL_RECORD_NAME2(WorkbookName, SheetName), list_to_atom("data_" ++ WorkbookName ++ "_" ++ SheetName)).
+-define(XLSX2ERL_ERL_NAME2(WorkbookName, SheetName), "xlsx2erl_" ++ WorkbookName ++ "_" ++ SheetName).
+-define(XLSX2ERL_RECORD_NAME2(WorkbookName, SheetName), "data_" ++ WorkbookName ++ "_" ++ SheetName).
 
 %% 转换, 方便ide提示
 -define(XLSX2ERL_TO_BIN2(Index, Row), xlsx2erl_util:to_bin(Index, Row)).
@@ -65,7 +71,7 @@
 
 -record(xlsx2erl_row, {
     line :: integer(),
-    data :: Record :: tuple()
+    record :: Record :: tuple()
 }).
 
 -record(xlsx2erl_sheet, {
@@ -77,7 +83,7 @@
     module :: atom(),% 对应的回调模块
     id :: string(),% r:id
     taget :: string(),% 对应sheet的xml
-    data :: map()% {?XLSX2ERL_KEY_XXX => [#xlsx2erl_row{}|#xlsx2erl_raw_row{}]}
+    md5 :: binary()
 }).
 
 -record(xlsx2erl_workbook, {
@@ -89,3 +95,12 @@
     erl_path,
     hrl_path
 }).
+
+-record(xlsx2erl_sheet_with_data, {
+    name :: atom(),
+    module :: atom(),
+    sheet :: #xlsx2erl_sheet{},
+    data :: map()
+}).
+
+-endif.

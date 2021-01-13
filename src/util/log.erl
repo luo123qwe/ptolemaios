@@ -24,8 +24,8 @@ start() ->
         max_no_bytes => 30000},
         level => Level,
         filesync_repeat_interval => 5000}),
-    logger:update_formatter_config(ptolemaios, #{template => [level, " ", time, " ", pid, " ", mfa, ":", line, "\n", msg, "\n"]}),
-    logger:update_formatter_config(default, #{template => [level, " ", time, " ", pid, " ", mfa, ":", line, "\n", msg, "\n"]}),
+    logger:update_formatter_config(ptolemaios, #{template => [level, " ", time, " ", pid, " ", mfa, ":", line, "\n", msg, "\n"], single_line => false}),
+    logger:update_formatter_config(default, #{template => [level, " ", time, " ", pid, " ", mfa, ":", line, "\n", msg, "\n"], single_line => false}),
     set_level(Level).
 
 %% @private

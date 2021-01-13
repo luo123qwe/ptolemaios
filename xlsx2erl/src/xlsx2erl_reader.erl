@@ -8,14 +8,16 @@
 -module(xlsx2erl_reader).
 -author("dominic").
 
--include("util.hrl").
+
 -include("xlsx2erl.hrl").
 
 %% API
--export([sheets_without_data/1, sheets_with_data/1, sheets_with_data_1/3, to_form/1, convert_xml_string/1, sheets_with_data/3]).
+-export([sheets/1, sheets_with_data/1, sheets_with_data/3, sheets_with_data_md5/1, sheets_with_data_md5/3]).
 
--spec sheets_without_data(file:filename()) -> [#xlsx2erl_sheet{}].
-sheets_without_data(Filename) ->
+-export([to_form/1, convert_xml_string/1]).
+
+-spec sheets(file:filename()) -> [#xlsx2erl_sheet{}].
+sheets(Filename) ->
     FD = get_fd(Filename),
     {ok, {_, WorkbookXml}} = zip:zip_get("xl/workbook.xml", FD),
     WorkbookForm = xml_to_form("workbook", WorkbookXml, Filename),
@@ -35,9 +37,11 @@ sheets_without_data(Filename) ->
             [_, Name] ->
                 RId = attr_find("r:id", SheetAttr),
                 [#xlsx2erl_sheet{
-                    name = list_to_atom(Name), full_name = FullName,
+                    name = list_to_atom(Name),
+                    %% FullName 读起来是unicode的数字列表, ~ts打印会乱码
+                    full_name = unicode:characters_to_list(list_to_binary(FullName)),
                     workbook_name = list_to_atom(WorkbookName), filename = Filename,
-                    module = ?XLSX2ERL_ERL_NAME2(WorkbookName, Name),
+                    module = list_to_atom(?XLSX2ERL_ERL_NAME2(WorkbookName, Name)),
                     id = RId,
                     taget = "xl/" ++ maps:get(RId, RIdMapping)
                 } | Acc];
@@ -46,40 +50,134 @@ sheets_without_data(Filename) ->
         end
                 end, [], SheetsForm).
 
+
 sheets_with_data(Filename) ->
     sheets_with_data(Filename, [{Key, 99999999} || Key <- ?XLSX2ERL_KEY_LIST], 99999999).
 
-
+%% 获取sheet和数据
 sheets_with_data(Filename, KeyTimesList, SearchLimit) ->
+    ReadXlsxST = erlang:system_time(millisecond),
     %% 数量大的话, 解析xml的时候进程会吃满内存, gc不降低
     %% 继续在那个进程操作很可能爆掉
     %% 发回来耗时很低, 可以有效降低内存使用
     Self = self(),
     {Pid, Ref} = spawn_monitor(fun() ->
-        Self ! {sheets_with_data, sheets_with_data_1(Filename, KeyTimesList, SearchLimit)}
+        Self ! {sheets_with_data, sheets_with_data_1(Filename, KeyTimesList, SearchLimit, [])}
                                end),
     receive
         {sheets_with_data, Data} ->
             erlang:demonitor(Ref, [flush]),
+            ReadXlsxET = erlang:system_time(millisecond),
+            ?LOG_NOTICE("read ~ts cost ~w", [Filename, ReadXlsxET - ReadXlsxST]),
             Data;
-        {'DOWN', Ref, Pid, Reason} ->
+        {'DOWN', Ref, process, Pid, Reason} ->
             ?XLSX2ERL_ERROR2("sheets_with_data error ~p", [Reason])
     end.
 
-
-sheets_with_data_1([], _, _) -> [];
-sheets_with_data_1([#xlsx2erl_sheet{filename = Filename, taget = Target} = Sheet | T], KeyTimesList, SearchLimit) ->
+sheets_with_data_1([], _, _, SheetWithDataList) ->
+    SheetWithDataList;
+sheets_with_data_1([#xlsx2erl_sheet{name = SheetName, filename = Filename, taget = Target} = Sheet | T], KeyTimesList, SearchLimit, SheetWithDataList) ->
     FD = get_fd(Filename),
     {ok, {_, Xml}} = zip:zip_get(Target, FD),
     SheetForm = xml_to_form("worksheet", Xml, Filename),
     SheetDataForm = form_find("sheetData", SheetForm),
     ShareString = get_share_string(Filename),
+    case lists:keyfind(SheetName, #xlsx2erl_sheet_with_data.name, SheetWithDataList) of
+        false ->
+            Data = #{},
+            Sheet1 = Sheet,
+            %% 只校验数据, 这里会有额外的性能损失
+            {match, [DataBin]} = re:run(Xml, "<sheetData>.*</sheetData>", [{capture, [0], binary}]),
+            Md5 = erlang:md5(DataBin);
+        #xlsx2erl_sheet_with_data{sheet = Sheet1, data = Data} ->
+            %% todo 是否应该支持合表????? 目前作为娱乐保留
+            %% todo 如果真的过大的话, 拆表手动写代码合更好
+            %% todo 因为最终生成的erl文件会过大, 导致编译时间超长+爆内存
+            %% 合表不支持md5校验
+            Md5 = undefined
+    end,
     %% 构造行数据
-    Key2RowListMap = sheets_with_data_key2row_list(SheetDataForm, KeyTimesList, SearchLimit, ShareString, #{}),
-    Sheet1 = Sheet#xlsx2erl_sheet{data = Key2RowListMap},
-    [Sheet1 | sheets_with_data_1(T, KeyTimesList, SearchLimit)];
-sheets_with_data_1(Filename, KeyTimesList, SearchLimit) ->
-    sheets_with_data_1(sheets_without_data(Filename), KeyTimesList, SearchLimit).
+    Key2RowListMap = sheets_with_data_key2row_list(SheetDataForm, KeyTimesList, SearchLimit, ShareString, Data),
+    Sheet2 = Sheet1#xlsx2erl_sheet{md5 = Md5},
+    SheetWithData = #xlsx2erl_sheet_with_data{
+        name = SheetName, module = Sheet2#xlsx2erl_sheet.module,
+        sheet = Sheet2, data = Key2RowListMap
+    },
+    SheetWithDataList1 = lists:keystore(SheetName, #xlsx2erl_sheet_with_data.name, SheetWithDataList, SheetWithData),
+    sheets_with_data_1(T, KeyTimesList, SearchLimit, SheetWithDataList1);
+sheets_with_data_1(Filename, KeyTimesList, SearchLimit, SheetWithDataList) ->
+    sheets_with_data_1(sheets(Filename), KeyTimesList, SearchLimit, SheetWithDataList).
+
+
+sheets_with_data_md5(Filename) ->
+    sheets_with_data_md5(Filename, [{Key, 99999999} || Key <- ?XLSX2ERL_KEY_LIST], 99999999).
+
+%% md5不一样的才会返回, 同sheets_with_data
+sheets_with_data_md5(Filename, KeyTimesList, SearchLimit) ->
+    ReadXlsxST = erlang:system_time(millisecond),
+    %% 数量大的话, 解析xml的时候进程会吃满内存, gc不降低
+    %% 继续在那个进程操作很可能爆掉
+    %% 发回来耗时很低, 可以有效降低内存使用
+    Self = self(),
+    {Pid, Ref} = spawn_monitor(fun() ->
+        Self ! {sheets_with_data, sheets_with_data_md5_1(Filename, KeyTimesList, SearchLimit, [])}
+                               end),
+    receive
+        {sheets_with_data, Data} ->
+            erlang:demonitor(Ref, [flush]),
+            ReadXlsxET = erlang:system_time(millisecond),
+            ?LOG_NOTICE("read ~ts cost ~w", [Filename, ReadXlsxET - ReadXlsxST]),
+            Data;
+        {'DOWN', Ref, process, Pid, Reason} ->
+            ?XLSX2ERL_ERROR2("sheets_with_data error ~p", [Reason])
+    end.
+
+sheets_with_data_md5_1([], _, _, SheetWithDataList) ->
+    SheetWithDataList;
+sheets_with_data_md5_1([#xlsx2erl_sheet{name = SheetName, filename = Filename, taget = Target, workbook_name = WorkbookName} = Sheet | T], KeyTimesList, SearchLimit, SheetWithDataList) ->
+    FD = get_fd(Filename),
+    {ok, {_, Xml}} = zip:zip_get(Target, FD),
+    case lists:keyfind(SheetName, #xlsx2erl_sheet_with_data.name, SheetWithDataList) of
+        false ->
+            Data = #{},
+            Sheet1 = Sheet,
+            %% 只校验数据, 这里会有额外的性能损失
+            {match, [DataBin]} = re:run(Xml, "<sheetData>.*</sheetData>", [{capture, [0], binary}]),
+            Md5 = erlang:md5(DataBin),
+            Dets = ?XLSX2ERL_DETS_TABLE1(WorkbookName),
+            xlsx2erl_util:ensure_dets(Dets),
+            IsChange =
+                case dets:lookup(Dets, ?XLSX2ERL_DETS_KEY_SHEET1(SheetName)) of
+                    [{_, #xlsx2erl_sheet{md5 = Md5}}] -> false;
+                    _ -> true
+                end;
+        #xlsx2erl_sheet_with_data{sheet = Sheet1, data = Data} ->
+            %% todo 是否应该支持合表????? 目前作为娱乐保留
+            %% todo 如果真的过大的话, 拆表手动写代码合更好
+            %% todo 因为最终生成的erl文件会过大, 导致编译时间超长+爆内存
+            %% 合表不支持md5校验
+            Md5 = undefined,
+            IsChange = true
+    end,
+    case IsChange of
+        true ->
+            SheetForm = xml_to_form("worksheet", Xml, Filename),
+            SheetDataForm = form_find("sheetData", SheetForm),
+            ShareString = get_share_string(Filename),
+            %% 构造行数据
+            Key2RowListMap = sheets_with_data_key2row_list(SheetDataForm, KeyTimesList, SearchLimit, ShareString, Data),
+            Sheet2 = Sheet1#xlsx2erl_sheet{md5 = Md5},
+            SheetWithData = #xlsx2erl_sheet_with_data{
+                name = SheetName, module = Sheet2#xlsx2erl_sheet.module,
+                sheet = Sheet2, data = Key2RowListMap
+            },
+            SheetWithDataList1 = lists:keystore(SheetName, #xlsx2erl_sheet_with_data.name, SheetWithDataList, SheetWithData),
+            sheets_with_data_md5_1(T, KeyTimesList, SearchLimit, SheetWithDataList1);
+        _ ->
+            sheets_with_data_md5_1(T, KeyTimesList, SearchLimit, SheetWithDataList)
+    end;
+sheets_with_data_md5_1(Filename, KeyTimesList, SearchLimit, SheetWithDataList) ->
+    sheets_with_data_md5_1(sheets(Filename), KeyTimesList, SearchLimit, SheetWithDataList).
 
 sheets_with_data_key2row_list([], _KeyTimesList, _SearchLimit, _ShareString, Key2RowListMap) ->
     maps:map(fun(_K, V) -> lists:reverse(V) end, Key2RowListMap);
@@ -155,7 +253,7 @@ get_fd(Filename) ->
                     put(?PD_XLSX2ERL_ZIP_FD1(Filename), FD),
                     FD;
                 Error ->
-                    ?XLSX2ERL_ERROR2("open ~ts error: ~w", [Error])
+                    ?XLSX2ERL_ERROR2("open ~ts error: ~w", [Filename, Error])
             end;
         FD ->
             FD
@@ -190,7 +288,7 @@ get_share_string(Filename) ->
 attr_find(K, L) ->
     case lists:keyfind(K, 1, L) of
         false -> ?XLSX2ERL_ERROR2("no ~s in ~p", [K, L]);
-        {_, V} -> V
+        {_, V} -> convert_xml_string(V)
     end.
 
 attr_find(K, L, Default) ->

@@ -16,36 +16,36 @@
 
 -export([to_iolist/1, ensure_dets/1]).
 
--export([copy_mask_body/3, copy_mask_body/4, delete_mask_body/2]).
+-export([copy_mask_body/3, copy_mask_body/4, write_mask_body/3, delete_mask_body/2]).
 
 %% @doc 二进制文本
 -spec to_bin(non_neg_integer(), #xlsx2erl_row{}) -> binary().
 to_bin(Index, Row) ->
-    Field = element(Index, Row#xlsx2erl_row.data),
-    try unicode:characters_to_binary(Field)
+    Field = element(Index, Row#xlsx2erl_row.record),
+    try list_to_binary(Field)
     catch
         _:_ ->
             RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
-            ?XLSX2ERL_PD_ERROR2("类型转换错误 ~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            ?XLSX2ERL_PD_ERROR2("需要文本 ~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc 整数
 -spec to_int(non_neg_integer(), #xlsx2erl_row{}) -> integer().
 to_int(Index, Row) ->
-    Field = element(Index, Row#xlsx2erl_row.data),
+    Field = element(Index, Row#xlsx2erl_row.record),
     try list_to_integer(Field)
     catch
         _:_ ->
             RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
-            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            ?XLSX2ERL_PD_ERROR2("需要整数 ~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc 浮点数
 -spec to_float(non_neg_integer(), #xlsx2erl_row{}) -> float().
 to_float(Index, Row) ->
-    Field = element(Index, Row#xlsx2erl_row.data),
+    Field = element(Index, Row#xlsx2erl_row.record),
     try
         case catch list_to_float(Field) of
             Float when is_float(Float) -> Float;
@@ -54,31 +54,31 @@ to_float(Index, Row) ->
     catch
         _:_ ->
             RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
-            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            ?XLSX2ERL_PD_ERROR2("需要浮点数 ~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc json
 -spec to_json(non_neg_integer(), #xlsx2erl_row{}) -> jsx:json_term().
 to_json(Index, Row) ->
-    Field = element(Index, Row#xlsx2erl_row.data),
-    try jsx:decode(unicode:characters_to_binary(Field))
+    Field = element(Index, Row#xlsx2erl_row.record),
+    try jsx:decode(list_to_binary(Field))
     catch
         _:_ ->
             RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
-            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
+            ?XLSX2ERL_PD_ERROR2("需要JSON ~p: ~p", [lists:nth(Index - 1, RecordDef), Field]),
             exit(?FUNCTION_NAME)
     end.
 
 %% @doc erlang结构
 -spec to_term(non_neg_integer(), #xlsx2erl_row{}) -> term().
 to_term(Index, Row) ->
-    Field = element(Index, Row#xlsx2erl_row.data),
+    Field = element(Index, Row#xlsx2erl_row.record),
     try eval(Field)
     catch
         _:_ ->
             RecordDef = get(?PD_XLSX2ERL_FIELD_DEF),
-            ?XLSX2ERL_PD_ERROR2("~p: ~p", [lists:nth(Index - 1, RecordDef), Field])
+            ?XLSX2ERL_PD_ERROR2("需要ERL结构 ~p: ~p", [lists:nth(Index - 1, RecordDef), Field])
     end.
 
 eval(Str) when is_binary(Str) ->
@@ -100,17 +100,9 @@ eval_fix_string([H | T]) ->
 %%
 %% 文本请传入binary, 转换成<<X/utf8>>
 to_iolist(Binary) when is_binary(Binary) ->
-    List = unicode:characters_to_list(Binary),
-    %% 文本中含有 " 需要转换成 \", \ 转换成 \\
-    %% todo 这里不知道会不会卡?
-    case lists:any(fun(Char) -> Char > 255 end, List) of
-        true ->% unicode
-            ["<<\"", re:replace(re:replace(Binary, "\\\\", "\\\\\\\\", [global]), "\"", "\\\\\"", [global]), "\"/utf8>>"];
-        _ ->
-            ["<<\"", re:replace(re:replace(List, "\\\\", "\\\\\\\\", [global]), "\"", "\\\\\"", [global]), "\"/utf8>>"]
-    end;
+    ["<<\"", re:replace(re:replace(Binary, "\\\\", "\\\\\\\\", [global]), "\"", "\\\\\"", [global]), "\"/utf8>>"];
 to_iolist(Term) ->
-    io_lib:format("~w", [Term]).
+    io_lib:format("~999999p", [Term]).
 
 %% @doc 复制mask包裹的内容到指定文件, 不会影响文件原有内容, 搜索到第一个mask end就停止
 
@@ -167,8 +159,7 @@ copy_mask_body_1(MaskStart, MaskEnd, FromFD, MaskData, IsFindStart) ->
         eof ->
             [];
         {error, Error} ->
-            io:format("copy_mask_body ~p error~n~p~n", [?LINE, Error]),
-            []
+            ?XLSX2ERL_ERROR2("~p", [Error])
     end.
 
 %% 一行行读
@@ -190,8 +181,7 @@ copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData, ToData, IsFindStart, IsFini
                     lists:reverse([MaskEnd ++ "\n", lists:reverse(MaskData), MaskStart ++ "\n"] ++ "\n" ++ ToData)
             end;
         {error, Error} ->
-            io:format("copy_mask_body ~p error~n~p~n", [?LINE, Error]),
-            []
+            ?XLSX2ERL_ERROR2("~p", [Error])
     end.
 
 %% 剩下的内容是不是erlang代码
@@ -213,8 +203,7 @@ copy_mask_body_3(MaskStart, MaskEnd, ToFD, MaskData, ToData, NewToData) ->
         eof ->
             lists:reverse(NewToData ++ [MaskEnd ++ "\n", lists:reverse(MaskData), MaskStart ++ "\n"] ++ "\n" ++ ToData);
         {error, Error} ->
-            io:format("copy_mask_body ~p error~n~p~n", [?LINE, Error]),
-            []
+            ?XLSX2ERL_ERROR2("~p", [Error])
     end.
 
 %% 复制到ToData
@@ -250,6 +239,20 @@ copy_mask_body_is_mask([H | T1], [H | T2]) ->
 copy_mask_body_is_mask(_Data, _Mask) ->
     false.
 
+%% @doc 写指定内容到文件并用mask包裹, 原理同copy_mask_body
+write_mask_body(MaskData, Tag, ToFile) ->
+    MaskStart = ?XLSX2ERL_MASK_START1(Tag),
+    MaskEnd = ?XLSX2ERL_MASK_END1(Tag),
+    {ok, ToFD} = file:open(ToFile, [read, write]),
+    %% 后面会翻转
+    MaskData1 = ["\n", MaskData],
+    case copy_mask_body_2(MaskStart, MaskEnd, ToFD, MaskData1, [], false, false) of
+        [] -> ok;
+        Data ->
+            file:close(ToFD),
+            ok = file:write_file(ToFile, Data)
+    end.
+
 
 %% @doc 删除指定文件mask包裹的内容, 原理同copy_mask_body
 delete_mask_body(Tag, ToFile) ->
@@ -278,7 +281,13 @@ delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, ToData) ->
         {ok, Data} ->
             case copy_mask_body_is_mask(Data, MaskStart) of
                 true ->% 开始删除
-                    delete_mask_body_1(ToFD, MaskStart, MaskEnd, true, IsEnd, ToData);
+                    %% 如果前一行是换行, 把换行符也删了
+                    case ToData of
+                        [[$\n] | ToData1] ->
+                            delete_mask_body_1(ToFD, MaskStart, MaskEnd, true, IsEnd, ToData1);
+                        _ ->
+                            delete_mask_body_1(ToFD, MaskStart, MaskEnd, true, IsEnd, ToData)
+                    end;
                 _ ->
                     delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, [Data | ToData])
             end;
@@ -287,8 +296,7 @@ delete_mask_body_1(ToFD, MaskStart, MaskEnd, IsStart, IsEnd, ToData) ->
         eof ->% 没有东西可以删除
             skip;
         {error, Error} ->
-            io:format("copy_mask_body ~p error~n~p~n", [?LINE, Error]),
-            skip
+            ?XLSX2ERL_ERROR2("~p", [Error])
     end.
 
 %% @doc 确保dets开启

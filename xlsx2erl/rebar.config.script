@@ -1,8 +1,9 @@
+%% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" compile ../xlsx ./tmp ./tmp
 %% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" compile ../xlsx ../src/data ../include
 %% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" compile_change ../xlsx ../src/data ../include
 %% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" clean ../xlsx ../src/data ../include
-%% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" template ../xlsx/x.xlsx . .
-%% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" template_hrl ../xlsx/x.xlsx .
+%% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" template xlsx/T测试_test.xlsx goods[ ./tmp ./tmp]
+%% "../rebar3" escriptize&"_build/default/bin/xlsx2erl" template_hrl xlsx/T测试_test.xlsx goods[ ./tmp]
 
 [
     {rebar_packages_cdn, "https://hexpm.upyun.com"},
