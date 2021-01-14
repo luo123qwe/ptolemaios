@@ -86,25 +86,33 @@ do_main(["compile_change", XlsxDir0, ErlPath0, HrlPath0]) ->
                             % 保证文件夹存在
                             ErlDir = ?XLSX2ERL_CB_PATH ++ "/" ++ atom_to_list(WorkbookName),
                             file:make_dir(ErlDir),
+                            {ok, #file_info{mtime = ErlDirMTime}} = file:read_file_info(ErlDir),
                             %% 对比所有文件的修改时间
-                            IsModifyErl =
+                            ModifyModuleList =
                                 case dets:lookup(?XLSX2ERL_DETS_TABLE1(WorkbookName), ?XLSX2ERL_DETS_KEY_UPDATE) of
+                                    [{_, UpdateTime}] when UpdateTime > ErlDirMTime ->
+                                        [];
                                     [{_, UpdateTime}] ->
                                         filelib:fold_files(ErlDir, ".erl", false,
-                                            fun(_FN, true) -> true;
-                                                (FN, ErlAcc) ->
-                                                    {ok, #file_info{mtime = ErlMTime}} = file:read_file_info(FN),
-                                                    case UpdateTime < ErlMTime of
-                                                        true -> true;
-                                                        _ -> ErlAcc
-                                                    end
-                                            end, false);
+                                            fun(FN, ErlAcc) ->
+                                                {ok, #file_info{mtime = ErlMTime}} = file:read_file_info(FN),
+                                                case UpdateTime < ErlMTime of
+                                                    true -> [list_to_atom(filename:basename(FN, ".erl")) | ErlAcc];
+                                                    _ -> ErlAcc
+                                                end
+                                            end, []);
                                     _ ->
-                                        true
+                                        filelib:fold_files(ErlDir, ".erl", false,
+                                            fun(FN, ErlAcc) ->
+                                                [list_to_atom(filename:basename(FN, ".erl")) | ErlAcc]
+                                            end, [])
                                 end,
-                            case IsModifyErl of
-                                true -> xlsx2erl_reader:sheets_with_data(Filename) ++ Acc;% .erl变了
-                                _ -> Acc
+                            case ModifyModuleList of
+                                [] -> Acc;
+                                _ ->
+                                    [SheetWithData || SheetWithData <- xlsx2erl_reader:sheets_with_data(Filename),
+                                        lists:member(SheetWithData#xlsx2erl_sheet_with_data.module, ModifyModuleList)
+                                    ] ++ Acc
                             end
                     end;
                 _ ->
@@ -323,7 +331,7 @@ compile_make_depend(ErlFileName, {NewModuleList, ModuleList}) ->
 
 close_dets() ->
     lists:foreach(fun(Name) ->
-        case is_atom(Name) andalso "xlsx2erl_" -- atom_to_list(Name) == [] of
+        case is_atom(Name) andalso "xlsx_" -- atom_to_list(Name) == [] of
             true -> dets:close(Name);
             _ -> skip
         end

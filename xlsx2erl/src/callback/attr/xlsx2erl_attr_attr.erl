@@ -114,7 +114,7 @@ compile_row(#xlsx2erl_row{record = Record}, #priv_arg{body = Body, keys = Keys})
 %% todo 构造文本
 compile_body(Record) ->
     %% -define(macro, v).% comment
-    ["-define(", Record#data_attr_attr.macro,
+    ["-define(ATTR_", Record#data_attr_attr.macro,
         ", ", xlsx2erl_util:to_iolist(Record#data_attr_attr.id),
         ").% ", Record#data_attr_attr.name, "\n"].
 

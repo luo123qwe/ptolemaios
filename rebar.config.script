@@ -20,6 +20,7 @@ MillisecondStr = integer_to_list(Millisecond),
 
     {deps, [
         {ranch, "2.0.0"},
+        {r2m, ".*", {git, "https://github.com/DominicGame/r2m.git", {tag, "master"}}},
         {enif_protobuf, ".*", {git, "https://github.com/DominicGame/enif_protobuf.git", {tag, "master"}}},
         {mongodb, ".*", {git, "git://github.com/comtihon/mongodb-erlang", {tag, "v3.2.0"}}},
         {mysql_poolboy, ".*", {git, "https://github.com/mysql-otp/mysql-otp-poolboy", {tag, "0.2.0"}}},
