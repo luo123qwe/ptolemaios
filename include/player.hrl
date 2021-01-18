@@ -1,3 +1,6 @@
+-ifndef(PLAYER_HRL).
+-define(PLAYER_HRL, true).
+
 %% message
 -define(MSG_PLAYER_GATEWAY_PROTO1(Msg), {gateway_msg, Msg}).
 -define(MSG_PLAYER_GATEWAY_DISCONNECT, gateway_disconnect).
@@ -7,6 +10,7 @@
 -define(SQL_PLAYER_SELECT_ID(Account), io_lib:format("select id from player where account='~s'", [Account])).
 -define(SQL_PLAYER_CREATE2(Account, Name), io_lib:format("insert into player set account='~s', name='~s'", [Account, Name])).
 
+-r2m(player).
 -record(player, {
     vsql_key,
     vsql_state,
@@ -15,7 +19,10 @@
     name :: binary()
 }).
 
+-r2m(player_state).
 -record(player_state, {
     id :: integer(),
     gateway :: pid()
 }).
+
+-endif.

@@ -1,3 +1,6 @@
+-ifndef(EXIA_HRL).
+-define(EXIA_HRL, true).
+
 %% process dict
 -define(PD_EXIA_SEND, pd_exia_send).% 发送的消息
 -define(PD_EXIA_TIME, pd_exia_time).% 单条消息真实时间
@@ -28,3 +31,5 @@
     pd,
     send = []
 }).
+
+-endif.

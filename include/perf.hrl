@@ -1,3 +1,6 @@
+-ifndef(PERF_HRL).
+-define(PERF_HRL, true).
+
 %% 一般情况增删改, 总次数 = Size * XXXTimes
 
 -record(perf_fractal_tree, {
@@ -54,3 +57,5 @@
     process_num,
     sleep_time
 }).
+
+-endif.

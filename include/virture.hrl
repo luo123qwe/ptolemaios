@@ -1,3 +1,6 @@
+-ifndef(VIRTURE_HRL).
+-define(VIRTURE_HRL, true).
+
 %% 数据状态
 -define(VIRTURE_STATE_DELETE, 0).
 -define(VIRTURE_STATE_REPLACE, 1).
@@ -50,6 +53,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% field
+-r2m(vsql_field).
 -record(vsql_field, {
     name :: atom(),% 对应数据库字段名
     type :: vsql:field_type(),% 数据类型, 自动建表用
@@ -58,6 +62,7 @@
 }).
 
 %% table
+-r2m(vsql).
 -record(vsql, {
     %% 配置项
     table = error({require, table}) :: atom(),% 数据表名和mysql一样
@@ -87,6 +92,7 @@
 }).
 
 %% 测试普通主键
+-r2m(vsql_test_player).
 -record(vsql_test_player, {
     vsql_key,
     vsql_state,
@@ -98,6 +104,7 @@
 }).
 
 %% 测试复合主键
+-r2m(vsql_test_goods).
 -record(vsql_test_goods, {
     vsql_key,
     vsql_state,
@@ -109,6 +116,7 @@
 }).
 
 %% 测试不使用ets缓存
+-r2m(vsql_test_equip).
 -record(vsql_test_equip, {
     vsql_key,
     vsql_state,
@@ -116,3 +124,4 @@
     equip_id
 }).
 
+-endif.

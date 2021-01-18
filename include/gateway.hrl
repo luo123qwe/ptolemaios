@@ -1,3 +1,6 @@
+-ifndef(GATEWAY_HRL).
+-define(GATEWAY_HRL, true).
+
 %% process dict
 -define(PD_GATEWAY_C_SOCKET, pd_gateway_c_socket).% socket
 -define(PD_GATEWAY_C_BIN, pd_gateway_c_bin).% bin
@@ -22,3 +25,5 @@
     player_id,
     player_pid
 }).
+
+-endif.
