@@ -1,0 +1,6 @@
+xlsx2erl不是嵌入式的, 把excel和回调模块丢这里存
+
+使用只需要把xlsx2erl clone
+把xlsx2erl/callback/*下的东西丢回去src/callback
+把xlsx2erl/include/*下的东西丢回去include
+xlsx2erl/xlsx生产环境下应该是一个独立的仓库, 实际放到哪里都可以

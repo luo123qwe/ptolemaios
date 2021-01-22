@@ -1,7 +1,7 @@
 %% @private auto create
 -module(gateway_1_handle).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("ec.hrl").
 -include("gateway_1_pb.hrl").
 -include("gateway.hrl").
@@ -15,7 +15,7 @@ handle(#gateway_c_login{account = MsgAccount}, #gateway_state{account = Account}
     %% 是否已登录
     ?EC_IF2(Account =/= undefined, ?EC_HAD_LOGIN),
     %% 是否被锁定
-    ?EC_NOT_MATCH3(ll:lock(?LOCAL_LOCK_ACCOUNT1(MsgAccount)), lock, ?EC_OTHER_HAD_LOGIN),
+    ?EC_NOT_MATCH3(ptolemaios_ll:lock(?LOCAL_LOCK_ACCOUNT1(MsgAccount)), lock, ?EC_OTHER_HAD_LOGIN),
     %% 锁住该账号, 防止并发
     GateWay1 = GateWay#gateway_state{account = MsgAccount},
     Msg = #gateway_s_login{account = MsgAccount, role_list = pkg_role_list(GateWay1)},
@@ -38,7 +38,7 @@ handle(#gateway_c_select_role{id = MsgPlayerId}, #gateway_state{account = Accoun
     ?EC_NOT_MATCH3(vsql:lookup_ets(player, [MsgPlayerId]),
         #player{}, ?EC_NO_ROLE),
     %% 先锁定这个id
-    case ll:lock(?LOCAL_LOCK_PLAYER_ID1(MsgPlayerId)) of
+    case ptolemaios_ll:lock(?LOCAL_LOCK_PLAYER_ID1(MsgPlayerId)) of
         lock ->
             %% 出错保证不死锁
             try
@@ -54,7 +54,7 @@ handle(#gateway_c_select_role{id = MsgPlayerId}, #gateway_state{account = Accoun
                 end
             catch
                 _:_ ->
-                    ll:release(?LOCAL_LOCK_PLAYER_ID1(MsgPlayerId)),
+                    ptolemaios_ll:release(?LOCAL_LOCK_PLAYER_ID1(MsgPlayerId)),
                     ?THROW_EC1(?EC_ERROR)
             end;
         _ ->% 并发

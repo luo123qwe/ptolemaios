@@ -8,7 +8,7 @@
 -module(ds).
 -author("dominic").
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("ds.hrl").
 
 %% API

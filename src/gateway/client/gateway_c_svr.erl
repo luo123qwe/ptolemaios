@@ -13,7 +13,7 @@
 
 -behaviour(exia).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("gateway.hrl").
 
 %% API

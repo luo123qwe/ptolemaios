@@ -8,7 +8,7 @@
 
 -behaviour(supervisor).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 
 -export([start_link/0]).
 
@@ -35,7 +35,7 @@ init([]) ->
         period => 5
     },
     
-    ll:init_ets(),
+    ptolemaios_ll:init_ets(),
     
     proto_mapping:load(),
     

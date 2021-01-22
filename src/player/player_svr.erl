@@ -10,7 +10,7 @@
 
 -behaviour(exia).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("player.hrl").
 -include("gateway.hrl").
 -include("ec.hrl").

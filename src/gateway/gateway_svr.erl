@@ -10,7 +10,7 @@
 
 -behaviour(exia).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("gateway.hrl").
 -include("player.hrl").
 -include("gateway_1_pb.hrl").
@@ -73,12 +73,12 @@ handle_info(Info, State) ->
 terminate(_, State) ->
     case State#gateway_state.account of
         undefined -> skip;
-        Account -> ll:release(?LOCAL_LOCK_ACCOUNT1(Account))
+        Account -> ptolemaios_ll:release(?LOCAL_LOCK_ACCOUNT1(Account))
     end,
     case State#gateway_state.player_id of
         undefined -> skip;
         PlayerId ->
-            ll:release(?LOCAL_LOCK_PLAYER_ID1(PlayerId)),
+            ptolemaios_ll:release(?LOCAL_LOCK_PLAYER_ID1(PlayerId)),
             exia:cast(State#gateway_state.player_pid, ?MSG_PLAYER_GATEWAY_DISCONNECT)
     end,
     ok.

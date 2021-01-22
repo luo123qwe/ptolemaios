@@ -11,7 +11,7 @@
 
 -behaviour(ds_unit).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("ds.hrl").
 -include("attr.hrl").
 

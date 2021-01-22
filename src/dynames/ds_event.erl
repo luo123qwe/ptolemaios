@@ -8,7 +8,7 @@
 -module(ds_event).
 -author("dominic").
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("ds.hrl").
 
 %% API
@@ -40,9 +40,9 @@ copy(Frame, Priority, Event) ->
 %%
 %% 同优先级则放到最后面
 insert_last(#ds_event{frame = Frame} = Event, FrameMap) ->
-    EventList = kv:lookup(Frame, FrameMap, []),
+    EventList = ptolemaios_kv:lookup(Frame, FrameMap, []),
     EventList1 = insert_last_list(Event, EventList),
-    kv:store(Frame, EventList1, FrameMap).
+    ptolemaios_kv:store(Frame, EventList1, FrameMap).
 
 insert_last_list(Event, []) ->
     [Event];
@@ -56,9 +56,9 @@ insert_last_list(Event, [H | T]) ->
 %%
 %% 同优先级则放到最前面
 insert_first(#ds_event{frame = Frame} = Event, FrameMap) ->
-    EventList = kv:lookup(Frame, FrameMap, []),
+    EventList = ptolemaios_kv:lookup(Frame, FrameMap, []),
     EventList1 = insert_first_list(Event, EventList),
-    kv:store(Frame, EventList1, FrameMap).
+    ptolemaios_kv:store(Frame, EventList1, FrameMap).
 
 insert_first_list(Event, []) ->
     [Event];
@@ -69,7 +69,7 @@ insert_first_list(Event, [H | T]) ->
 
 %% @doc 触发一个事件
 trigger(Type, StreamData, Dynames) ->
-    EventList = kv:lookup([#ds.trigger_event, Type], Dynames, []),
+    EventList = ptolemaios_kv:lookup([#ds.trigger_event, Type], Dynames, []),
     do_trigger(EventList, Type, StreamData, Dynames).
 
 
@@ -77,13 +77,13 @@ do_trigger([], _Type, _StreamData, Dynames) ->
     Dynames;
 do_trigger([H | T], Type, StreamData, Dynames) ->
     Key = [#ds.trigger_event, Type],
-    EventList = kv:lookup(Key, Dynames, []),
+    EventList = ptolemaios_kv:lookup(Key, Dynames, []),
     %% 事件的回调不一定还在
     case lists:keytake(H#ds_event.id, #ds_event.id, EventList) of
         false ->
             do_trigger(T, Type, StreamData, Dynames);
         {value, _, EventList1} ->
-            Dynames1 = kv:store(Key, EventList1, Dynames),
+            Dynames1 = ptolemaios_kv:store(Key, EventList1, Dynames),
             Dynames2 = ds_svr:execute_event(H#ds_event{stream = StreamData}, Dynames1),
             do_trigger(T, Type, StreamData, Dynames2)
     end.

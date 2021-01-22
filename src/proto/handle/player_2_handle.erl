@@ -1,7 +1,7 @@
 %% @private auto create
 -module(player_2_handle).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("player_2_pb.hrl").
 -include("player.hrl").
 -include("gateway.hrl").

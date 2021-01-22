@@ -1,7 +1,7 @@
 -ifndef(EC_HRL).
 -define(EC_HRL, true).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -define(EC1(ErrorCode), {ec, ErrorCode}).
 -define(THROW_EC1(ErrorCode), throw(?EC1(ErrorCode))).
 -define(EC_IF2(Expr, ErrorCode), ?DO_IF(Expr, ?THROW_EC1(ErrorCode))).

@@ -1,0 +1,53 @@
+%% 写成erlang数据格式, 可能以后会有用处
+%% {ok, [List]} = file:consult("name_mapping.txt").
+%% 每个业务功能(模块)都有一个关键字
+%% 每个关键字对应一个Id, 0对应非业务(模块)
+%% 名字可以缩写, 需要手动记录在这里
+%% 命名规则: 关键字[_xxx[_yyy]]
+[
+%% full name                                     ,short name         ,Id     ,中文注释
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 通用缩写 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+{supervisor                                      ,sup                ,0      ,"缩写"},
+{sever                                           ,svr                ,0      ,"缩写"},
+{callback                                        ,cb                 ,0      ,"缩写"},
+{private                                         ,priv               ,0      ,"缩写"},
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 依赖库的关键字 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+{ranch                                           ,undefined          ,0      ,"socket连接池"},
+{enif_protobuf                                   ,undefined          ,0      ,"enif+Protobuf"},
+{mongodb                                         ,undefined          ,0      ,"mongodb"},
+{mysql                                           ,undefined          ,0      ,"mysql"},
+{poolboy                                         ,undefined          ,0      ,"poolboy 进程池"},
+{jsx                                             ,undefined          ,0      ,"jsx json解析库"},
+{xlsx2erl                                        ,undefined          ,0      ,"xlsx生成erl文件"},
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 框架的关键字 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+{ptolemaios                                      ,undefined          ,0      ,"这个app"},
+{virture                                         ,undefined          ,0      ,"数据落地"},
+{virture_mysql                                   ,vsql               ,0      ,"使用mysql作为数据库"},
+{exia                                            ,undefined          ,0      ,"gen_server的修改版"},
+{proto                                           ,undefined          ,0      ,"协议"},
+{error_code                                      ,ec                 ,0      ,"错误码, 仅头文件"},
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 业务功能 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+{gateway                                         ,undefined          ,1      ,"网关"},
+{gateway_client                                  ,gateway_c          ,1      ,"通过socket连接网关的客户端"},
+{player                                          ,undefined          ,2      ,"玩家"},
+{dynames                                         ,ds                 ,3      ,"战斗"},
+{dynames_return                                  ,ds_r               ,3      ,"战斗返回, 通过throw"},
+{dynames_unit                                    ,ds_u               ,3      ,"战斗单位"},
+{dynames_event                                   ,ds_e               ,3      ,"战斗事件"},
+{dynames_event_stream_data                       ,ds_esd             ,3      ,"战斗事件特殊的数据流"},
+{dynames_event_trigger_type_before               ,ds_ettb            ,3      ,"战斗触发xxx类型事件前"},
+{dynames_event_trigger_type_after                ,ds_etta            ,3      ,"战斗触发xxx类型事件后"}
+].
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -8,3 +8,5 @@ Q:
     可能因为中文(非unicode)返回error, 导致编失败
 A:
     cmd改成unicode, chcp 65001
+A:
+    依然无法解决

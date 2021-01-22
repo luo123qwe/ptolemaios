@@ -1,6 +1,6 @@
 -ifndef(DS_HRL).
 -define(DS_HRL, true).
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 
 -define(DYM_DS_UNIT3(M, F, A), apply(M, F, A)).
 

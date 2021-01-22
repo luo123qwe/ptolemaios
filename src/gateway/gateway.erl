@@ -8,7 +8,7 @@
 -module(gateway).
 -author("dominic").
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("gateway.hrl").
 
 %% API

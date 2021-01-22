@@ -11,7 +11,7 @@
 
 -behaviour(exia).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 
 %% API
 -export([start/1, start_link/1]).

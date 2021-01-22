@@ -10,7 +10,7 @@
 
 -behaviour(gateway_c_svr).
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 
 %% API
 -export([init/1, handle_msg/2, handle_call/3, handle_cast/2, handle_info/2]).

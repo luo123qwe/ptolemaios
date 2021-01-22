@@ -8,7 +8,7 @@
 -module(ds_unit).
 -author("dominic").
 
--include("util.hrl").
+-include("ptolemaios_lib.hrl").
 -include("ds.hrl").
 -include("attr.hrl").
 
@@ -33,9 +33,9 @@ new(DataId) ->
 -spec hurt(number(), #ds_u{}, #ds_u{}, #ds_event{}, #ds{}) -> #ds{}.
 hurt(Hurt, Target, Unit, Event, Dynames) ->
     #ds_u{id = TargetId, attr = TargetAttr} = Target,
-    TargetHp = kv:lookup(?ATTR_HP, TargetAttr, 0),
+    TargetHp = ptolemaios_kv:lookup(?ATTR_HP, TargetAttr, 0),
     TargetHp1 = max(0, trunc(TargetHp - Hurt)),
-    Dynames1 = kv:store([#ds.unit_map, TargetId, #ds_u.attr, ?ATTR_HP], TargetHp1, Dynames),
+    Dynames1 = ptolemaios_kv:store([#ds.unit_map, TargetId, #ds_u.attr, ?ATTR_HP], TargetHp1, Dynames),
     case TargetHp1 of
         0 ->% 死亡, 触发死亡事件
             SteamData = #ds_esd_dead{
@@ -49,8 +49,8 @@ hurt(Hurt, Target, Unit, Event, Dynames) ->
 
 dead(SteamData, Dynames) ->
     Dynames1 = ds_event:trigger(?DS_ETTB_DEAD, SteamData, Dynames),
-    case kv:update(fun(_, Unit) ->
-        case kv:lookup(?ATTR_HP, Unit#ds_u.attr, 0) > 0 of
+    case ptolemaios_kv:update(fun(_, Unit) ->
+        case ptolemaios_kv:lookup(?ATTR_HP, Unit#ds_u.attr, 0) > 0 of
             true ->
                 {false, true, Unit};
             _ ->
@@ -58,7 +58,7 @@ dead(SteamData, Dynames) ->
         end
                       end, [#ds.unit_map, SteamData#ds_esd_dead.dead], Dynames1)
     of
-        undefined ->% 移出出游戏了
+        undefined ->% 移出游戏了
             ds_event:trigger(?DS_ETTA_DEAD, SteamData, Dynames1);
         {true, Dynames2} ->% 又活了
             Dynames2;
