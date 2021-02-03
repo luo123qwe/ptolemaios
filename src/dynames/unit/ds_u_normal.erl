@@ -36,7 +36,7 @@ filter_event_target(Unit, #ds_event{event = ?DS_E_SKILL1(SkillId)} = Event, Dyna
     when SkillId == ?DS_SKILL_ID2(?ID_1, 1);SkillId == ?DS_SKILL_ID2(?ID_2, 1) ->
     #ds_u{data_id = UnitDataId} = Unit,
     #ds{unit_map = UnitMap} = Dynames,
-    Radius = ptolemaios_kv:lookup([#data_ds_u.skill_arg_1, radius], data_ds_u:get(UnitDataId), undefined),
+    Radius = plm_kv:lookup([#data_ds_u.skill_arg_1, radius], data_ds_u:get(UnitDataId), undefined),
     TargetMap = filter_other_radius(Radius, Unit, UnitMap),
     {ok, TargetMap, Event};
 %% 近战加攻击
@@ -49,7 +49,7 @@ filter_event_target(Unit, #ds_event{event = ?DS_E_SKILL1(SkillId)} = Event, Dyna
     when SkillId == ?DS_SKILL_ID2(?ID_2, 2) ->
     #ds_u{data_id = UnitDataId} = Unit,
     #ds{unit_map = UnitMap} = Dynames,
-    Radius = ptolemaios_kv:lookup([#data_ds_u.skill_arg_1, radius], data_ds_u:get(UnitDataId), undefined),
+    Radius = plm_kv:lookup([#data_ds_u.skill_arg_1, radius], data_ds_u:get(UnitDataId), undefined),
     TargetMap = filter_other_radius(Radius, Unit, UnitMap),
     {ok, TargetMap, Event};
 %% 死亡
@@ -65,12 +65,12 @@ execute_event(Target, Unit, #ds_event{event = ?DS_E_SKILL1(SkillId)} = Event, Dy
     #ds_u{state = TargetState, attr = TargetAttr} = Target,
     ?DS_R_IF1(TargetState =/= ?DS_UNIT_STATE_ALIVE),
     #data_ds_u{skill_arg_1 = SkillArg1} = data_ds_u:get(Unit#ds_u.data_id),
-    Rate = ptolemaios_kv:lookup(rate, SkillArg1, 0),
+    Rate = plm_kv:lookup(rate, SkillArg1, 0),
     
     %% 计算伤害
     #ds_u{attr = UnitAttr} = Unit,
-    TargetDefense = ptolemaios_kv:lookup(?ATTR_DEFENSE, TargetAttr, 0),
-    UnitAttack = ptolemaios_kv:lookup(?ATTR_ATTACK, UnitAttr, 0),
+    TargetDefense = plm_kv:lookup(?ATTR_DEFENSE, TargetAttr, 0),
+    UnitAttack = plm_kv:lookup(?ATTR_ATTACK, UnitAttr, 0),
     Hurt = (UnitAttack - TargetDefense) * Rate,
     
     %% 扣血
@@ -85,11 +85,11 @@ execute_event(Target, Unit, #ds_event{event = ?DS_E_SKILL1(SkillId)} = Event, Dy
     ?DS_R_IF1(TargetState =/= ?DS_UNIT_STATE_ALIVE),
     
     %% 加属性
-    Add = ptolemaios_kv:lookup([#data_ds_u.skill_arg_2, attack], data_ds_u:get(UnitDataId), 0),
-    TargetAttr1 = ptolemaios_kv:plus([TargetAttr, [{?ATTR_ATTACK, Add}]]),
+    Add = plm_kv:lookup([#data_ds_u.skill_arg_2, attack], data_ds_u:get(UnitDataId), 0),
+    TargetAttr1 = plm_kv:plus([TargetAttr, [{?ATTR_ATTACK, Add}]]),
     Target1 = Target#ds_u{attr = TargetAttr1},
     
-    Dynames1 = ptolemaios_kv:store([#ds.unit_map, TargetId], Target1, Dynames),
+    Dynames1 = plm_kv:store([#ds.unit_map, TargetId], Target1, Dynames),
     ?LOG_NOTICE("~w ~w", [Target#ds_u.id, Event]),
     {ok, Dynames1};
 %% 远程减攻击
@@ -100,11 +100,11 @@ execute_event(Target, Unit, #ds_event{event = ?DS_E_SKILL1(SkillId)} = Event, Dy
     ?DS_R_IF1(TargetState =/= ?DS_UNIT_STATE_ALIVE),
     
     %% 减属性
-    Add = ptolemaios_kv:lookup([#data_ds_u.skill_arg_2, attack], data_ds_u:get(UnitDataId), 0),
-    TargetAttr1 = ptolemaios_kv:subtract([TargetAttr, [{?ATTR_ATTACK, Add}]]),
+    Add = plm_kv:lookup([#data_ds_u.skill_arg_2, attack], data_ds_u:get(UnitDataId), 0),
+    TargetAttr1 = plm_kv:subtract([TargetAttr, [{?ATTR_ATTACK, Add}]]),
     Target1 = Target#ds_u{attr = TargetAttr1},
     
-    Dynames1 = ptolemaios_kv:store([#ds.unit_map, TargetId], Target1, Dynames),
+    Dynames1 = plm_kv:store([#ds.unit_map, TargetId], Target1, Dynames),
     ?LOG_NOTICE("~w ~w", [Target#ds_u.id, Event]),
     {ok, Dynames1};
 %% 死亡回调

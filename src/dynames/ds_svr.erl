@@ -57,9 +57,9 @@ next_frame(State) ->
 %% @doc 执行一帧
 -spec execute_frame(#ds{}) -> #ds{}.
 execute_frame(#ds{frame = Frame, stream_event = StreamEvent} = State) ->
-    case ptolemaios_kv:lookup(Frame, StreamEvent, []) of
+    case plm_kv:lookup(Frame, StreamEvent, []) of
         [H | T] ->
-            StreamEvent1 = ?IF(T =/= [], ptolemaios_kv:store(Frame, T, StreamEvent), ptolemaios_kv:delete(Frame, StreamEvent)),
+            StreamEvent1 = ?IF(T =/= [], plm_kv:store(Frame, T, StreamEvent), plm_kv:delete(Frame, StreamEvent)),
             State1 = State#ds{stream_event = StreamEvent1},
             %% 释放对象
             State2 = execute_event(H, State1),
@@ -72,7 +72,7 @@ execute_frame(#ds{frame = Frame, stream_event = StreamEvent} = State) ->
 %% @doc 执行一个事件
 -spec execute_event(#ds_event{}, #ds{}) -> #ds{}.
 execute_event(#ds_event{user = User} = Event, #ds{unit_map = UnitMap, event_deep = Deep} = State) ->
-    case ptolemaios_kv:lookup(User, UnitMap, undefined) of
+    case plm_kv:lookup(User, UnitMap, undefined) of
         undefined ->% 被移出出游戏了
             State;
         #ds_u{module = Module} = Unit ->

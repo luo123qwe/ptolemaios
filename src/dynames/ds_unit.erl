@@ -33,9 +33,9 @@ new(DataId) ->
 -spec hurt(number(), #ds_u{}, #ds_u{}, #ds_event{}, #ds{}) -> #ds{}.
 hurt(Hurt, Target, Unit, Event, Dynames) ->
     #ds_u{id = TargetId, attr = TargetAttr} = Target,
-    TargetHp = ptolemaios_kv:lookup(?ATTR_HP, TargetAttr, 0),
+    TargetHp = plm_kv:lookup(?ATTR_HP, TargetAttr, 0),
     TargetHp1 = max(0, trunc(TargetHp - Hurt)),
-    Dynames1 = ptolemaios_kv:store([#ds.unit_map, TargetId, #ds_u.attr, ?ATTR_HP], TargetHp1, Dynames),
+    Dynames1 = plm_kv:store([#ds.unit_map, TargetId, #ds_u.attr, ?ATTR_HP], TargetHp1, Dynames),
     case TargetHp1 of
         0 ->% 死亡, 触发死亡事件
             SteamData = #ds_esd_dead{
@@ -49,8 +49,8 @@ hurt(Hurt, Target, Unit, Event, Dynames) ->
 
 dead(SteamData, Dynames) ->
     Dynames1 = ds_event:trigger(?DS_ETTB_DEAD, SteamData, Dynames),
-    case ptolemaios_kv:update(fun(_, Unit) ->
-        case ptolemaios_kv:lookup(?ATTR_HP, Unit#ds_u.attr, 0) > 0 of
+    case plm_kv:update(fun(_, Unit) ->
+        case plm_kv:lookup(?ATTR_HP, Unit#ds_u.attr, 0) > 0 of
             true ->
                 {false, true, Unit};
             _ ->

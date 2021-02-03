@@ -35,7 +35,7 @@ init([]) ->
         period => 5
     },
     
-    ptolemaios_ll:init_ets(),
+    plm_ll:init_ets(),
     
     proto_mapping:load(),
     

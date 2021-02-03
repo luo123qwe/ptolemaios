@@ -1,12 +1,16 @@
-Q:
-    在win下执行os:cmd("a/b/c/d")失败, 另外使用os:cmd("a\\b\\c\\d")成功
-A:
-    原因不明, 使用os:cmd(filename:absname("a/b/c/d"))解决
+Q:  在win下执行os:cmd("a/b/c/d")失败, 另外使用os:cmd("a\\b\\c\\d")成功
+A:  原因不明, 使用os:cmd(filename:absname("a/b/c/d"))解决
 
-Q:
-    在win下编译C文件成功但是reabr3_util:sh使用unicode:characters_to_binary/1
+Q:  在win下编译C文件成功但是reabr3_util:sh使用unicode:characters_to_binary/1
     可能因为中文(非unicode)返回error, 导致编失败
-A:
-    cmd改成unicode, chcp 65001
-A:
-    依然无法解决
+A:  cmd改成unicode, chcp 65001
+A:  rebar_utils:sh在中文环境下unicode转码可能不正确, 导致失败
+
+Q:  动态erlang配置为什么使用.script文件
+A:  rebar3的.src在window下没有效果, 自行实现了一样效果的.script
+
+Q:  json注释会报错, SON standard does not allow comments
+A:  Setting -> Inspections -> JSON and JSONS -> Compliance with JSON standard -> 取消勾选Warn about comments
+
+Q:  json排版时属性或元素换行, 单行太短, 行数太多
+A:  Setting -> Code Style -> JSON -> Wrapping and Braces -> Objects -> Do not wrap

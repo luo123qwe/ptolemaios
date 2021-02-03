@@ -95,7 +95,7 @@ compile_proto(RebarConfig) ->
     IsMake =
         case file:read_file_info(MappingFile) of
             {ok, #file_info{mtime = MapMTime}} ->
-                filelib:fold_files(ProtoSrc, ".*\.proto", true, fun(FileName, Acc) ->
+                filelib:fold_files(ProtoSrc, ".*\.proto$", true, fun(FileName, Acc) ->
                     case Acc of
                         true ->
                             Acc;
@@ -113,7 +113,7 @@ compile_proto(RebarConfig) ->
             io:format("make proto~n"),
             Head =
                 "-module(proto_mapping).\n\n"
-                "-include(\"util.hrl\").\n\n"
+                "-include(\"ptolemaios_lib.hrl\").\n\n"
                 "-export([load/0, proto/1, encode/1, decode/2, route/2]).\n\n",
             LoadHead =
                 "-spec load() -> ok.\n"
@@ -126,7 +126,7 @@ compile_proto(RebarConfig) ->
             RouteHead =
                 "-spec route(tuple(), term()) -> term().\n",
             {Load, ProtoBody, Decode, Route} =
-                filelib:fold_files(ProtoSrc, ".*\.proto", true, fun(FileName, {L, PB, D, R} = Acc) ->
+                filelib:fold_files(ProtoSrc, ".*\.proto$", true, fun(FileName, {L, PB, D, R} = Acc) ->
                     {ok, B} = file:read_file(FileName),
                     %% 匹配所有, message name{// 12345
                     case re:run(B, "message\s*([A-z0-9_]*)\s*{//\s*([0-9]*)", [global, multiline, {capture, [1, 2], binary}]) of
@@ -141,7 +141,7 @@ compile_proto(RebarConfig) ->
                                 false -> file:write_file(RouteFile, [
                                     "%% @private auto create\n"
                                     "-module(", Route, ").\n\n"
-                                    "-include(\"util.hrl\").\n"
+                                    "-include(\"ptolemaios_lib.hrl\").\n"
                                     "-include(\"ec.hrl\").\n"
                                     "-include(\"" ++ Name ++ ".hrl\").\n"
                                     "-include(\"" ++ ModuleName ++ ".hrl\").\n\n"

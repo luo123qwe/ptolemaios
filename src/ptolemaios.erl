@@ -15,4 +15,4 @@
 
 %% @doc shell reload代码
 reload() ->
-    ptolemaios_fix_hot:reload_shell(default, [ptolemaios]).
+    plm_fix_hot:reload_shell(default, [ptolemaios]).

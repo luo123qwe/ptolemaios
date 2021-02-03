@@ -12,19 +12,19 @@
 
 start(_StartType, _StartArgs) ->
     %% 日志
-    ptolemaios_log:start(),
+    plm_log:start(),
     %% 修复
-    ptolemaios_fix_hot:system_init(),
-    ptolemaios_fix_restart:system_init(),
+    plm_fix_hot:system_init(),
+    plm_fix_restart:system_init(),
     {ok, Pid} = ptolemaios_sup:start_link(),
     %% 初始化数据库
     vsql:system_init(ptolemaios_virture_define:get()),
     %% 重启更新
-    ptolemaios_fix_restart:fix(),
+    plm_fix_restart:fix(),
     {ok, Pid}.
 
 stop(_State) ->
-    ptolemaios_log:stop(),% 日志
+    plm_log:stop(),% 日志
     ok.
 
 async_stop(Time) ->

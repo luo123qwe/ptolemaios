@@ -30,7 +30,7 @@
 %%% 可参考proto/player.proto
 %%% @end
 %%%-------------------------------------------------------------------
--module(proto).
+-module('proto_test.erl').
 -author("dominic").
 
 -include("test_0_pb.hrl").
