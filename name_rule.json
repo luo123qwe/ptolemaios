@@ -1,0 +1,60 @@
+// 框架命名规则, 用json配置表达
+
+{
+  // 游戏功能(模块)
+  // 每个'游戏功能'对应一个唯一id, 这个id用于宏, 协议等等....
+  // 每个功能下的子模块, 命名规则 xxx[_yyy[_zzz]] 构成一个树状结构
+  "game_module_define": {"id": "根节点必须, 子节点可选", "name": "名字, 必须", "sname": "缩写, 可选", "comment": "备注, 可选"},
+  "game_module_list": [
+    // 预留1-10, 范围从11 - 2^16-1(协议号16位数字)
+    {"id": 11, "name": "game", "comment": "游戏系统"},
+    {"id": 12, "name": "gateway", "comment": "网关"},
+    {"id": 13, "name": "player", "comment": "玩家"},
+    {"id": 14, "name": "battle", "comment": "战斗"}
+  ],
+  // 非游戏功能的缩写
+  "extend_sname_define": {"name": "名字, 必须", "sname": "缩写, 可选", "comment": "备注, 可选"},
+  "extend_sname_list": [
+    {"name": "supervisor", "sname": "sup"},
+    {"name": "server", "sname": "svr"},
+    {"name": "callback", "sname": "cb"},
+    {"name": "private", "sname": "priv"},
+    {"name": "ptolemaios", "sname": "plm"}
+  ],
+  // 功能的宏命名规则, (宏类型+功能id|[宏类型_]功能名)[_XXXXX]+[[_]参数数量]
+  // 这里使用id主要为了减少字母数量, 名字不长的使用功能名也可以, 项目内统一即可
+  // 例子, M123, M123_1(Arg1), M123_2(Arg1, Arg2)
+  // MODULE, MODULE_1(Arg1), MODULE_2(Arg1, Arg2)
+  // PD123_A, PD123_A_1(Arg1), PD123_A_2(Arg1, Arg2)
+  // PD_MODULE_A, PD_MODULE_A_1(Arg1), PD_MODULE_A_2(Arg1, Arg2)
+  "macro_type_define": {"name": "名字, 必须", "sname": "缩写, 可选", "comment": "备注, 可选"},
+  "macro_type_list": [
+    {"name": "MODULE", "sname": "M", "comment": "功能模块, 因为宏不能直接写id(?123), 如果使用功能名可以省略M_"},
+    {"name": "MESSAGE", "sname": "MSG", "comment": "erlang进程消息"},
+    {"name": "PROCESS_DICT", "sname": "PD", "comment": "erlang进程字典"},
+    {"name": "PERSISTENT_TERM", "sname": "PT", "comment": "persistent_term, 全局kv"},
+    {"name": "ETS", "comment": "ets表"},
+    {"name": "DETS", "comment": "dets表"},
+    {"name": "TYPE", "sname": "T", "comment": "type, 泛指类型, 可以看成?M123_TYPE[_XXX]的缩写"},
+    {"name": "STATE", "sname": "S", "comment": "state, 泛指状态, 可以看成?M123_STATE[_XXX]的缩写"},
+    {"name": "DYNAMIC", "sname": "DYM", "comment": "动态执行函数用宏包一下, 方便管理"}
+  ],
+  // 协议号规则, 协议号 = 游戏功能id*100 + 唯一id
+  // 不够用的话一个游戏功能占用两个id即可, 毕竟游戏功能id只是一个逻辑上的概念
+  // 具体内容写到.proto文件内
+  "proto_define": {"name": "协议名字", "id": "功能id", "unique_id": "唯一id", "comment": "备注, 可选"}
+  // 关于缩写, record, module等等的命名也推荐使用缩写
+  // 必须要在对应定义的地方写上完整注释, idea查询定义的时候能一眼看出来即可
+}
+
+
+
+
+
+
+
+
+
+
+
+
