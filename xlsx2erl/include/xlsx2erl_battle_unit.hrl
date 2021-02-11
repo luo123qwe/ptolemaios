@@ -1,6 +1,6 @@
-%% xlsx2erl mask start data_ds_u
+%% xlsx2erl mask start data_battle_u
 %% 战斗单位
--record(data_ds_u, {
+-record(data_battle_u, {
     id,% 
     name,% 
     type,% 
@@ -8,4 +8,4 @@
     skill_arg_1,% 
     skill_arg_2% 
 }).
-%% xlsx2erl mask end data_ds_u
+%% xlsx2erl mask end data_battle_u

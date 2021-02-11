@@ -1,14 +1,14 @@
--module(data_ds_u).
+-module(data_battle_u).
 
--include("ptolemaios_lib.hrl").
--include("ds.hrl").
+-include("plm_lib.hrl").
+-include("battle.hrl").
 
 -export([get/1, get/2]).
 
 get(Key) -> get(Key, true).
 
 get(1, _) -> 
-    #data_ds_u{
+    #data_battle_u{
         id = 1, 
         name = <<"\"普通近战怪物\""/utf8>>, 
         type = [1,102], 
@@ -17,7 +17,7 @@ get(1, _) ->
         skill_arg_2 = [{attack,100}]
     };
 get(2, _) -> 
-    #data_ds_u{
+    #data_battle_u{
         id = 2, 
         name = <<"\"普通远程怪物\""/utf8>>, 
         type = [1,103], 
@@ -26,5 +26,5 @@ get(2, _) ->
         skill_arg_2 = [{attack,100}]
     };
 get(Key, _) ->
-    ?LOG_ERROR("undefined ~w in data_ds_u", [Key]),
+    ?LOG_ERROR("undefined ~w in data_battle_u", [Key]),
     undefined.

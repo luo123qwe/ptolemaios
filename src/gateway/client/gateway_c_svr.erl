@@ -11,10 +11,11 @@
 -module(gateway_c_svr).
 -author("dominic").
 
--behaviour(exia).
+-behaviour(plm_svr).
 
--include("ptolemaios_lib.hrl").
+-include("plm_lib.hrl").
 -include("gateway.hrl").
+-include("gateway_12_pb.hrl").
 
 %% API
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
@@ -48,46 +49,46 @@
 
 %% @private
 start_link(Ip, Port, Module, Args) ->
-    exia:start_link(?MODULE, [Ip, Port, Module, Args], []).
+    plm_svr:start_link(?MODULE, [Ip, Port, Module, Args], []).
 
 %% @doc 发送一条协议到服务器
 -spec send_proto(pid(), gateway:proto()) -> any().
 send_proto(Pid, Msg) ->
-    exia:cast(Pid, ?MSG_GATEWAY_SEND_MSG1(Msg)).
+    plm_svr:cast(Pid, ?MSG12_SEND_MSG1(Msg)).
 
 %% @private
 init([Ip, Port, Module, Args]) ->
     {ok, Socket} = gen_tcp:connect(Ip, Port, [{packet, raw}, binary, {active, true}]),
-    exia:eput(?PD_GATEWAY_C_SOCKET, Socket),
-    exia:eput(?PD_GATEWAY_C_BIN, <<>>),
-    exia:eput(?PD_GATEWAY_C_MODULE, Module),
-    ?DYM_GATEWAY_C_CB3(Module, init, [Args]).
+    plm_svr:put(?PD12_C_SOCKET, Socket),
+    plm_svr:put(?PD12_C_BIN, <<>>),
+    plm_svr:put(?PD12_C_MODULE, Module),
+    ?DYM12_C_CB3(Module, init, [Args]).
 
 %% @private
 handle_call(Request, From, State) ->
-    Module = exia:eget(?PD_GATEWAY_C_MODULE),
-    ?DYM_GATEWAY_C_CB3(Module, handle_call, [Request, From, State]).
+    Module = plm_svr:get(?PD12_C_MODULE),
+    ?DYM12_C_CB3(Module, handle_call, [Request, From, State]).
 
 %% @private
-handle_cast(?MSG_GATEWAY_SEND_MSG1(Msg), State) ->
+handle_cast(?MSG12_SEND_MSG1(Msg), State) ->
     Bin = gateway:pack(Msg),
-    ranch_tcp:send(exia:eget(?PD_GATEWAY_C_SOCKET), Bin),
+    ranch_tcp:send(plm_svr:get(?PD12_C_SOCKET), Bin),
     {noreply, State};
 handle_cast(Request, State) ->
-    Module = exia:eget(?PD_GATEWAY_C_MODULE),
-    ?DYM_GATEWAY_C_CB3(Module, handle_cast, [Request, State]).
+    Module = plm_svr:get(?PD12_C_MODULE),
+    ?DYM12_C_CB3(Module, handle_cast, [Request, State]).
 
 
 %% @private
 handle_info({tcp, _Socket, Data}, State) ->
-    Data1 = <<Data/binary, (exia:eget(?PD_GATEWAY_C_BIN))/binary>>,
+    Data1 = <<Data/binary, (plm_svr:get(?PD12_C_BIN))/binary>>,
     case gateway:unpack(Data1) of
         more ->
-            exia:eput(?PD_GATEWAY_C_BIN, Data1);
+            plm_svr:put(?PD12_C_BIN, Data1);
         {ok, Msg, Remain} ->
-            Module = exia:eget(?PD_GATEWAY_C_MODULE),
-            exia:eput(?PD_GATEWAY_C_BIN, Remain),
-            ?DYM_GATEWAY_C_CB3(Module, handle_msg, [Msg, State]);
+            Module = plm_svr:get(?PD12_C_MODULE),
+            plm_svr:put(?PD12_C_BIN, Remain),
+            ?DYM12_C_CB3(Module, handle_msg, [Msg, State]);
         {error, _Error} ->
             {noreply, State}
     end;
@@ -96,5 +97,5 @@ handle_info({tcp_closed, _}, State) ->
 handle_info({tcp_error, _, Reason}, State) ->
     {stop, Reason, State};
 handle_info(Info, State) ->
-    Module = exia:eget(?PD_GATEWAY_C_MODULE),
-    ?DYM_GATEWAY_C_CB3(Module, handle_info, [Info, State]).
+    Module = plm_svr:get(?PD12_C_MODULE),
+    ?DYM12_C_CB3(Module, handle_info, [Info, State]).

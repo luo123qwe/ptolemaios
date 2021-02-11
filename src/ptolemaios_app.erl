@@ -11,6 +11,8 @@
 -export([start/2, stop/1, async_stop/1]).
 
 start(_StartType, _StartArgs) ->
+    %% 时区
+    plm_time:system_init(),
     %% 日志
     plm_log:start(),
     %% 修复
@@ -18,7 +20,8 @@ start(_StartType, _StartArgs) ->
     plm_fix_restart:system_init(),
     {ok, Pid} = ptolemaios_sup:start_link(),
     %% 初始化数据库
-    vsql:system_init(ptolemaios_virture_define:get()),
+    plm_sql:system_init(game_db_define:get()),
+    plm_sql:set_default_db(game_db_define:get_default_db()),
     %% 重启更新
     plm_fix_restart:fix(),
     {ok, Pid}.

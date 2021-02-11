@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+// 游戏系统消息
+
+// 错误码
+message game_s_error {// 1110
+    uint32 proto = 1;
+    uint32 code = 2;
+}

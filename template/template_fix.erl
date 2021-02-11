@@ -9,7 +9,7 @@
 -module(template_fix).
 -author("dominic").
 
--behaviour(fix).
+-behaviour(plm_fix).
 
 %% API
 -export([
@@ -22,14 +22,14 @@
 %% 修复
 fix() ->
     %% 挂起进程
-    PidList = fix_hot:suspend([template_fix_sup]),
+    PidList = plm_fix_hot:suspend([template_fix_sup]),
     try
         %% 重载代码
-        fix_hot:reload_release(),
+        plm_fix_hot:reload_release([ptolemaios]),
         %% 修改数据库
-        vsql:query("update template_fix set a=1 where a=2"),
+        plm_sql:query(game, "update template_fix set a=1 where a=2"),
         %% 修改ets数据
-        Ets = vsql:make_ets_name(template_fix),
+        Ets = plm_sql:make_ets_name(template_fix),
         ets:foldl(fun(Record, []) ->
             case Record#template_fix.a of
                 2 -> ets:insert(Ets, Record#template_fix{a = 1});
@@ -43,12 +43,12 @@ fix() ->
                 {template_fix_sup} ->
                     S;
                 {template_fix_child} ->
-                    vsql:fold_cache(fun(Record, []) ->
+                    plm_sql:fold_cache(fun(Record, []) ->
                         case Record#template_fix.a of
-                            2 -> vsql:insert(Record#template_fix{a = 1});
+                            2 -> plm_sql:insert(Record#template_fix{a = 1});
                             _ -> skip
                         end
-                                      end, [], template_fix),
+                                       end, [], template_fix),
                     S
             end
                    end,
@@ -60,14 +60,14 @@ fix() ->
             erlang:raise(C, E, S)
     after
         %% 恢复进程
-        fix_hot:resume(PidList)
+        plm_fix_hot:resume(PidList)
     end.
 
 %% 上面修复报错时, 再次进行修复调用这个
 fix_again() ->
     %% 假设上面StateFun报错了, 这里就不需要再reload和修复ets以及数据库
     %% 挂起进程
-    PidList = fix_hot:suspend([template_fix_sup]),
+    PidList = plm_fix_hot:suspend([template_fix_sup]),
     try
         %% 修改进程的数据
         StateFun = fun(S) ->
@@ -76,12 +76,12 @@ fix_again() ->
                 {template_fix_sup} ->
                     S;
                 {template_fix_child} ->
-                    vsql:fold_cache(fun(Record, []) ->
+                    plm_sql:fold_cache(fun(Record, []) ->
                         case Record#template_fix.a of
-                            2 -> vsql:insert(Record#template_fix{a = 1});
+                            2 -> plm_sql:insert(Record#template_fix{a = 1});
                             _ -> skip
                         end
-                                      end, [], template_fix),
+                                       end, [], template_fix),
                     S;
                 _ ->% 增加容错
                     S
@@ -95,5 +95,5 @@ fix_again() ->
             erlang:raise(C, E, S)
     after
         %% 恢复进程
-        fix_hot:resume(PidList)
+        plm_fix_hot:resume(PidList)
     end.

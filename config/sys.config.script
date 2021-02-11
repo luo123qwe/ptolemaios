@@ -3,12 +3,18 @@
         {gateway, [
             {port, 8080}
         ]},
-        {virture, [
+        {plm_db, [
             {type, mysql},
-            {mysql_user, "root"},
-            {mysql_password, "123456"},
-            {mysql_database, "test"},
-            {mysql_dets, "vsql_dets"}
+            {mysql_dets, "plm_sql_dets"},
+            {db_list, [
+                %% 游戏数据库
+                [
+                    {type, game},
+                    {mysql_user, "root"},
+                    {mysql_password, "123456"},
+                    {mysql_database, "game"}
+                ]
+            ]}
         ]},
         {fix, [
             {dets_dir, "fix_dets"}

@@ -5,19 +5,19 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(template_ds_u).
+-module(template_battle_u).
 -author("dominic").
 
--behaviour(ds_unit).
+-behaviour(battle_unit).
 
 %% API
 -export([init/2, filter_event_target/3, execute_event/4]).
 
-init(Unit, Dynames) ->
-    {ok, Unit, Dynames}.
+init(Unit, Battle) ->
+    {ok, Unit, Battle}.
 
-filter_event_target(_Unit, Event, _Dynames) ->
+filter_event_target(_Unit, Event, _Battle) ->
     {ok, [], Event}.
 
-execute_event(_Target, _Unit, _Event, Dynames) ->
-    {ok, Dynames}.
+execute_event(_Target, _Unit, _Event, Battle) ->
+    {ok, Battle}.

@@ -8,7 +8,7 @@
 -module(gateway).
 -author("dominic").
 
--include("ptolemaios_lib.hrl").
+-include("plm_lib.hrl").
 -include("gateway.hrl").
 
 %% API
@@ -26,7 +26,7 @@ pack(Msg) ->
         Bin when is_binary(Bin) ->
             Proto = proto_mapping:proto(Msg),
             Len = byte_size(Bin),
-            <<Len:?GATEWAY_LEN, Proto:?GATEWAY_PROTO, Bin/binary>>;
+            <<Len:?M12_PROTO_LEN, Proto:?M12_PROTO_NUM, Bin/binary>>;
         Error ->
             throw(Error)
     end.
@@ -35,7 +35,7 @@ pack(Msg) ->
 -spec unpack(binary()) -> more|{ok, Proto :: proto(), Remain :: binary()}|{error, Error :: term()}.
 unpack(Bin) ->
     case Bin of
-        <<Len:?GATEWAY_LEN, Proto:?GATEWAY_PROTO, ProtoBin:Len/binary, Remain/binary>> ->
+        <<Len:?M12_PROTO_LEN, Proto:?M12_PROTO_NUM, ProtoBin:Len/binary, Remain/binary>> ->
             try
                 case proto_mapping:decode(Proto, ProtoBin) of
                     {error, Error} ->

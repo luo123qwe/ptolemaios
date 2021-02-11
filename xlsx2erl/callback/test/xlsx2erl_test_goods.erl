@@ -87,7 +87,7 @@ compile(#xlsx2erl_cb_args{hrl_path = HrlPath, erl_path = ErlPath}) ->
     %% todo 构造文件内容, 如果生成多个函数, priv_arg多定义几个参数即可
     Head =
         "-module(" ++ filename:rootname(?PRIV_ERL_FILE) ++ ").\n\n"
-    "-include(\"ptolemaios_lib.hrl\").\n"
+    "-include(\"plm_lib.hrl\").\n"
     "-include(\"" ++ ?PRIV_HRL_FILE ++ "\").\n\n"
     "-export([get/1, get/2]).\n\n"
     "get(Key) -> get(Key, true).\n\n",

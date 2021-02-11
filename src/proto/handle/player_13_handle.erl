@@ -1,18 +1,18 @@
 %% @private auto create
--module(player_2_handle).
+-module(player_13_handle).
 
--include("ptolemaios_lib.hrl").
--include("player_2_pb.hrl").
+-include("plm_lib.hrl").
+-include("game.hrl").
+-include("player_13_pb.hrl").
 -include("player.hrl").
 -include("gateway.hrl").
--include("ec.hrl").
 
 -export([handle/2]).
 
 -spec handle(proto:msg(), #player{}) -> #player{}.
 handle(#player_c_info{}, #player_state{id = Id, gateway = Gateway} = Player) ->
-    #player{name = Name} = vsql:lookup(player, [Id]),
-    exia:cast(Gateway, ?MSG_GATEWAY_SEND_MSG1(#player_s_info{id = Id, name = Name})),
+    #player{name = Name} = plm_sql:lookup(player, [Id]),
+    plm_svr:cast(Gateway, ?MSG12_SEND_MSG1(#player_s_info{id = Id, name = Name})),
     Player;
 
 handle(Msg, Acc) ->

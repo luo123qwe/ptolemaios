@@ -2,16 +2,16 @@
 %%%-------------------------------------------------------------------
 %%% @author dominic
 %%% @copyright (C) 2020, <COMPANY>
-%%% @doc exia模板
+%%% @doc plm_svr模板
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(template_exia).
+-module(template_plm_svr).
 -author("dominic").
 
--behaviour(exia).
+-behaviour(plm_svr).
 
--include("ptolemaios_lib.hrl").
+-include("plm_lib.hrl").
 
 %% API
 -export([start/1, start_link/1]).
@@ -19,10 +19,10 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
 start(Args) ->
-    exia:start(?MODULE, Args, []).
+    plm_svr:start(?MODULE, Args, []).
 
 start_link(Args) ->
-    exia:start_link(?MODULE, Args, []).
+    plm_svr:start_link(?MODULE, Args, []).
 
 init(_Args) ->
     {ok, undefined}.
