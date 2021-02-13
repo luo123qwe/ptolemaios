@@ -14,7 +14,6 @@
 -define(M13_SQL_SELECT_ID(Account), io_lib:format("select id from player where account='~s'", [Account])).
 -define(M13_SQL_CREATE2(Account, Name), io_lib:format("insert into player set account='~s', name='~s'", [Account, Name])).
 
--r2m(player).
 -record(player, {
     plm_sql_key,
     plm_sql_state,
@@ -23,7 +22,6 @@
     name :: binary()
 }).
 
--r2m(player_state).
 -record(player_state, {
     id :: integer(),
     gateway :: pid()
