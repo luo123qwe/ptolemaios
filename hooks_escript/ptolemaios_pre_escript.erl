@@ -104,7 +104,7 @@ compile_proto(RebarConfig) ->
                             {ok, #file_info{mtime = MTime}} = file:read_file_info(FileName),
                             MTime > MapMTime
                     end
-                                                                end, false);
+                                                                 end, false);
             _ ->
                 true
         end,
@@ -143,13 +143,14 @@ compile_proto(RebarConfig) ->
                                     "-module(", Route, ").\n\n"
                                     "-include(\"plm_lib.hrl\").\n"
                                     "-include(\"game.hrl\").\n"
+                                    "-include(\"player.hrl\").\n"
                                     "-include(\"" ++ Name ++ ".hrl\").\n"
                                     "-include(\"" ++ ModuleName ++ ".hrl\").\n\n"
                                     "-export([handle/2]).\n\n"
-                                    "-spec handle(proto:msg(), #" ++ ModuleName ++ "{}) -> #" ++ ModuleName ++ "{}.\n"
-                                    "handle(Msg, Acc) ->\n"
+                                    "-spec handle(proto:msg(), #player_state{}) -> #player_state{}.\n"
+                                    "handle(Msg, State) ->\n"
                                     "    ?LOG_WARNING(\"unknow msg ~w\", [Msg]),\n"
-                                    "    Acc.\n\n"
+                                    "    State.\n\n"
                                 ])
                             end,
                             L1 = [["        ", Name, ":get_msg_defs()"] | L],
@@ -166,7 +167,7 @@ compile_proto(RebarConfig) ->
                             io:format("warning no proto in ~s~n", [FileName]),
                             Acc
                     end
-                                                                end, {[], [], [], []}),
+                                                                 end, {[], [], [], []}),
             Load1 = string:join(Load, " ++\n") ++ ",\n",
             LoadTail =
                 "    enif_protobuf:load_cache(DefList),\n"
