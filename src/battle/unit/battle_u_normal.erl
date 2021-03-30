@@ -28,7 +28,7 @@ filter_event_target(Unit, #battle_event{event = ?M14_E_SKILL1(SkillId)} = Event,
     when SkillId == ?M14_SKILL_ID2(?ID_1, 0);SkillId == ?M14_SKILL_ID2(?ID_2, 0) ->
     #battle_unit{data_id = UnitDataId} = Unit,
     #battle{unit_map = UnitMap} = Battle,
-    #data_battle_u{radius = Radius} = data_battle_u:get(UnitDataId),
+    #data_battle_unit{radius = Radius} = data_battle_unit:get(UnitDataId),
     TargetMap = filter_other_radius(Radius, Unit, UnitMap),
     {ok, TargetMap, Event};
 %% 近战/远程爆发
@@ -36,7 +36,7 @@ filter_event_target(Unit, #battle_event{event = ?M14_E_SKILL1(SkillId)} = Event,
     when SkillId == ?M14_SKILL_ID2(?ID_1, 1);SkillId == ?M14_SKILL_ID2(?ID_2, 1) ->
     #battle_unit{data_id = UnitDataId} = Unit,
     #battle{unit_map = UnitMap} = Battle,
-    Radius = plm_kv:lookup([#data_battle_u.skill_arg_1, radius], data_battle_u:get(UnitDataId), undefined),
+    Radius = plm_kv:lookup([#data_battle_unit.skill_arg_1, radius], data_battle_unit:get(UnitDataId), undefined),
     TargetMap = filter_other_radius(Radius, Unit, UnitMap),
     {ok, TargetMap, Event};
 %% 近战加攻击
@@ -49,7 +49,7 @@ filter_event_target(Unit, #battle_event{event = ?M14_E_SKILL1(SkillId)} = Event,
     when SkillId == ?M14_SKILL_ID2(?ID_2, 2) ->
     #battle_unit{data_id = UnitDataId} = Unit,
     #battle{unit_map = UnitMap} = Battle,
-    Radius = plm_kv:lookup([#data_battle_u.skill_arg_1, radius], data_battle_u:get(UnitDataId), undefined),
+    Radius = plm_kv:lookup([#data_battle_unit.skill_arg_1, radius], data_battle_unit:get(UnitDataId), undefined),
     TargetMap = filter_other_radius(Radius, Unit, UnitMap),
     {ok, TargetMap, Event};
 %% 死亡
@@ -64,7 +64,7 @@ execute_event(Target, Unit, #battle_event{event = ?M14_E_SKILL1(SkillId)} = Even
     when SkillId == ?M14_SKILL_ID2(?ID_1, 1);SkillId == ?M14_SKILL_ID2(?ID_2, 1) ->
     #battle_unit{state = TargetState, attr = TargetAttr} = Target,
     ?M14_IF1(TargetState =/= ?M14_UNIT_STATE_ALIVE),
-    #data_battle_u{skill_arg_1 = SkillArg1} = data_battle_u:get(Unit#battle_unit.data_id),
+    #data_battle_unit{skill_arg_1 = SkillArg1} = data_battle_unit:get(Unit#battle_unit.data_id),
     Rate = plm_kv:lookup(rate, SkillArg1, 0),
     
     %% 计算伤害
@@ -85,7 +85,7 @@ execute_event(Target, Unit, #battle_event{event = ?M14_E_SKILL1(SkillId)} = Even
     ?M14_IF1(TargetState =/= ?M14_UNIT_STATE_ALIVE),
     
     %% 加属性
-    Add = plm_kv:lookup([#data_battle_u.skill_arg_2, attack], data_battle_u:get(UnitDataId), 0),
+    Add = plm_kv:lookup([#data_battle_unit.skill_arg_2, attack], data_battle_unit:get(UnitDataId), 0),
     TargetAttr1 = plm_kv:plus([TargetAttr, [{?ATTR_ATTACK, Add}]]),
     Target1 = Target#battle_unit{attr = TargetAttr1},
     
@@ -100,7 +100,7 @@ execute_event(Target, Unit, #battle_event{event = ?M14_E_SKILL1(SkillId)} = Even
     ?M14_IF1(TargetState =/= ?M14_UNIT_STATE_ALIVE),
     
     %% 减属性
-    Add = plm_kv:lookup([#data_battle_u.skill_arg_2, attack], data_battle_u:get(UnitDataId), 0),
+    Add = plm_kv:lookup([#data_battle_unit.skill_arg_2, attack], data_battle_unit:get(UnitDataId), 0),
     TargetAttr1 = plm_kv:subtract([TargetAttr, [{?ATTR_ATTACK, Add}]]),
     Target1 = Target#battle_unit{attr = TargetAttr1},
     

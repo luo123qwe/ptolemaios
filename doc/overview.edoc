@@ -259,9 +259,9 @@ tar_a -> tar_ebin_a1    -> tar_ebin_a2  -> tar_b -> tar_ebin_b2
     <dd>使用当前的lib更新backup文件夹里某个版本以后所有tar.gz里的beam文件</dd>
 </dl>
 
-== 配置(xlsx) ==
+== 配置(virtue) ==
 
-xlsx2erl文件夹下的项目用于生成配置
+virtue用于生成配置
 
 xlsx第一列作为mask, 某行没有mask将被忽略掉
 

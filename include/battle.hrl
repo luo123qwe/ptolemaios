@@ -94,16 +94,16 @@
     stream :: any()%% 事件的数据流
 }).
 
-%% xlsx2erl mask start data_battle_u
+%% virtue mask start data_battle_unit
 %% 战斗单位
--record(data_battle_u, {
-    id,% 
-    name,% 
-    type,% 
-    radius,% 
-    skill_arg_1,% 
-    skill_arg_2% 
+-record(data_battle_unit, {
+    id,% id
+    name,% 名字
+    type,% 类型
+    radius,% 普通攻击半径
+    skill_arg_1,% 技能1参数
+    skill_arg_2% 技能2参数
 }).
-%% xlsx2erl mask end data_battle_u
+%% virtue mask end data_battle_unit
 -endif.
 
