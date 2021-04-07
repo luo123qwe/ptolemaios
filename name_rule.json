@@ -19,7 +19,8 @@
     {"name": "server", "sname": "svr"},
     {"name": "callback", "sname": "cb"},
     {"name": "private", "sname": "priv"},
-    {"name": "ptolemaios", "sname": "plm"}
+    {"name": "ptolemaios", "sname": "plm"},
+    {"name": "config", "sname": "cfg"}
   ],
   // 功能的宏命名规则, (宏类型+功能id|[宏类型_]功能名)[_XXXXX]+[[_]参数数量]
   // 这里使用id主要为了减少字母数量, 名字不长的使用功能名也可以, 项目内统一即可

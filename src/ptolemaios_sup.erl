@@ -34,19 +34,16 @@ init([]) ->
         intensity => 1,
         period => 5
     },
-    
-    plm_ll:init_ets(),
-    
-    proto_mapping:load(),
-    
+
     %% 子进程
-    ChildSpecs = plm_db:get_sup_spec() ++
+    ChildSpecs = plm_db:get_sup_spec(mysql) ++
         [
+            #{id => plm_ll_sup, start => {plm_ll_sup, start_link, []}, type => supervisor}
             #{id => gateway_sup, start => {gateway_sup, start_link, []}, type => supervisor},
             #{id => player_sup, start => {player_sup, start_link, []}, type => supervisor},
             #{id => battle_sup, start => {battle_sup, start_link, []}, type => supervisor}
         ],
-    
+
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions

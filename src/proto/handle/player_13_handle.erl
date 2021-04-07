@@ -12,7 +12,7 @@
 -spec handle(proto:msg(), #player{}) -> #player{}.
 handle(#player_c_info{}, #player_state{id = Id, gateway = Gateway} = Player) ->
     #player{name = Name} = plm_sql:lookup(player, [Id]),
-    plm_svr:cast(Gateway, ?MSG12_SEND_MSG1(#player_s_info{id = Id, name = Name})),
+    gateway_svr:send_proto(Gateway, #player_s_info{id = Id, name = Name}),
     Player;
 
 handle(Msg, Acc) ->

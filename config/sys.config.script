@@ -5,23 +5,23 @@
         ]},
         {plm_db, [
             {type, mysql},
-            {mysql_dets, "plm_sql_dets"},
+            {dets_dir, "dets/db"},
             {db_list, [
                 %% 游戏数据库
                 [
                     {type, game},
-                    {mysql_user, "root"},
-                    {mysql_password, "123456"},
-                    {mysql_database, "game"}
+                    {user, "root"},
+                    {password, "123456"},
+                    {database, "game"}
                 ]
             ]}
         ]},
         {fix, [
-            {dets_dir, "fix_dets"}
+            {dets_dir, "dets/fix"}
         ]},
         {log, [
-            {level, notice},
-            {log_dir, "log/log"}
+            {level, info},
+            {log_dir, "log"}
         ]}
     ]}
 ].

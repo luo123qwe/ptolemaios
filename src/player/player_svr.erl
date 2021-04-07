@@ -52,13 +52,13 @@ handle_cast(?MSG13_GATEWAY_PROTO1(Msg), #player_state{gateway = Gateway} = State
         UnKnow ->%% ????
             ?LOG_ERROR("unknown return ~w", [UnKnow]),
             Proto = proto_mapping:proto(Msg),
-            plm_svr:cast(Gateway, ?MSG12_SEND_MSG1(#game_s_error{code = ?M11_EC_ERROR, proto = Proto})),
+            gateway_svr:send_proto(Gateway, #game_s_error{code = ?M11_EC_ERROR, proto = Proto}),
             State1 = plm_svr:rollback(Rollback),
             {noreply, State1}
     catch
         throw:?M11_EC1(ErrorCode) ->
             Proto = proto_mapping:proto(Msg),
-            plm_svr:cast(Gateway, ?MSG12_SEND_MSG1(#game_s_error{code = ErrorCode, proto = Proto})),
+            gateway_svr:send_proto(Gateway, #game_s_error{code = ErrorCode, proto = Proto}),
             State1 = plm_svr:rollback(Rollback),
             {noreply, State1};
         C:E:S ->

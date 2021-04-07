@@ -15,8 +15,6 @@
 -define(M13_SQL_CREATE2(Account, Name), io_lib:format("insert into player set account='~s', name='~s'", [Account, Name])).
 
 -record(player, {
-    plm_sql_key,
-    plm_sql_state,
     id :: integer(),
     account :: binary(),
     name :: binary()
