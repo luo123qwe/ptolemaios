@@ -23,7 +23,7 @@
 -define(RELEASE_TAG, "prod").
 -define(STOP_MFA, {ptolemaios_app, async_stop, [500]}).
 -define(UPDATE_MFA, {plm_fix_hot, fix, []}).
--define(REUSE_DIR, ["log", "fix_dets", "plm_sql_dets"]).
+-define(REUSE_DIR, ["log", "dets"]).
 -define(PD_RELEASE_DATE_STR, pd_release_date_str).
 
 %% 打包机用
